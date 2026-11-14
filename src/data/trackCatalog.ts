@@ -18,8 +18,9 @@
 //     ミニカーブ: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_mini
 //     レール関連製品（鉄橋・橋脚）: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr
 //     ワイドPCレール: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_wpc
-//     スラブレール・ワイドPCレール（2026-11-15 追加）: 各製品ページ https://www.tomytec.co.jp/tomix/products/n/<品番>.html
-//       と 2025年5月8日の価格改定のお知らせ（品番・製品名・新価格）で確認
+//     スラブレール: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_slab
+//     スラブレール・ワイドPCレールの形: 公式「トミックスレールの規格」
+//       https://www.tomytec.co.jp/tomix/nyumon/tomixrail/img/tomixrail_standard.pdf で確認（2026-11-15）
 //
 // 道床（バラスト・PC・スラブ・ワイドPC など）の違う部品は、形が同じでも別の部品IDにしている
 // （例: S280 と S280-SL）。variantOf に同じ形の標準の部品IDを入れ、選択中の部品の道床を切り替えられる。
@@ -56,11 +57,14 @@ export type CatalogProduct = {
 export type BedType = "ballast" | "pc" | "slab" | "widePc" | "viaduct" | "synthetic";
 
 /** 製品名から道床の種類を判定する（判定できなければ fallback） */
+// TOMIXの製品名の記号（公式「レール製品名の見方」 https://www.tomytec.co.jp/tomix/nyumon/tomixrail/img/namingrules.pdf ）:
+//   先頭の H=高架橋付・D=複線、末尾の SL=スラブ・WP=ワイドPC・WI=ワイドレール・PC=PCレール・SY=合成枕木 など。
+//   KATOは製品名に「高架」「スラブ」「PC」と書かれている。
 export function bedOfProductName(name: string, fallback: BedType = "ballast"): BedType {
-  if (/高架/.test(name)) return "viaduct";
-  if (/ワイド/.test(name)) return "widePc";
-  if (/スラブ/.test(name)) return "slab";
-  if (/合成枕木|-SY/.test(name)) return "synthetic";
+  if (/高架|\bH[SC]\d/.test(name)) return "viaduct";
+  if (/ワイド|-W[PI]\b/.test(name)) return "widePc";
+  if (/スラブ|-SL\b/.test(name)) return "slab";
+  if (/合成枕木|-SY\b/.test(name)) return "synthetic";
   if (/PC/.test(name)) return "pc";
   return fallback;
 }
@@ -133,6 +137,7 @@ export const CATALOG_SOURCES: Record<CatalogMaker, { label: string; urls: string
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_double",
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_mini",
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr",
+      "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_slab",
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_wpc",
     ],
   },
@@ -176,6 +181,8 @@ const SRC = {
   lombard320: "https://lombardhobby.com/products/kato-n-20-320-unitrack-90-degree-crossing-124mm-4-7-8",
   katoBranch: "https://unitrack.katomodels.com/products/line_single/branch_cross",
   tomix: (n: number) => `https://www.tomytec.co.jp/tomix/products/n/${n}.html`,
+  /** TOMIX公式「トミックスレールの規格」（全レールの長さ・半径・角度の図） */
+  tomixStd: "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/img/tomixrail_standard.pdf",
 };
 
 const TURNOUT_HELP = "j0=トング側, j1=直進側, j2=分岐側";
@@ -518,7 +525,7 @@ const TOMIX: CatalogEntry[] = [
   ).map(([base, len, products]): CatalogEntry => ({
     ...st(`${base}-SL`, len, products, "スラブ軌道（バラストのないコンクリート道床）。長さ・つなぎ方は基本レールと同じ"),
     label: `スラブ直線 ${base}-SL`, bed: "slab", variantOf: base,
-    geometryStatus: "confirmed", geometrySources: [SRC.tomix(Number(products[0].code))],
+    geometryStatus: "confirmed", geometrySources: [SRC.tomixStd, SRC.tomix(Number(products[0].code))],
   })),
   ...(
     [
@@ -529,8 +536,8 @@ const TOMIX: CatalogEntry[] = [
   ).map(([base, len, products]): CatalogEntry => ({
     id: `${base}-SL`, category: "double", label: `複線スラブ直線 ${base}-SL`, handed: false, jointHelp: DOUBLE_HELP,
     routes: shape.doubleStraight(len, TOMIX_SPACING), products, bed: "slab", variantOf: base,
-    geometryNote: "スラブ軌道。間隔37mm・長さは同じ長さの複線レールと同じ。別売の橋脚で高架にもできる",
-    geometryStatus: "confirmed", geometrySources: [SRC.tomix(Number(products[0].code))],
+    geometryNote: "スラブ軌道。間隔37mm・長さは同じ長さの複線レールと同じ（公式の規格図）。別売の橋脚で高架にもできる",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomixStd, SRC.tomix(Number(products[0].code))],
   })),
   {
     id: "DC465-45-SL", category: "double", label: "複線スラブ曲線 DC465/428-45-SL", handed: true,
@@ -538,7 +545,8 @@ const TOMIX: CatalogEntry[] = [
     routes: shape.doubleCurve(465, 45, TOMIX_SPACING),
     products: [p("1168", "複線スラブカーブレールDC465・428-45-SL(F)(2本セット)", 2)],
     bed: "slab", variantOf: "DC465-45",
-    geometryNote: "スラブ軌道。形は複線カーブレールDC465・428-45と同じ（製品名から）",
+    geometryNote: "スラブ軌道。形は複線カーブレールDC465・428-45と同じ（公式の規格図）",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomixStd, SRC.tomix(1168)],
   },
   {
     id: "DC539-22.5-SL", category: "double", label: "複線スラブ曲線 DC539/502-22.5-SL", handed: true,
@@ -546,8 +554,8 @@ const TOMIX: CatalogEntry[] = [
     routes: shape.doubleCurve(539, 22.5, TOMIX_SPACING),
     products: [p("1169", "複線スラブカーブレールDC539・502-22.5-SL(F)(2本セット)", 2)],
     bed: "slab",
-    geometryNote: "R539/R502・22.5°（16本で1周）は製品名から。同じ形の標準の複線レールはない",
-    geometrySources: [SRC.tomix(1169)],
+    geometryNote: "R539/R502・22.5°（16本で1周）は公式の規格図・製品名から。同じ形の標準の複線レールはない",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomixStd, SRC.tomix(1169)],
   },
   // ワイドPCレール（幅の広いバラスト道床・PCまくら木。曲線はカント付き。形は基本レールと同じ）
   ...(
@@ -557,7 +565,9 @@ const TOMIX: CatalogEntry[] = [
       ["S140", 140, [p("1761", "ワイドPCレールS140-WP(F)(4本セット)", 4), p("1769", "ワイドPCレールS140-WP(F)(ポイント分岐用)(4本セット)", 4)]],
       ["S99", 99, [p("1735", "ワイドPCレールS99-WP(F)(4本セット)", 4)]],
       ["S72.5", 72.5, [p("1763", "ワイドPCレールS72.5-WP(F)(4本セット)", 4)]],
-      ["S70", 70, [p("1764", "ワイドPCレールS70-WP(F)(4本セット)", 4)]],
+      ["S70", 70, [p("1764", "ワイドPCレールS70-WP(F)(4本セット)", 4), p("1750", "ワイドPCカーブレールC605-10-WP(F)(4本+S70-WP×2本セット)", 2)]],
+      ["S33", 33, [p("1738", "ワイドPC端数レールS18.5・S33-WP(F)(各4本セット)", 4)]],
+      ["S18.5", 18.5, [p("1738", "ワイドPC端数レールS18.5・S33-WP(F)(各4本セット)", 4)]],
       ["V70", 70, [p("1528", "ワイドPCバリアブルレールV70-WP(F)(2本セット)", 2)]],
     ] as [string, number, CatalogProduct[]][]
   ).map(([base, len, products]): CatalogEntry => ({
@@ -566,6 +576,7 @@ const TOMIX: CatalogEntry[] = [
         ? "ワイドPC。伸縮する。配置計算では70mmとして扱う"
         : "ワイドPC（幅の広いバラスト道床）。長さ・つなぎ方は基本レールと同じ。ポイント分岐用はポイントの先で道床が干渉しない形"),
     label: `ワイドPC直線 ${base}-WP`, bed: "widePc", variantOf: base,
+    geometryStatus: "confirmed", geometrySources: [SRC.tomixStd, SRC.tomix(Number(products[0].code))],
   })),
   ...(
     [
@@ -574,12 +585,16 @@ const TOMIX: CatalogEntry[] = [
       [354, 45, "1773"],
       [391, 45, "1774"],
       [541, 15, "1770"],
+      [605, 10, "1750"],
     ] as [number, number, string][]
   ).map(([r, deg, code]): CatalogEntry => ({
-    ...cv(`C${r}-${deg}-WP`, r, deg, [p(code, `ワイドPCカーブレールC${r}-${deg}-WP(F)(4本セット)`, 4)],
-      "ワイドPC。カント（内側への傾き）付き。半径・角度は基本のカーブレールと同じ（製品名から）"),
+    ...cv(`C${r}-${deg}-WP`, r, deg, [
+      code === "1750"
+        ? p(code, "ワイドPCカーブレールC605-10-WP(F)(4本+S70-WP×2本セット)", 4)
+        : p(code, `ワイドPCカーブレールC${r}-${deg}-WP(F)(4本セット)`, 4),
+    ], "ワイドPC。カント（内側への傾き）付き。半径・角度は基本のカーブレールと同じ（公式の規格図）"),
     label: `ワイドPC曲線 C${r}-${deg}-WP`, bed: "widePc", variantOf: `C${r}-${deg}`,
-    geometrySources: [SRC.tomix(Number(code))],
+    geometryStatus: "confirmed", geometrySources: [SRC.tomixStd, SRC.tomix(Number(code))],
   })),
   // 車止め
   {
@@ -720,6 +735,7 @@ export const CATALOG: Record<CatalogMaker, CatalogEntry[]> = {
 export const NOT_MODELED: { maker: CatalogMaker; code: string; name: string; reason: string }[] = [
   { maker: "tomix", code: "1297", name: "安全側線レールPL541-15-S140-SY(F)", reason: "ポイントPL541-15とS140・車止めの組み合わせで代用できる" },
   { maker: "tomix", code: "1298", name: "安全側線レールPR541-15-C541-SY(F)", reason: "ポイントPR541-15とC541-15・車止めの組み合わせで代用できる" },
-  { maker: "tomix", code: "1046", name: "スラブレールS140-SL(F)(2本セット)", reason: "4本セットの1047と同じ形。現行の価格が確認できなかった" },
-  { maker: "tomix", code: "1781〜1784", name: "ワイドPCアプローチレールCR(L)-22.5-WP(F)", reason: "緩和曲線の形（半径が途中で変わる）を確認できる資料が見つからなかった" },
+  { maker: "tomix", code: "1046", name: "スラブレールS140-SL(F)(2本セット)", reason: "公式の製品ページがなく（生産終了）、4本セットの1047と同じ形" },
+  { maker: "tomix", code: "-", name: "スラブカーブレールC605-10-SL(F)", reason: "公式の規格図にはあるが、現行の製品一覧にない" },
+  { maker: "tomix", code: "1781〜1784", name: "ワイドPCアプローチレールCR(L)-22.5-WP(F)", reason: "緩和曲線（規格図では22.5°・端で半径が変わる形）で、途中の半径を確認できる資料が見つからなかった" },
 ];
