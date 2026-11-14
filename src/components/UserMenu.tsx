@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { api, ROLE_LABELS, type SessionUser } from "@/lib/roles";
+import { NoticeBell } from "./NoticeBell";
 
 export function UserMenu({ user }: { user: SessionUser }) {
   const logout = async () => {
@@ -10,6 +11,7 @@ export function UserMenu({ user }: { user: SessionUser }) {
   };
   return (
     <nav className="user-menu">
+      <NoticeBell />
       <span>
         {user.username}
         <span className={`role-badge ${user.role}`}>{ROLE_LABELS[user.role]}</span>

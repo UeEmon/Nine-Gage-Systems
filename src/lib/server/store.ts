@@ -5,7 +5,7 @@ import { PROVIDERS, type ProviderId } from "@/lib/llm/types";
 import { hashPassword } from "./password";
 
 /**
- * サーバーに保存するデータ（ユーザーとAI設定）。
+ * サーバーに保存するデータ（ユーザー・AI設定・お知らせ）。
  * 件数が少ないので JSON ファイル1つに保存する。保存先は NINEGAGE_DATA_DIR（既定 ./data）。
  */
 
@@ -19,6 +19,23 @@ export type StoredUser = {
   passwordHash: string;
   /** パスワード変更・ロール変更で増やし、発行済みのログインを無効にする */
   sessionVersion: number;
+  createdAt: string;
+  /** 既読にしたお知らせのID（新しい順に最大 MAX_READ_IDS 件） */
+  readNoticeIds?: string[];
+};
+
+export const AUDIENCES = ["all", "admin"] as const;
+export type Audience = (typeof AUDIENCES)[number];
+
+/** 管理者が画面から登録したお知らせ（リリースノートの分は src/data/releases.ts） */
+export type StoredNotice = {
+  id: string;
+  title: string;
+  body: string;
+  /** 公開する日時（ISO）。未来なら予約 */
+  publishedAt: string;
+  audience: Audience;
+  createdBy: string;
   createdAt: string;
 };
 
@@ -35,6 +52,7 @@ export type StoreData = {
   sessionSecret: string;
   users: StoredUser[];
   ai: StoredAi;
+  notices: StoredNotice[];
 };
 
 export type Env = Record<string, string | undefined>;
@@ -68,6 +86,17 @@ function normalize(raw: unknown): StoreData {
         )
       : [],
     ai: { provider: ai.provider && PROVIDERS.includes(ai.provider) ? ai.provider : undefined, byProvider },
+    notices: Array.isArray(d.notices)
+      ? d.notices.filter(
+          (n): n is StoredNotice =>
+            !!n &&
+            typeof n.id === "string" &&
+            typeof n.title === "string" &&
+            typeof n.body === "string" &&
+            typeof n.publishedAt === "string" &&
+            AUDIENCES.includes(n.audience),
+        )
+      : [],
   };
 }
 
