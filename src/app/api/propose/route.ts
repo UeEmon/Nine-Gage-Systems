@@ -2,6 +2,9 @@ import { z } from "zod";
 import { proposeLayout, ProposeError, sessionOptions, type ProposeInput } from "@/lib/ai";
 import { usageOf } from "@/lib/bom";
 import { createSession, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
+import { emptyUsage } from "@/lib/llm/types";
+import { logUsage, usageStats, type UsageRecord } from "@/lib/server/aiUsage";
+import { cacheKey, proposeCache } from "@/lib/server/proposeCache";
 import { settingsForUse } from "@/lib/server/aiSettings";
 import { requireUser } from "@/lib/server/auth";
 import { MAKERS } from "@/lib/parts";
@@ -25,7 +28,18 @@ const BodySchema = z.object({
   patterns: z.number().int().min(1).max(3).default(1),
   /** 追加で買う部品の合計金額の上限（円・税込）。自由・拡張案のみ。未指定なら制限なし */
   budgetJpy: z.number().int().min(0).max(10_000_000).optional(),
+  /** true なら保存済みの結果を使わず、AIに作り直してもらう */
+  fresh: z.boolean().default(false),
 });
+
+/** 2つ目以降の案を送る前に、1つ目の応答の開始（＝プロンプトキャッシュの書き込み）を待つ上限 */
+const STAGGER_MAX_WAIT_MS = 60_000;
+
+type ProposedValue = Awaited<ReturnType<typeof proposeLayout>> & {
+  hint: string | null;
+  shortfall: ReturnType<typeof shortfall>;
+  budgetJpy: number | null;
+};
 
 const yen = (n: number) => `${n.toLocaleString("ja-JP")}円`;
 
@@ -61,7 +75,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで）" }, { status: 400 });
   }
-  const { board, request, maker, mode, inventory, patterns } = parsed.data;
+  const { board, request, maker, mode, inventory, patterns, fresh } = parsed.data;
   // 手持ちだけの案は買い足しがないので予算は使わない
   const budgetJpy = mode === "owned" ? undefined : parsed.data.budgetJpy;
   const counts = stockFromInventory(inventory, maker);
@@ -79,26 +93,77 @@ export async function POST(req: Request) {
 
   const hintList = mode === "expand" && budgetJpy !== undefined ? expandHints(budgetJpy) : HINTS[mode];
   const hints = patterns > 1 ? hintList.slice(0, patterns) : [undefined];
+  const stock = mode === "free" && counts.size === 0 ? undefined : { counts, mode };
+  const opts = sessionOptions(maker);
+
+  // 同じ人・同じAI設定・同じ条件なら、前の結果をそのまま返す（AIを呼ばない）
+  const keyFor = (hint: string | undefined) =>
+    cacheKey({
+      user: g.user.id,
+      ai: { provider: settings.provider, model: settings.model, baseUrl: settings.baseUrl },
+      prompt: opts.system,
+      board,
+      request: request.trim(),
+      maker,
+      mode,
+      stock: stock?.counts,
+      budgetJpy,
+      hint,
+    });
+  const tasks = hints.map((hint) => {
+    const key = keyFor(hint);
+    return { hint, key, cached: fresh ? undefined : (proposeCache.get(key) as ProposedValue | undefined) };
+  });
+
+  // Claude は応答が始まるまでキャッシュを読めないので、複数案のときは1つ目の応答が始まってから残りを送る
+  const misses = tasks.filter((t) => !t.cached);
+  const stagger = settings.provider === "anthropic" && misses.length > 1;
+  let releaseRest: () => void = () => {};
+  const firstStarted = new Promise<void>((resolve) => {
+    releaseRest = resolve;
+    if (stagger) setTimeout(resolve, STAGGER_MAX_WAIT_MS).unref?.();
+  });
+
+  const record = (r: Omit<UsageRecord, "at" | "provider" | "model" | "maker">) => {
+    const rec: UsageRecord = { at: new Date().toISOString(), provider: settings.provider, model: settings.model, maker, ...r };
+    usageStats.record(rec);
+    logUsage(rec);
+  };
+
   const runs = await Promise.allSettled(
-    hints.map(async (hint) => {
-      const input: ProposeInput = {
-        board,
-        request,
-        maker,
-        hint,
-        stock: mode === "free" && counts.size === 0 ? undefined : { counts, mode },
-        budgetJpy,
-      };
-      const session = createSession(settings, sessionOptions(maker));
-      const result = await proposeLayout(input, session, settings.model);
-      const sf = shortfall(usageOf(result.pieces), counts);
-      if (budgetJpy !== undefined && sf.totalCostJpy > budgetJpy) {
-        // 上限を入れたときは、上限内に収まった案だけを出す
-        throw new ProposeError(
-          `予算${yen(budgetJpy)}以内の案を作れませんでした（いちばん近い案で追加${yen(sf.totalCostJpy)}）。上限を上げるか、要望を小さくしてお試しください。`,
-        );
+    tasks.map(async (t) => {
+      if (t.cached) {
+        record({ attempts: 0, resultCached: true, ok: true, usage: emptyUsage() });
+        return { ...t.cached, cached: true };
       }
-      return { ...result, hint: hint ?? null, shortfall: sf, budgetJpy: budgetJpy ?? null };
+      const isFirst = t === misses[0];
+      if (stagger && !isFirst) await firstStarted;
+      const input: ProposeInput = { board, request, maker, hint: t.hint, stock, budgetJpy };
+      const session = createSession(settings, isFirst ? { ...opts, onResponseStart: releaseRest } : opts);
+      try {
+        const result = await proposeLayout(input, session, settings.model);
+        const sf = shortfall(usageOf(result.pieces), counts);
+        const overBudget = budgetJpy !== undefined && sf.totalCostJpy > budgetJpy;
+        record({ attempts: result.attempts, resultCached: false, ok: !overBudget, usage: result.usage });
+        if (budgetJpy !== undefined && overBudget) {
+          // 上限を入れたときは、上限内に収まった案だけを出す
+          throw new ProposeError(
+            `予算${yen(budgetJpy)}以内の案を作れませんでした（いちばん近い案で追加${yen(sf.totalCostJpy)}）。上限を上げるか、要望を小さくしてお試しください。`,
+          );
+        }
+        const value = { ...result, hint: t.hint ?? null, shortfall: sf, budgetJpy: budgetJpy ?? null };
+        proposeCache.set(t.key, value);
+        return { ...value, cached: false };
+      } catch (err) {
+        if (err instanceof ProposeError && err.usage) {
+          record({ attempts: 0, resultCached: false, ok: false, usage: err.usage });
+        } else if (!(err instanceof ProposeError)) {
+          record({ attempts: 0, resultCached: false, ok: false, usage: emptyUsage() });
+        }
+        throw err;
+      } finally {
+        if (isFirst) releaseRest();
+      }
     }),
   );
 
