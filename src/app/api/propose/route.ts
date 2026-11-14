@@ -1,6 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { proposeLayout, ProposeError } from "@/lib/ai";
+import { proposeLayout, ProposeError, sessionOptions } from "@/lib/ai";
+import { createSession, defaultProvider, resolveSettings, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
+import { AiSettingsSchema } from "@/lib/llm/request";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -11,6 +12,7 @@ const BodySchema = z.object({
     height: z.number().min(200).max(10000),
   }),
   request: z.string().max(2000),
+  ai: AiSettingsSchema.optional(),
 });
 
 export async function POST(req: Request) {
@@ -18,26 +20,18 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで）" }, { status: 400 });
   }
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    return Response.json({ error: "サーバーに ANTHROPIC_API_KEY が設定されていません。" }, { status: 503 });
-  }
+  const { board, request, ai } = parsed.data;
 
+  let settings: ResolvedAiSettings | undefined;
   try {
-    const result = await proposeLayout(parsed.data);
-    return Response.json(result);
+    settings = resolveSettings(ai ?? { provider: defaultProvider() });
+    const session = createSession(settings, sessionOptions());
+    const result = await proposeLayout({ board, request }, session, settings.model);
+    return Response.json({ ...result, provider: settings.provider });
   } catch (err) {
     if (err instanceof ProposeError) return Response.json({ error: err.message }, { status: 422 });
-    if (err instanceof Anthropic.RateLimitError) {
-      return Response.json({ error: "AIの利用が混み合っています。少し待ってからお試しください。" }, { status: 429 });
-    }
-    if (err instanceof Anthropic.AuthenticationError) {
-      return Response.json({ error: "APIキーが無効です。" }, { status: 500 });
-    }
-    if (err instanceof Anthropic.APIError) {
-      console.error("Claude API error", err.status, err.message);
-      return Response.json({ error: `AIの呼び出しに失敗しました（${err.status ?? "接続エラー"}）` }, { status: 502 });
-    }
-    console.error(err);
-    return Response.json({ error: "不明なエラーが発生しました。" }, { status: 500 });
+    const e = toLlmError(err, settings);
+    console.error("propose failed", settings?.provider, settings?.model, err);
+    return Response.json({ error: e.message }, { status: e.status });
   }
 }

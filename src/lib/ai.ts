@@ -1,10 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { z } from "zod";
 import type { Board } from "./geometry";
+import { sanitizeSchema } from "./llm/json";
+import type { ChatSession, SessionOptions } from "./llm/types";
 import { PARTS } from "./parts";
 import { evaluatePlan, LayoutPlanSchema, type LayoutPlan } from "./plan";
 
-export const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";
 const MAX_ATTEMPTS = 4;
 
 function catalogText(): string {
@@ -100,55 +100,70 @@ export type ProposeResult = {
 
 export class ProposeError extends Error {}
 
-export async function proposeLayout(input: ProposeInput, client = new Anthropic()): Promise<ProposeResult> {
+/** 各プロバイダに渡すシステムプロンプトと出力スキーマ */
+export function sessionOptions(): SessionOptions {
+  return {
+    system: SYSTEM,
+    jsonSchema: sanitizeSchema(z.toJSONSchema(LayoutPlanSchema)) as Record<string, unknown>,
+    schemaName: "layout_plan",
+  };
+}
+
+/**
+ * AIに部品の並びを出させ、アプリで組み立てて検査し、問題があればその内容を返して直させる。
+ * どのプロバイダでも同じ流れで、会話の保持はセッション側が行う。
+ */
+export async function proposeLayout(
+  input: ProposeInput,
+  session: ChatSession,
+  model: string,
+): Promise<ProposeResult> {
   const { board, request } = input;
-  const userText = `ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm
+  let prompt = `ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm
 要望: ${request.trim() || "ボードに収まる、楽しく運転できるレイアウト"}`;
 
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: userText }];
   let best: { plan: LayoutPlan; result: ReturnType<typeof evaluatePlan>; score: number } | null = null;
+  let attempts = 0;
+  let lastText = "";
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const response = await client.beta.messages.parse({
-      model: MODEL,
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      output_config: { effort: "high", format: betaZodOutputFormat(LayoutPlanSchema) },
-      messages,
-    });
-
-    if (response.stop_reason === "refusal") {
+  for (; attempts < MAX_ATTEMPTS; ) {
+    attempts++;
+    const answer = await session.ask(prompt);
+    lastText = answer.text;
+    if (answer.refused) {
       throw new ProposeError("AIがこの依頼への回答を控えました。要望の書き方を変えてお試しください。");
     }
-    const plan = response.parsed_output;
-    if (!plan) {
-      if (best) break;
-      throw new ProposeError(
-        response.stop_reason === "max_tokens" ? "AIの出力が長すぎて途中で切れました。" : "AIの出力を読み取れませんでした。",
-      );
+
+    const parsed = LayoutPlanSchema.safeParse(answer.json);
+    if (!parsed.success) {
+      prompt = answer.truncated
+        ? "出力が長すぎて途中で切れました。部品の並びを簡潔にして、計画全体をJSONで出し直してください。"
+        : `出力が指定のJSON形式に合いませんでした。形式を守って計画全体を出し直してください。\n${z.prettifyError(
+            parsed.error,
+          ).slice(0, 1500)}`;
+      continue;
     }
 
+    const plan = parsed.data;
     const result = evaluatePlan(plan, board);
     const score = result.problems ? result.problems.split("\n").length : 0;
     if (!best || score < best.score) best = { plan, result, score };
     if (!result.problems) break;
-
-    // 会話は追記のみ（思考ブロックも含めてそのまま返す）
-    messages.push({ role: "assistant", content: response.content });
-    messages.push({
-      role: "user",
-      content: `アプリで組み立てたところ、次の問題がありました。直した計画全体を出し直してください。\n${result.problems}`,
-    });
+    prompt = `アプリで組み立てたところ、次の問題がありました。直した計画全体を出し直してください。\n${result.problems}`;
   }
 
-  if (!best) throw new ProposeError("レイアウトを作れませんでした。");
+  if (!best) {
+    throw new ProposeError(
+      `AIの出力をレイアウトとして読み取れませんでした（${model}）。より大きなモデルを選ぶと改善することがあります。${
+        lastText ? `\n出力の先頭: ${lastText.slice(0, 200)}` : ""
+      }`,
+    );
+  }
   return {
     plan: best.plan,
     pieces: best.result.build.pieces,
-    attempts: Math.ceil(messages.length / 2),
+    attempts,
     remainingProblems: best.result.problems,
-    model: MODEL,
+    model,
   };
 }

@@ -167,3 +167,13 @@ button.danger { color: var(--danger); }
   }
   .panel.left, .panel.right { border: 0; border-top: 1px solid var(--border); }
 }
+
+/* AI設定 */
+.ai-settings { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; font-size: 13px; }
+.ai-settings summary { cursor: pointer; padding: 2px 0; }
+.ai-settings .form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.ai-settings label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.ai-settings input, .ai-settings select { width: 100%; color: var(--text); }
+.ai-settings .input-row { display: flex; gap: 6px; }
+.ai-settings .input-row input { flex: 1; min-width: 0; }
+.muted { color: var(--muted); font-weight: normal; }

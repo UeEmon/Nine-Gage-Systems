@@ -12,6 +12,7 @@ import {
   type WorldJoint,
 } from "@/lib/geometry";
 import { getPart, normDeg, PARTS } from "@/lib/parts";
+import { AiSettingsPanel, useAiSettings } from "./AiSettingsPanel";
 import { TrackPiece } from "./TrackPiece";
 
 const STORAGE_KEY = "nine-gage-layout-v1";
@@ -37,7 +38,7 @@ type Selection = { kind: "joint"; uid: string; index: number } | { kind: "piece"
 type AiState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "done"; attempts: number; remaining: string | null; model: string }
+  | { status: "done"; attempts: number; remaining: string | null; model: string; provider: string }
   | { status: "error"; message: string };
 
 export function Editor() {
@@ -47,6 +48,7 @@ export function Editor() {
   const [attachJoint, setAttachJoint] = useState(0);
   const [request, setRequest] = useState("エンドレスに待避線を1本。駅を置けるスペースもほしい");
   const [ai, setAi] = useState<AiState>({ status: "idle" });
+  const aiSettings = useAiSettings();
   const [view, setView] = useState({ x: -100, y: -100, w: 1400, h: 800 });
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<
@@ -227,13 +229,19 @@ export function Editor() {
       const res = await fetch("/api/propose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ board: layout.board, request }),
+        body: JSON.stringify({ board: layout.board, request, ai: aiSettings.settings }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setLayout((l) => ({ ...l, title: data.plan.title, description: data.plan.description, pieces: data.pieces }));
       setSelection(null);
-      setAi({ status: "done", attempts: data.attempts, remaining: data.remainingProblems, model: data.model });
+      setAi({
+        status: "done",
+        attempts: data.attempts,
+        remaining: data.remainingProblems,
+        model: data.model,
+        provider: data.provider,
+      });
     } catch (err) {
       setAi({ status: "error", message: err instanceof Error ? err.message : String(err) });
     }
@@ -454,6 +462,7 @@ export function Editor() {
       <aside className="panel right">
         <section className="ai">
           <h2>AIにレイアウトを提案してもらう</h2>
+          <AiSettingsPanel {...aiSettings} />
           <textarea
             value={request}
             onChange={(e) => setRequest(e.target.value)}
@@ -469,7 +478,7 @@ export function Editor() {
             <p className={ai.remaining ? "warn-text" : "ok-text"}>
               {ai.remaining
                 ? `${ai.attempts}回試しましたが、まだ問題が残っています。下の確認結果を見て手直ししてください。`
-                : `AIが${ai.attempts}回の検証で完成させました。`}
+                : `${ai.model} が${ai.attempts}回の検証で完成させました。`}
             </p>
           )}
           {layout.description && <p className="desc">{layout.description}</p>}
