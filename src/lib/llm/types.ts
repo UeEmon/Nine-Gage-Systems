@@ -54,6 +54,8 @@ export type TokenUsage = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** cacheWriteTokens のうち1時間保持で書き込んだ分（5分保持より書き込みが高い） */
+  cacheWrite1hTokens?: number;
 };
 
 export const emptyUsage = (): TokenUsage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
@@ -65,6 +67,9 @@ export function addUsage(a: TokenUsage, b?: TokenUsage): TokenUsage {
     outputTokens: a.outputTokens + b.outputTokens,
     cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
     cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+    ...(a.cacheWrite1hTokens || b.cacheWrite1hTokens
+      ? { cacheWrite1hTokens: (a.cacheWrite1hTokens ?? 0) + (b.cacheWrite1hTokens ?? 0) }
+      : {}),
   };
 }
 

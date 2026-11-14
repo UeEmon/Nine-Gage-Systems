@@ -415,3 +415,21 @@ button.link-button { border: none; background: none; padding: 0 0 0 4px; color: 
 }
 .drive-bar button.primary { width: auto; margin-top: 0; padding: 5px 14px; }
 .drive-next { min-width: 290px; }
+
+/* 管理画面: AIの使用量と料金 */
+.card h3 { font-size: 13px; margin: 16px 0 6px; color: var(--muted); font-weight: 600; }
+.card .row button.on { background: var(--accent-weak); border-color: var(--accent); }
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
+.stat-tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+.stat-tile strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.usage-table td, .usage-table th { white-space: nowrap; }
+.usage-bars-caption { margin: 0 0 4px; min-height: 18px; font-variant-numeric: tabular-nums; }
+.usage-bars { display: flex; align-items: flex-end; height: 120px; gap: 2px; border-bottom: 1px solid var(--border); }
+.usage-bar { flex: 1; height: 100%; display: flex; align-items: flex-end; cursor: default; outline: none; }
+.usage-bar span { display: block; width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; opacity: 0.85; }
+.usage-bar.on span, .usage-bar:focus span { opacity: 1; box-shadow: 0 0 0 2px var(--accent-weak); }
+.usage-bars-axis { display: flex; gap: 2px; font-size: 10px; color: var(--muted); }
+.usage-bars-axis span { flex: 1; white-space: nowrap; overflow: visible; }
+.usage-settings { margin-top: 12px; align-items: center; }
+.usage-settings label.inline { display: flex; flex-direction: row; align-items: center; gap: 4px; font-size: 13px; color: inherit; }
+.usage-settings input { width: 90px; }

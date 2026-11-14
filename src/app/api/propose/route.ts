@@ -3,7 +3,7 @@ import { proposeLayout, ProposeError, sessionOptions, type ProposeInput } from "
 import { usageOf } from "@/lib/bom";
 import { createSession, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
 import { emptyUsage } from "@/lib/llm/types";
-import { logUsage, usageStats, type UsageRecord } from "@/lib/server/aiUsage";
+import { logUsage, priced, usageLog, type NewUsage } from "@/lib/server/aiUsage";
 import { cacheKey, proposeCache } from "@/lib/server/proposeCache";
 import { settingsForUse } from "@/lib/server/aiSettings";
 import { requireUser } from "@/lib/server/auth";
@@ -124,16 +124,24 @@ export async function POST(req: Request) {
     if (stagger) setTimeout(resolve, STAGGER_MAX_WAIT_MS).unref?.();
   });
 
-  const record = (r: Omit<UsageRecord, "at" | "provider" | "model" | "maker">) => {
-    const rec: UsageRecord = { at: new Date().toISOString(), provider: settings.provider, model: settings.model, maker, ...r };
-    usageStats.record(rec);
+  const record = (r: Pick<NewUsage, "attempts" | "resultCached" | "ok" | "usage">) => {
+    const rec = priced({
+      userId: g.user.id,
+      username: g.user.username,
+      provider: settings.provider,
+      model: settings.model,
+      maker,
+      feature: mode,
+      ...r,
+    });
     logUsage(rec);
+    return usageLog.append(rec);
   };
 
   const runs = await Promise.allSettled(
     tasks.map(async (t) => {
       if (t.cached) {
-        record({ attempts: 0, resultCached: true, ok: true, usage: emptyUsage() });
+        await record({ attempts: 0, resultCached: true, ok: true, usage: emptyUsage() });
         return { ...t.cached, cached: true };
       }
       const isFirst = t === misses[0];
@@ -144,7 +152,7 @@ export async function POST(req: Request) {
         const result = await proposeLayout(input, session, settings.model);
         const sf = shortfall(usageOf(result.pieces), counts);
         const overBudget = budgetJpy !== undefined && sf.totalCostJpy > budgetJpy;
-        record({ attempts: result.attempts, resultCached: false, ok: !overBudget, usage: result.usage });
+        await record({ attempts: result.attempts, resultCached: false, ok: !overBudget, usage: result.usage });
         if (budgetJpy !== undefined && overBudget) {
           // 上限を入れたときは、上限内に収まった案だけを出す
           throw new ProposeError(
@@ -156,9 +164,9 @@ export async function POST(req: Request) {
         return { ...value, cached: false };
       } catch (err) {
         if (err instanceof ProposeError && err.usage) {
-          record({ attempts: 0, resultCached: false, ok: false, usage: err.usage });
+          await record({ attempts: 0, resultCached: false, ok: false, usage: err.usage });
         } else if (!(err instanceof ProposeError)) {
-          record({ attempts: 0, resultCached: false, ok: false, usage: emptyUsage() });
+          await record({ attempts: 0, resultCached: false, ok: false, usage: emptyUsage() });
         }
         throw err;
       } finally {
