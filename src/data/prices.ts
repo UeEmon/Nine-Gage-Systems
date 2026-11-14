@@ -55,3 +55,31 @@ export const PRICES: Record<string, number> = {
   "tomix:1811": 1540, "tomix:1812": 1760, "tomix:1819": 7084, "tomix:1881": 1760, "tomix:1882": 1980,
   "tomix:1883": 2420,
 };
+
+// ---- 高架・鉄橋・橋脚（2026-11-14 取得） ----
+//   KATO: https://unitrack.katomodels.com/products/line_single/elevated_line , .../iron_bridge
+//         複線高架橋脚 23-020 は https://www.unitrack-kato.com/line-up-viaduct-pier-jp
+//   TOMIX: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr （レール関連製品）
+Object.assign(PRICES, {
+  // KATO 高架線路
+  "kato:20-400": 1210, "kato:20-410": 1155, "kato:20-420": 1100, "kato:20-440": 1045,
+  "kato:20-505": 1320, "kato:20-510": 1375, "kato:20-520": 1430, "kato:20-530": 1485, "kato:20-531": 1210,
+  "kato:20-540": 1265, "kato:20-401": 1650, "kato:20-411": 1540, "kato:20-422": 1430, "kato:20-544": 2090,
+  "kato:20-545": 1650,
+  // KATO 鉄橋
+  "kato:20-430": 1320, "kato:20-431": 1320, "kato:20-432": 1320, "kato:20-428": 1430, "kato:20-429": 1100,
+  "kato:20-450": 990, "kato:20-451": 990, "kato:20-452": 990, "kato:20-449": 1210,
+  "kato:20-460": 880, "kato:20-461": 880, "kato:20-462": 880, "kato:20-459": 1100,
+  "kato:20-465": 1100, "kato:20-466": 1100, "kato:20-467": 1100, "kato:20-468": 1210,
+  "kato:20-470": 1100, "kato:20-471": 1100, "kato:20-472": 1100, "kato:20-473": 1210,
+  "kato:20-455": 1980, "kato:20-456": 1980, "kato:20-457": 1980, "kato:20-436": 1980, "kato:20-439": 1980,
+  // KATO 橋脚
+  "kato:23-017-1": 1210, "kato:23-015-1": 1760, "kato:23-016-1": 1320, "kato:23-047": 1210, "kato:23-069": 1650,
+  "kato:23-019": 1540, "kato:23-020": 1430, "kato:23-048": 3850, "kato:23-049": 2200,
+  // TOMIX 鉄橋
+  "tomix:3030": 1452, "tomix:3031": 1452, "tomix:3033": 1452, "tomix:3266": 2288, "tomix:3267": 2288,
+  "tomix:3255": 2112, "tomix:3256": 2112,
+  // TOMIX 橋脚
+  "tomix:3235": 1276, "tomix:3236": 1276, "tomix:3234": 2530, "tomix:3048": 1210, "tomix:3041": 1210,
+  "tomix:3044": 3036,
+});

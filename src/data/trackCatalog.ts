@@ -8,18 +8,21 @@
 //     複線: https://unitrack.katomodels.com/products/line_single/double_track_line
 //     コンパクト: https://unitrack.katomodels.com/products/line_single/compact
 //     車止め: https://unitrack.katomodels.com/products/line_single/car_stop
+//     高架線路: https://unitrack.katomodels.com/products/line_single/elevated_line
+//     鉄橋: https://unitrack.katomodels.com/products/line_single/iron_bridge
 //   TOMIX ファイントラック
 //     基本レール: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi
 //     ポイント: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_point
 //     特殊レール: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_spc
 //     複線: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_double
 //     ミニカーブ: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_mini
+//     レール関連製品（鉄橋・橋脚）: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr
 //
 // 品番・製品名・入数は一覧ページの記載どおり。直線の長さ・曲線の半径と角度は製品名・掲載値どおり。
 // 一覧ページに数値がない寸法（ポイントの直進長、交差の長さなど）は、公式の製品ページ・
 // KATO USA の配線プラン資料・販売店の製品仕様で確認し、geometryStatus と geometrySources に
 // 出典を残している。確認できなかった値だけ geometryNote に「推定」と書いている。
-// メーカー希望小売価格は src/data/prices.ts。
+// メーカー希望小売価格は src/data/prices.ts。橋脚と高さの規格は src/data/piers.ts。
 
 import { shape, type Route } from "../lib/shapes";
 
@@ -34,7 +37,7 @@ export type CatalogProduct = {
   perPack: number | null;
 };
 
-export type PartCategory = "straight" | "curve" | "turnout" | "crossing" | "double" | "bumper";
+export type PartCategory = "straight" | "curve" | "turnout" | "crossing" | "double" | "bridge" | "bumper";
 
 export type CatalogEntry = {
   /** アプリ内の部品ID（AIへの指示にも使う） */
@@ -54,6 +57,13 @@ export type CatalogEntry = {
   products: CatalogProduct[];
   /** 右向きの品番（左右で品番が違うもの） */
   productsRight?: CatalogProduct[];
+  /**
+   * 高架（橋脚の上）に置くときの品番。KATOは高架線路、TOMIXは高架橋付PCレール。
+   * 地上用の線路は橋脚に載らないので、高さのある線路はこちらで数える。
+   */
+  elevatedProducts?: CatalogProduct[];
+  /** 鉄橋など、レールが別売りで一緒に買う必要がある部品（TOMIXの鉄橋） */
+  requires?: { id: string; count: number }[];
   geometryNote?: string;
   /**
    * 寸法の確認状況。省略時は "official"（公式一覧の製品名・掲載値どおり）。
@@ -77,6 +87,8 @@ export const CATALOG_SOURCES: Record<CatalogMaker, { label: string; urls: string
       "https://unitrack.katomodels.com/products/line_single/double_track_line",
       "https://unitrack.katomodels.com/products/line_single/compact",
       "https://unitrack.katomodels.com/products/line_single/car_stop",
+      "https://unitrack.katomodels.com/products/line_single/elevated_line",
+      "https://unitrack.katomodels.com/products/line_single/iron_bridge",
     ],
   },
   tomix: {
@@ -88,6 +100,7 @@ export const CATALOG_SOURCES: Record<CatalogMaker, { label: string; urls: string
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_spc",
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_double",
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_mini",
+      "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr",
     ],
   },
 };
@@ -297,10 +310,10 @@ const TOMIX_SPACING = 37; // 公式「標準複線間隔37mm」（複線レー�
 
 const TOMIX: CatalogEntry[] = [
   // 直線
-  st("S280", 280, [p("1802", "ストレートレールS280(F)", 4), p("1092", "ストレートレール S280(F)", 10), p("1012", "ストレートPCレール S280-PC(F)", 4), p("1093", "ストレートPCレール S280-PC(F)", 12), p("1822", "高架橋付PCレールHS280-PC(F)", 4)]),
-  st("S158.5", 158.5, [p("1806", "ストレートレールS158.5(F)", 4), p("1016", "ストレートPCレール S158.5-PC(F)", 4), p("1826", "高架橋付PCレールHS158．5-PC(F)", 4)]),
-  st("S140", 140, [p("1801", "ストレートレールS140(F)", 4), p("1011", "ストレートPCレール S140-PC(F)", 4), p("1821", "高架橋付PCレールHS140-PC(F)", 4)]),
-  st("S99", 99, [p("1805", "ストレートレールS99(F)", 4), p("1015", "ストレートPCレール S99-PC(F)", 4), p("1825", "高架橋付PCレールHS99-PC(F)", 4)]),
+  st("S280", 280, [p("1802", "ストレートレールS280(F)", 4), p("1092", "ストレートレール S280(F)", 10), p("1012", "ストレートPCレール S280-PC(F)", 4), p("1093", "ストレートPCレール S280-PC(F)", 12)]),
+  st("S158.5", 158.5, [p("1806", "ストレートレールS158.5(F)", 4), p("1016", "ストレートPCレール S158.5-PC(F)", 4)]),
+  st("S140", 140, [p("1801", "ストレートレールS140(F)", 4), p("1011", "ストレートPCレール S140-PC(F)", 4)]),
+  st("S99", 99, [p("1805", "ストレートレールS99(F)", 4), p("1015", "ストレートPCレール S99-PC(F)", 4)]),
   st("S72.5", 72.5, [p("1803", "ストレートレールS72.5(F)", 4), p("1013", "ストレートPCレール S72.5-PC(F)", 4)]),
   st("S70", 70, [p("1804", "ストレートレールS70(F)", 4), p("1014", "ストレートPCレール S70-PC(F)", 4)]),
   st("S33", 33, [p("1099", "端数レールS18.5(F)S33(F)(各2本セット)", 2)]),
@@ -313,17 +326,17 @@ const TOMIX: CatalogEntry[] = [
   cv("C140-60", 140, 60, [p("1112", "ミニカーブレールC140(F)(30゜60゜各2)", 2)]),
   cv("C177-30", 177, 30, [p("1113", "ミニカーブレールC177(F)(30゜60゜各2)", 2)]),
   cv("C177-60", 177, 60, [p("1113", "ミニカーブレールC177(F)(30゜60゜各2)", 2)]),
-  cv("C243-45", 243, 45, [p("1855", "カーブレールC243-45(F)", 4), p("1195", "カーブPCレール C243-45-PC(F)", 4), p("1873", "高架橋付PCレールHC243-45-PC(F)", 4)]),
-  cv("C280-45", 280, 45, [p("1851", "カーブレールC280-45(F)", 4), p("1191", "カーブPCレール C280-45-PC(F)", 4), p("1871", "高架橋付PCレールHC280-45-PC(F)", 4)]),
-  cv("C317-45", 317, 45, [p("1852", "カーブレールC317-45(F)", 4), p("1192", "カーブPCレール C317-45-PC(F)", 4), p("1872", "高架橋付PCレールHC317-45-PC(F)", 4)]),
-  cv("C354-45", 354, 45, [p("1856", "カーブレールC354-45(F)", 4), p("1196", "カーブPCレール C354-45-PC(F)", 4), p("1874", "高架橋付PCレールHC354-45-PC(F)", 4)]),
-  cv("C391-45", 391, 45, [p("1858", "カーブレールC391-45(F)", 4), p("1198", "カーブPCレール C391-45-PC(F)", 4), p("1875", "高架橋付PCレールHC391-45-PC(F)", 4)]),
+  cv("C243-45", 243, 45, [p("1855", "カーブレールC243-45(F)", 4), p("1195", "カーブPCレール C243-45-PC(F)", 4)]),
+  cv("C280-45", 280, 45, [p("1851", "カーブレールC280-45(F)", 4), p("1191", "カーブPCレール C280-45-PC(F)", 4)]),
+  cv("C317-45", 317, 45, [p("1852", "カーブレールC317-45(F)", 4), p("1192", "カーブPCレール C317-45-PC(F)", 4)]),
+  cv("C354-45", 354, 45, [p("1856", "カーブレールC354-45(F)", 4), p("1196", "カーブPCレール C354-45-PC(F)", 4)]),
+  cv("C391-45", 391, 45, [p("1858", "カーブレールC391-45(F)", 4), p("1198", "カーブPCレール C391-45-PC(F)", 4)]),
   cv("C243-15", 243, 15, [p("1863", "カーブPCレール C243-15-PC(F)", 4)]),
   cv("C280-15", 280, 15, [p("1854", "カーブレールC280-15(F)", 4), p("1194", "カーブPCレール C280-15-PC(F)", 4)]),
   cv("C317-15", 317, 15, [p("1197", "カーブPCレール C317-15-PC(F)", 4)]),
   cv("C354-15", 354, 15, [p("1864", "カーブPCレール C354-15-PC(F)", 4)]),
   cv("C391-15", 391, 15, [p("1865", "カーブPCレール C391-15-PC(F)", 4)]),
-  cv("C541-15", 541, 15, [p("1853", "カーブレールC541-15(F)", 4), p("1193", "カーブPCレール C541-15-PC(F)", 4), p("1876", "高架橋付PCレールHC541-15-PC(F)", 4)]),
+  cv("C541-15", 541, 15, [p("1853", "カーブレールC541-15(F)", 4), p("1193", "カーブPCレール C541-15-PC(F)", 4)]),
   cv("C605-10", 605, 10, [p("1870", "カーブレールC605-10(F)", 4), p("1190", "カーブPCレール C605-10-PC(F)", 4)]),
   // ポイント
   {
@@ -445,7 +458,123 @@ const TOMIX: CatalogEntry[] = [
   },
 ];
 
-export const CATALOG: Record<CatalogMaker, CatalogEntry[]> = { kato: KATO, tomix: TOMIX };
+// ---- 高架用の品番 ----
+// KATO: 公式「高架線路」一覧（入数は KATO USA・販売店の記載で2本入りを確認）。
+// TOMIX: 公式の基本レール一覧の「高架橋付PCレール」。
+const ELEVATED: Record<CatalogMaker, Record<string, CatalogProduct[]>> = {
+  kato: {
+    S248: [p("20-400", "単線高架線路 直線 248mm", 2)],
+    S186: [p("20-410", "単線高架線路 直線 186mm", 2)],
+    S124: [p("20-420", "単線高架線路 直線 124mm", 2)],
+    S62: [p("20-440", "単線高架線路 直線 62mm", 2)],
+    "R249-45": [p("20-505", "単線高架線路 曲線R249-45", 2)],
+    "R282-45": [p("20-510", "単線高架線路 曲線R282-45", 2)],
+    "R315-45": [p("20-520", "単線高架線路 曲線R315-45", 2)],
+    "R348-45": [p("20-530", "単線高架線路 曲線R348-45", 2)],
+    "R348-30": [p("20-531", "単線高架線路 曲線R348-30", 2)],
+    "R381-30": [p("20-540", "単線高架線路 曲線R381-30", 2)],
+    DS248: [p("20-401", "複線高架直線線路 248mm", 2)],
+    DS186: [p("20-411", "複線高架直線線路 186mm", 2)],
+    DS124: [p("20-422", "複線高架直線線路 124mm", 2)],
+    "DR414-45": [p("20-544", "複線高架曲線414/381-45", 2)],
+    "DA414-22.5": [p("20-545", "複線高架アプローチ線路R414", 2)],
+  },
+  tomix: {
+    S280: [p("1822", "高架橋付PCレールHS280-PC(F)", 4)],
+    "S158.5": [p("1826", "高架橋付PCレールHS158．5-PC(F)", 4)],
+    S140: [p("1821", "高架橋付PCレールHS140-PC(F)", 4)],
+    S99: [p("1825", "高架橋付PCレールHS99-PC(F)", 4)],
+    "C243-45": [p("1873", "高架橋付PCレールHC243-45-PC(F)", 4)],
+    "C280-45": [p("1871", "高架橋付PCレールHC280-45-PC(F)", 4)],
+    "C317-45": [p("1872", "高架橋付PCレールHC317-45-PC(F)", 4)],
+    "C354-45": [p("1874", "高架橋付PCレールHC354-45-PC(F)", 4)],
+    "C391-45": [p("1875", "高架橋付PCレールHC391-45-PC(F)", 4)],
+    "C541-15": [p("1876", "高架橋付PCレールHC541-15-PC(F)", 4)],
+  },
+};
+
+// ---- 鉄橋 ----
+const SRC_BRIDGE = {
+  kato: "https://unitrack.katomodels.com/products/line_single/iron_bridge",
+  traintrax: "https://traintrax.co.uk/20-400-248mm-single-track-straight-viaduct-2pcs",
+};
+
+const bridge = (
+  id: string,
+  label: string,
+  routes: Route[],
+  products: CatalogProduct[],
+  extra: Partial<CatalogEntry> = {},
+): CatalogEntry => ({ id, category: "bridge", label, routes, handed: false, products, ...extra });
+
+const KATO_BRIDGES: CatalogEntry[] = [
+  bridge("TRUSS248", "単線トラス鉄橋 248mm", shape.straight(248), [
+    p("20-430", "単線トラス鉄橋(朱)", 1), p("20-431", "単線トラス鉄橋(緑)", 1), p("20-432", "単線トラス鉄橋(灰)", 1),
+    p("20-428", "単線トラス鉄橋(ライトグリーン)", 1), p("20-429", "単線トラス鉄橋(赤茶)", 1),
+  ], { geometrySources: [SRC_BRIDGE.kato] }),
+  bridge("PG186", "単線プレートガーダー鉄橋 186mm", shape.straight(186), [
+    p("20-450", "単線プレートガーダー鉄橋(朱)", 1), p("20-451", "単線プレートガーダー鉄橋(緑)", 1),
+    p("20-452", "単線プレートガーダー鉄橋(灰)", 1), p("20-449", "単線プレートガーダー鉄橋(ライトグリーン)", 1),
+  ], { geometrySources: [SRC_BRIDGE.kato] }),
+  bridge("DG124", "単線デッキガーダー鉄橋 124mm", shape.straight(124), [
+    p("20-460", "単線デッキガーダー鉄橋124 朱", 1), p("20-461", "単線デッキガーダー鉄橋124 緑", 1),
+    p("20-462", "単線デッキガーダー鉄橋124 灰", 1), p("20-459", "単線デッキガーダー鉄橋(ライトグリーン)", 1),
+  ], { geometrySources: [SRC_BRIDGE.kato] }),
+  bridge("DGC448-15", "デッキガーダー曲線鉄橋 R448-15°", shape.curve(448, 15), [
+    p("20-465", "単線デッキガーダー曲線鉄橋 朱", 1), p("20-466", "単線デッキガーダー曲線鉄橋 緑", 1),
+    p("20-467", "単線デッキガーダー曲線鉄橋 灰", 1), p("20-468", "単線デッキガーダー曲線鉄橋R448-15°(ライトグリーン)", 1),
+  ], { handed: true, geometryNote: "R448とR481を並べると複線の曲線鉄橋になる（中心間隔33mm）", geometrySources: [SRC_BRIDGE.kato] }),
+  bridge("DGC481-15", "デッキガーダー曲線鉄橋 R481-15°", shape.curve(481, 15), [
+    p("20-470", "単線デッキガーダー曲線鉄橋 R481-15°(朱)", 1), p("20-471", "単線デッキガーダー曲線鉄橋 R481-15°(緑)", 1),
+    p("20-472", "単線デッキガーダー曲線鉄橋 R481-15°(灰)", 1), p("20-473", "単線デッキガーダー曲線鉄橋R481-15°(ライトグリーン)", 1),
+  ], { handed: true, geometrySources: [SRC_BRIDGE.kato] }),
+  bridge("DPG186", "複線プレートガーダー鉄橋 186mm", shape.doubleStraight(186, KATO_SPACING), [
+    p("20-455", "複線プレートガーダー鉄橋Lブルー", 1), p("20-456", "複線プレートガーダー鉄橋LG", 1),
+    p("20-457", "複線プレートガーダー鉄橋グレー", 1),
+  ], { jointHelp: DOUBLE_HELP, geometryNote: "線路中心間隔33mm（KATOの複線規格）", geometrySources: [SRC_BRIDGE.kato] }),
+  bridge("DTRUSS248", "複線トラス鉄橋 248mm", shape.doubleStraight(248, KATO_SPACING), [
+    p("20-436", "複線トラス鉄橋(ライトブルー)", 1), p("20-439", "複線トラス鉄橋(ライトグリーン)", 1),
+  ], {
+    jointHelp: DOUBLE_HELP,
+    geometryNote: `長さ248mmは公式一覧。線路中心間隔33mmは${EST}`,
+    geometryStatus: "estimated", geometrySources: [SRC_BRIDGE.kato],
+  }),
+];
+
+// TOMIX の鉄橋はレールが別売り（製品ページの「セット内容」にレールがない）。同じ長さのレールを一緒に数える
+const TOMIX_BRIDGES: CatalogEntry[] = [
+  bridge("TRUSS280", "単線トラス鉄橋 280mm", shape.straight(280), [
+    p("3030", "単線トラス鉄橋(F)(青)(PC橋脚・2本付)", 1), p("3031", "単線トラス鉄橋(F)(赤)(レンガ橋脚・2本付)", 1),
+    p("3033", "単線トラス鉄橋(F)(深緑)(PC橋脚・2本付)", 1),
+  ], {
+    requires: [{ id: "S280", count: 1 }],
+    geometryNote: "長さ280mm（S280と同じ）。レールS280は別売りなので部品リストに一緒に入る。付属の橋脚2本は数えていない",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(3030)],
+  }),
+  bridge("DTRUSS280", "上路式単線トラス鉄橋 280mm", shape.straight(280), [
+    p("3266", "上路式単線トラス鉄橋S280(F)(赤)(レンガ橋脚・2本付)", 1), p("3267", "上路式単線トラス鉄橋S280(F)(深緑)(PC橋脚・2本付)", 1),
+  ], {
+    requires: [{ id: "S280", count: 1 }],
+    geometryNote: "長さ280mm（公式製品ページ）。レールS280は別売り。付属の橋脚2本は数えていない",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(3266)],
+  }),
+  bridge("DG140", "上路式デッキガーダー鉄橋 140mm", shape.straight(140), [
+    p("3255", "上路式デッキガーダー鉄橋S140(F)(赤)(レンガ橋脚・2本付)", 1), p("3256", "上路式デッキガーダー鉄橋S140(F)(深緑)(PC橋脚・2本付)", 1),
+  ], {
+    requires: [{ id: "S140", count: 1 }],
+    geometryNote: "長さ140mm（S140と同じ、公式製品ページ）。レールS140は別売り。付属の橋脚2本は数えていない",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(3255)],
+  }),
+];
+
+function withElevated(maker: CatalogMaker, entries: CatalogEntry[]): CatalogEntry[] {
+  return entries.map((e) => (ELEVATED[maker][e.id] ? { ...e, elevatedProducts: ELEVATED[maker][e.id] } : e));
+}
+
+export const CATALOG: Record<CatalogMaker, CatalogEntry[]> = {
+  kato: withElevated("kato", [...KATO, ...KATO_BRIDGES]),
+  tomix: withElevated("tomix", [...TOMIX, ...TOMIX_BRIDGES]),
+};
 
 /** 一覧に掲載されているが、配置計算の対象にしていない製品（理由つき） */
 export const NOT_MODELED: { maker: CatalogMaker; code: string; name: string; reason: string }[] = [

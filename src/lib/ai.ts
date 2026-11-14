@@ -6,7 +6,9 @@ import { MAKER_INFO, partsFor, type Maker } from "./parts";
 import { evaluatePlan, planSchemaFor, type LayoutPlan } from "./plan";
 import { usageOf } from "./bom";
 import { getPart } from "./parts";
-import { shortfall, stockKeyOf, stockLabel, unitPriceOf } from "./productDb";
+import { shortfall, stockKeyName, stockKeyOf, stockLabel, unitPriceOf } from "./productDb";
+import { isPierKey } from "./elevation";
+import { PIER_SYSTEMS } from "../data/piers";
 
 const MAX_ATTEMPTS = 4;
 
@@ -17,16 +19,23 @@ function catalogText(maker: Maker): string {
         .map((j, i) => `j${i}=(${j.x.toFixed(1)}, ${j.y.toFixed(1)}, 外向き${j.deg.toFixed(1)}°)`)
         .join(" ");
       const lr = p.handed ? "左右あり" : "左右なし";
-      return `- ${p.id}: ${p.description}（${lr}）${p.jointHelp ? `。${p.jointHelp}` : ""}。L向きのローカル座標: ${ends}`;
+      const extra = [p.elevatedProducts ? "高架用の品番あり" : "", p.rampEnds ? "" : "勾配不可"].filter(Boolean).join("・");
+      return `- ${p.id}: ${p.description}（${lr}${extra ? `・${extra}` : ""}）${p.jointHelp ? `。${p.jointHelp}` : ""}。L向きのローカル座標: ${ends}`;
     })
     .join("\n");
 }
 
 type PlanPiece = LayoutPlan["segments"][number]["pieces"][number];
-const pc = (part: string, dir: "L" | "R" = "L", enter = 0, exit = 1): PlanPiece => ({ part, dir, enter, exit });
+const pc = (part: string, dir: "L" | "R" = "L", enter = 0, exit = 1, height: number | null = 0): PlanPiece => ({
+  part,
+  dir,
+  enter,
+  exit,
+  height,
+});
 
 /** メーカーごとの例と設計のコツ（例はテストで閉じることを確認済み） */
-const MAKER_GUIDE: Record<Maker, { example: LayoutPlan; tips: string }> = {
+const MAKER_GUIDE: Record<Maker, { example: LayoutPlan; tips: string; overpass?: LayoutPlan }> = {
   kato: {
     example: {
       title: "待避線付きエンドレス",
@@ -66,10 +75,35 @@ const MAKER_GUIDE: Record<Maker, { example: LayoutPlan; tips: string }> = {
         { from: { segment: 0, piece: 0, joint: 2 }, pieces: [pc("C541-15", "R"), pc("C541-15", "R")] },
       ],
     },
+    overpass: (() => {
+      // 8の字の立体交差。対角線の長さ（中心の直線S280＋両側のS140）が 2×R(280) と同じなので閉じる
+      const lobe = (d: "L" | "R") => [pc("S140", d, 0, 1, null), ...Array(6).fill(pc("C280-45", d, 0, 1, null)), pc("S140", d, 0, 1, null)];
+      return {
+        title: "8の字の立体交差",
+        description: "C280の輪を2つつないだ8の字で、中央は高架(55mm)が地上の線路をまたぐ。両側の輪が勾配区間（約3.4%）",
+        start: { x: 701, y: 499, heading: -45 },
+        segments: [{ from: null, pieces: [pc("S280", "L", 0, 1, 55), ...lobe("R"), pc("S280", "L", 0, 1, 0), ...lobe("L")] }],
+      };
+    })(),
     tips: `- ポイントPL541-15の分岐の後に逆向きのC541-15を1本置くと、本線と平行（中心間隔約37mm）に戻ります。待避線の両端をこの形にすると、本線側には直線を約280mm（S280）入れると長さが合います。
 - C280の楕円は線路中心で高さ約560mm。`,
   },
 };
+
+/** 高架・立体交差の説明（メーカーごとの規格） */
+function elevationGuide(maker: Maker): string {
+  const sys = PIER_SYSTEMS[maker];
+  const minRamp = Math.ceil((sys.standardHeight / sys.maxGradePct) * 100);
+  return `## 高さ（高架・立体交差）
+- 各部品の height は線路面の高さ(mm)で、0=地上です。高架の標準は ${sys.standardHeight}mm（${sys.note}）。高架の部品はすべて同じ height にそろえます。
+- height=null の部品は勾配区間です。前後の高さの決まった部品の間を、長さに比例して自動で上り下りします。勾配にできるのは直線・曲線・複線・鉄橋だけで、ポイント・交差・車止めは平らな高さ（数値）にします。
+- 勾配は${sys.maxGradePct}%以内（${sys.gradeRunMm}mm進むごとに${sys.gradeStepMm}mmが目安）。0mmから${sys.standardHeight}mmへ上るには、勾配区間（height=null の部品の長さの合計）が${minRamp}mm以上必要です。
+- 高さの違う部品を直接つなぐと段差になります。高さを変えるところには必ず勾配区間を入れます。
+- 線路どうしを高さの差${sys.clearance}mm以上で交差させると立体交差になり、平面で重なっていてもかまいません。差が足りないと重なりとして指摘されます。
+- 高架の線路はジョイントごとに橋脚が立ちます。下の線路の真上に上の線路のジョイントが来ないようにしてください（橋脚が下の線路に当たる）。
+- 鉄橋の部品は、高架の途中や立体交差で上を通る線路に使えます。
+- 高さのある線路は高架用の品番（${maker === "kato" ? "高架線路" : "高架橋付PCレール"}）と橋脚の費用がかかります。高架用の品番がない部品（ポイントなど）を高架に置くと、台の自作が必要になるので避けてください。`;
+}
 
 export function systemPrompt(maker: Maker): string {
   const info = MAKER_INFO[maker];
@@ -84,7 +118,7 @@ export function systemPrompt(maker: Maker): string {
 - start: 区間0の最初の部品をつなぐ位置(mm)と進行方向(度)。
 - segments: 区間の配列。区間0は from=null で start から始まり、部品を順に前の部品の出口へつなぎます。
 - 区間1以降は from で既存の部品のジョイント（主にポイントの分岐側 j2）から伸ばします。from が指す区間は自分より前の番号にしてください。
-- 各部品: part=部品ID, dir=L/R, enter=前の部品につなぐジョイント, exit=次へ進むジョイント。
+- 各部品: part=部品ID, dir=L/R, enter=前の部品につなぐジョイント, exit=次へ進むジョイント, height=線路面の高さ(mm。0=地上、null=勾配)。
 
 ## 座標と向き
 - ボードの左上が(0,0)。xは右、yは下が正。単位はmm。
@@ -97,6 +131,8 @@ export function systemPrompt(maker: Maker): string {
 - 行き止まりの線路は最後に車止め ${bumper} を置きます（exit は 0）。
 - すべての端はどこかにつながるか、車止めで終わる必要があります。
 
+${elevationGuide(maker)}
+
 ## 部品カタログ（${info.label} ${info.system}。この一覧にない部品は使えません）
 ローカル座標は j0 を原点・進行方向を+xとしたときの各ジョイントの位置と外向きの角度です（L向き。R向きは y と角度の符号が逆）。
 ${catalogText(maker)}
@@ -106,17 +142,22 @@ ${catalogText(maker)}
 - 円の直径はおよそ 2×R。ボード端から線路中心まで25mm以上空けるとはみ出しません。
 ${guide.tips}
 - 平行な複線は中心間隔${info.trackSpacing}mmが${info.label}の標準です（重なり判定は22mm未満）。
-- 線路を交差させるときは、交差・ダブルスリップ部品を使ってください（部品同士を重ねるのは不可）。立体交差は使わない計画にしてください。
+- 平面で線路を交差させるときは、交差・ダブルスリップ部品を使ってください（同じ高さで部品同士を重ねるのは不可）。立体交差は下の「高さ」を参照。
 - ボードからはみ出さないこと。曲線の外側にも余裕を取ること。
 
 ## 例（ボード1400×800mm）
 ${JSON.stringify(guide.example)}
-
+${guide.overpass ? `\n## 立体交差の例（ボード1600×800mm）\n${JSON.stringify(guide.overpass)}\n` : ""}
 description には、どんな運転ができるか（周回、待避、行き違い、入換など）と工夫した点を日本語で2〜4文で書いてください。`;
 }
 
 export function exampleFor(maker: Maker): LayoutPlan {
   return MAKER_GUIDE[maker].example;
+}
+
+/** 立体交差の例（ある会社のみ） */
+export function overpassExampleFor(maker: Maker): LayoutPlan | undefined {
+  return MAKER_GUIDE[maker].overpass;
 }
 
 export type ProposeInput = {
@@ -147,8 +188,11 @@ function priceText(maker: Maker): string {
     const prices = keys.map((k) => unitPriceOf(k));
     if (prices.every((p) => p === null)) continue;
     const p = prices.find((x) => x !== null)!;
-    lines.push(`- ${part.id}: 約${yenText(p)}/本`);
+    const v = part.elevatedProducts ? unitPriceOf(stockKeyOf(part, false, true)) : null;
+    lines.push(`- ${part.id}: 約${yenText(p)}/本${v !== null ? `（高架用 約${yenText(v)}/本）` : ""}`);
   }
+  const pier = unitPriceOf(`${maker}:pier:S:${PIER_SYSTEMS[maker].standardHeight}`);
+  if (pier !== null) lines.push(`- 橋脚（高架の線路1本あたり約1本）: 約${yenText(pier)}/本。勾配用の橋脚はセットで買う`);
   return lines.join("\n");
 }
 
@@ -172,8 +216,10 @@ function overBudget(pieces: Parameters<typeof usageOf>[0], input: ProposeInput):
 
 /** AIに見せる部品名（左右で品番が違う部品は dir も書く） */
 function stockName(stockKey: string): string {
-  const { partKey, right } = stockLabel(stockKey);
+  if (isPierKey(stockKey)) return stockKeyName(stockKey);
+  const { partKey, right, elevated } = stockLabel(stockKey);
   const part = getPart(partKey);
+  if (elevated) return `${part.id}（高架用。height>0 で置いたとき）`;
   if (part.productsRight) return `${part.id} dir=${right ? "R" : "L"}`;
   return part.handed ? `${part.id}（dir=L/Rどちらでも）` : part.id;
 }

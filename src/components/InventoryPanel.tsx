@@ -1,10 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CATEGORY_LABELS, type Maker } from "@/lib/parts";
-import { findProduct, inventoryValue, productsForMaker, stockFromInventory, type Inventory } from "@/lib/productDb";
+import type { Maker } from "@/lib/parts";
+import {
+  findProduct,
+  inventoryValue,
+  PRODUCT_CATEGORY_LABELS,
+  productsForMaker,
+  stockFromInventory,
+  type Inventory,
+  type ProductCategory,
+} from "@/lib/productDb";
 import type { BomRow } from "@/lib/bom";
-import type { PartCategory } from "@/data/trackCatalog";
 
 export const yen = (n: number) => `${n.toLocaleString("ja-JP")}円`;
 
@@ -42,7 +49,8 @@ export function InventoryPanel({ maker, inventory, setInventory, bom }: Props) {
     setInventory((inv) => {
       const next = { ...inv };
       for (const r of bom) {
-        if (!r.product.code) continue;
+        // 橋脚は勾配橋脚セットなどまとめ買いが多いので、品番を選んで登録してもらう
+        if (!r.product.code || r.kind === "pier") continue;
         const key = `${maker}:${r.product.code}`;
         const per = r.product.perPack ?? 1;
         next[key] = (next[key] ?? 0) + Math.ceil(r.count / per);
@@ -50,10 +58,10 @@ export function InventoryPanel({ maker, inventory, setInventory, bom }: Props) {
       return next;
     });
 
-  const groups = (Object.keys(CATEGORY_LABELS) as PartCategory[]).map((c) => ({
+  const groups = (Object.keys(PRODUCT_CATEGORY_LABELS) as ProductCategory[]).map((c) => ({
     c,
     items: products.filter((p) => p.category === c),
-  }));
+  })).filter((g) => g.items.length > 0);
 
   return (
     <details className="ai-settings inventory" open={entries.length > 0 || undefined}>
@@ -69,7 +77,7 @@ export function InventoryPanel({ maker, inventory, setInventory, bom }: Props) {
           <select value={code} onChange={(e) => setCode(e.target.value)} aria-label="追加する品番">
             <option value="">選んでください</option>
             {groups.map((g) => (
-              <optgroup key={g.c} label={CATEGORY_LABELS[g.c]}>
+              <optgroup key={g.c} label={PRODUCT_CATEGORY_LABELS[g.c]}>
                 {g.items.map((p) => (
                   <option key={p.code} value={p.code}>
                     {p.code} {p.name}
