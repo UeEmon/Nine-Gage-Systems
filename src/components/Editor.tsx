@@ -11,13 +11,18 @@ import {
   type Piece,
   type WorldJoint,
 } from "@/lib/geometry";
-import { billOfMaterials } from "@/lib/bom";
+import { billOfMaterials, usageOf } from "@/lib/bom";
+import { shortfall, stockFromInventory, type Inventory, type Shortfall } from "@/lib/productDb";
+import type { SavedPattern } from "@/lib/patternFile";
 import { CATALOG_SOURCES } from "@/data/trackCatalog";
 import { CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import type { PartCategory } from "@/data/trackCatalog";
 import { routeSamples } from "@/lib/shapes";
 import { AiSettingsPanel, useAiSettings } from "./AiSettingsPanel";
 import { TrackPiece } from "./TrackPiece";
+import { InventoryPanel, yen } from "./InventoryPanel";
+import { LibraryPanel } from "./LibraryPanel";
+import { useLocalState } from "./useLocalState";
 
 const STORAGE_KEY = "nine-gage-layout-v1";
 const SNAP_MM = 15;
@@ -40,11 +45,35 @@ const emptyLayout = (): Layout => ({
 
 type Selection = { kind: "joint"; uid: string; index: number } | { kind: "piece"; uid: string } | null;
 
+type ProposedPattern =
+  | {
+      ok: true;
+      plan: { title: string; description: string };
+      pieces: Piece[];
+      attempts: number;
+      remainingProblems: string | null;
+      model: string;
+      hint: string | null;
+      shortfall: Shortfall;
+    }
+  | { ok: false; error: string };
+
+type AiMode = "free" | "owned" | "expand";
+const AI_MODES: { mode: AiMode; label: string; help: string }[] = [
+  { mode: "free", label: "自由に", help: "部品の制限なしで設計します" },
+  { mode: "owned", label: "手持ちだけ", help: "登録した所有パーツの本数の範囲だけで組める案を出します" },
+  { mode: "expand", label: "拡張案", help: "所有パーツを活かし、買い足しで広げる案を出します（追加の部品と費用つき）" },
+];
+
 type AiState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "done"; attempts: number; remaining: string | null; model: string; provider: string }
+  | { status: "done"; provider: string; mode: AiMode; patterns: ProposedPattern[]; shown: number }
   | { status: "error"; message: string };
+
+const isInventory = (v: unknown): v is Inventory =>
+  !!v && typeof v === "object" && Object.values(v as object).every((n) => typeof n === "number");
+const isPatterns = (v: unknown): v is SavedPattern[] => Array.isArray(v);
 
 export function Editor() {
   const [layout, setLayout] = useState<Layout>(emptyLayout);
@@ -55,6 +84,11 @@ export function Editor() {
   const [request, setRequest] = useState("エンドレスに待避線を1本。駅を置けるスペースもほしい");
   const [ai, setAi] = useState<AiState>({ status: "idle" });
   const aiSettings = useAiSettings();
+  const [aiMode, setAiMode] = useState<AiMode>("free");
+  const [patternCount, setPatternCount] = useState(1);
+  const [inventory, setInventory] = useLocalState<Inventory>("nine-gage-inventory-v1", {}, isInventory);
+  const [library, setLibrary] = useLocalState<SavedPattern[]>("nine-gage-library-v1", [], isPatterns);
+  const [currentId, setCurrentId] = useState<string | null>(null);
   const [view, setView] = useState({ x: -100, y: -100, w: 1400, h: 800 });
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<
@@ -92,6 +126,10 @@ export function Editor() {
   const maker: Maker = layout.maker ?? "kato";
   const analysis = useMemo(() => analyze(layout), [layout]);
   const bom = useMemo(() => billOfMaterials(layout.pieces), [layout.pieces]);
+  const stock = useMemo(() => stockFromInventory(inventory, maker), [inventory, maker]);
+  const hasStock = stock.size > 0;
+  const need = useMemo(() => shortfall(usageOf(layout.pieces), stock), [layout.pieces, stock]);
+  const needByKey = useMemo(() => new Map(need.rows.map((r) => [r.stockKey, r])), [need]);
   const otherMakerPieces = layout.pieces.filter((p) => getPart(p.partId).maker !== maker).length;
   const openSet = useMemo(
     () => new Set(analysis.openJoints.map((j) => `${j.pieceUid}:${j.index}`)),
@@ -232,49 +270,62 @@ export function Editor() {
   };
 
   // ---- AI ----
+  const showPattern = (p: ProposedPattern, index: number) => {
+    if (!p.ok) return;
+    setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces }));
+    setSelection(null);
+    setCurrentId(null);
+    setAi((a) => (a.status === "done" ? { ...a, shown: index } : a));
+  };
+
   const runAi = async () => {
+    if (aiMode !== "free" && !hasStock) {
+      setAi({ status: "error", message: "先に左の「所有パーツ」に品番と箱数を登録してください。" });
+      return;
+    }
     setAi({ status: "loading" });
     try {
       const res = await fetch("/api/propose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ board: layout.board, request, ai: aiSettings.settings, maker }),
+        body: JSON.stringify({
+          board: layout.board,
+          request,
+          ai: aiSettings.settings,
+          maker,
+          mode: aiMode,
+          inventory,
+          patterns: patternCount,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setLayout((l) => ({ ...l, title: data.plan.title, description: data.plan.description, pieces: data.pieces }));
-      setSelection(null);
-      setAi({
-        status: "done",
-        attempts: data.attempts,
-        remaining: data.remainingProblems,
-        model: data.model,
-        provider: data.provider,
-      });
+      const patterns = data.patterns as ProposedPattern[];
+      const first = patterns.findIndex((p) => p.ok);
+      setAi({ status: "done", provider: data.provider, mode: data.mode, patterns, shown: first });
+      if (first >= 0) {
+        const p = patterns[first];
+        if (p.ok) {
+          setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces }));
+          setSelection(null);
+          setCurrentId(null);
+        }
+      }
     } catch (err) {
       setAi({ status: "error", message: err instanceof Error ? err.message : String(err) });
     }
   };
 
-  // ---- ファイル ----
-  const download = () => {
-    const blob = new Blob([JSON.stringify(layout, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${layout.title || "layout"}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-  const upload = async (file: File) => {
-    try {
-      const l = JSON.parse(await file.text()) as Layout;
-      if (!Array.isArray(l.pieces) || !l.board) throw new Error();
-      l.pieces.forEach((p) => getPart(p.partId));
-      setLayout(l);
-      setSelection(null);
-    } catch {
-      alert("レイアウトファイルを読み込めませんでした");
-    }
+  const savePattern = (p: ProposedPattern) => {
+    if (!p.ok) return;
+    const id = `pat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const saved: SavedPattern = {
+      id,
+      name: p.plan.title,
+      savedAt: new Date().toISOString(),
+      layout: { title: p.plan.title, description: p.plan.description, maker, board: layout.board, pieces: p.pieces },
+    };
+    setLibrary((ps) => [saved, ...ps]);
   };
 
   const selectedPiece = selectedUid ? layout.pieces.find((p) => p.uid === selectedUid) : undefined;
@@ -326,6 +377,10 @@ export function Editor() {
               </button>
             ))}
           </div>
+        </section>
+
+        <section>
+          <InventoryPanel maker={maker} inventory={inventory} setInventory={setInventory} bom={bom} />
         </section>
 
         <section>
@@ -426,19 +481,19 @@ export function Editor() {
           )}
         </section>
 
+        <LibraryPanel
+          layout={layout}
+          patterns={library}
+          setPatterns={setLibrary}
+          currentId={currentId}
+          setCurrentId={setCurrentId}
+          onOpen={(l) => {
+            setLayout({ ...l, maker: l.maker ?? "kato" });
+            setSelection(null);
+          }}
+        />
         <section>
-          <h2>ファイル</h2>
           <div className="row wrap">
-            <button onClick={download}>JSONで保存</button>
-            <label className="button">
-              読み込み
-              <input
-                type="file"
-                accept="application/json"
-                hidden
-                onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
-              />
-            </label>
             <button
               className="danger"
               onClick={() => {
@@ -448,7 +503,7 @@ export function Editor() {
                 }
               }}
             >
-              全消去
+              線路を全消去
             </button>
           </div>
         </section>
@@ -513,23 +568,89 @@ export function Editor() {
         <section className="ai">
           <h2>AIにレイアウトを提案してもらう</h2>
           <AiSettingsPanel {...aiSettings} />
+          <div className="row">
+            <div className="seg">
+              {AI_MODES.map((m) => (
+                <button key={m.mode} className={aiMode === m.mode ? "on" : ""} onClick={() => setAiMode(m.mode)} title={m.help}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="hint">{AI_MODES.find((m) => m.mode === aiMode)!.help}</p>
+          {aiMode !== "free" && !hasStock && <p className="warn-text">所有パーツが未登録です（左の「所有パーツ」から登録）</p>}
           <textarea
             value={request}
             onChange={(e) => setRequest(e.target.value)}
-            rows={5}
+            rows={4}
             placeholder="例: 複線のエンドレスと、車両基地への引き込み線を2本"
           />
+          <div className="row">
+            <label className="small">
+              出す案の数
+              <select value={patternCount} onChange={(e) => setPatternCount(Number(e.target.value))}>
+                <option value={1}>1案</option>
+                <option value={2}>2案</option>
+                <option value={3}>3案</option>
+              </select>
+            </label>
+          </div>
           <button className="primary" onClick={runAi} disabled={ai.status === "loading"}>
             {ai.status === "loading" ? "設計中…（1〜3分かかります）" : "提案してもらう"}
           </button>
-          <p className="hint">今のボードの大きさで設計し、現在の線路は置き換わります。</p>
+          <p className="hint">今のボードの大きさで設計し、1つ目の案がキャンバスに表示されます（編集中の線路は置き換わります）。</p>
           {ai.status === "error" && <p className="error">{ai.message}</p>}
           {ai.status === "done" && (
-            <p className={ai.remaining ? "warn-text" : "ok-text"}>
-              {ai.remaining
-                ? `${ai.attempts}回試しましたが、まだ問題が残っています。下の確認結果を見て手直ししてください。`
-                : `${ai.model} が${ai.attempts}回の検証で完成させました。`}
-            </p>
+            <ol className="proposals">
+              {ai.patterns.map((p, i) => (
+                <li key={i} className={i === ai.shown ? "on" : ""}>
+                  {p.ok ? (
+                    <>
+                      <div className="proposal-head">
+                        <strong>案{i + 1}: {p.plan.title}</strong>
+                        <span className={p.remainingProblems ? "warn-text" : "ok-text"}>
+                          {p.remainingProblems ? "要手直し" : "検証OK"}
+                        </span>
+                      </div>
+                      {p.hint && <p className="hint">{p.hint}</p>}
+                      <p className="hint">
+                        {p.pieces.length}本
+                        {ai.mode !== "free" &&
+                          (p.shortfall.totalCostJpy > 0 || p.shortfall.hasUnknownPrice
+                            ? ` ／ 追加 ${p.shortfall.rows.filter((r) => r.missing > 0).length}品番・${yen(p.shortfall.totalCostJpy)}${p.shortfall.hasUnknownPrice ? "＋価格不明分" : ""}`
+                            : " ／ 追加購入なし")}
+                        {` ／ ${p.model}・${p.attempts}回`}
+                      </p>
+                      {ai.mode !== "free" && p.shortfall.rows.some((r) => r.missing > 0) && (
+                        <table className="bom">
+                          <tbody>
+                            {p.shortfall.rows
+                              .filter((r) => r.missing > 0)
+                              .map((r) => (
+                                <tr key={r.stockKey}>
+                                  <td className="code">{r.buy?.code ?? r.partId}</td>
+                                  <td>{r.buy?.name ?? r.partId}</td>
+                                  <td className="num">{r.missing}本</td>
+                                  <td className="num">{r.packs}箱</td>
+                                  <td className="num">{r.costJpy === null ? "—" : yen(r.costJpy)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      )}
+                      <div className="row wrap">
+                        <button onClick={() => showPattern(p, i)} disabled={i === ai.shown}>
+                          {i === ai.shown ? "表示中" : "表示して編集"}
+                        </button>
+                        <button onClick={() => savePattern(p)}>登録</button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="error">案{i + 1}: {p.error}</p>
+                  )}
+                </li>
+              ))}
+            </ol>
           )}
           {layout.description && <p className="desc">{layout.description}</p>}
         </section>
@@ -558,7 +679,9 @@ export function Editor() {
                     <th>品番</th>
                     <th>製品</th>
                     <th className="num">本</th>
+                    {hasStock && <th className="num">不足</th>}
                     <th className="num">箱</th>
+                    <th className="num">価格</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -573,13 +696,29 @@ export function Editor() {
                         {r.alternatives.length > 0 && <span className="muted"> 他{r.alternatives.length}</span>}
                       </td>
                       <td className="num">{r.count}</td>
+                      {hasStock && (
+                        <td className={`num${(needByKey.get(r.key)?.missing ?? 0) > 0 ? " warn-text" : ""}`}>
+                          {needByKey.get(r.key)?.missing || "—"}
+                        </td>
+                      )}
                       <td className="num">{r.packs ?? "—"}</td>
+                      <td className="num">{r.priceJpy != null && r.packs != null ? yen(r.priceJpy * r.packs) : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <p className="hint">
-                合計 {layout.pieces.length} 本 / 線路延長 約{(analysis.totalLengthMm / 1000).toFixed(2)}m。箱は代表品番の入数で計算（入数の記載がない品番は「—」）。
+                すべて新しく買う場合: {yen(bom.reduce((s, r) => s + (r.priceJpy != null && r.packs != null ? r.priceJpy * r.packs : 0), 0))}
+                {hasStock && (
+                  <>
+                    <br />
+                    所有パーツとの差分: 追加 {need.rows.filter((r) => r.missing > 0).length}品番・{yen(need.totalCostJpy)}
+                    {need.hasUnknownPrice && "（価格不明分を除く）"}
+                  </>
+                )}
+              </p>
+              <p className="hint">
+                合計 {layout.pieces.length} 本 / 線路延長 約{(analysis.totalLengthMm / 1000).toFixed(2)}m。箱と価格は代表品番の入数・メーカー希望小売価格（税込）で計算。不足の追加費用は1本あたりが安い品番で計算。
               </p>
               <p className="hint">
                 品番の出典:{" "}

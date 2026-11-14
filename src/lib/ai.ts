@@ -4,6 +4,9 @@ import { sanitizeSchema } from "./llm/json";
 import type { ChatSession, SessionOptions } from "./llm/types";
 import { MAKER_INFO, partsFor, type Maker } from "./parts";
 import { evaluatePlan, planSchemaFor, type LayoutPlan } from "./plan";
+import { usageOf } from "./bom";
+import { getPart } from "./parts";
+import { stockLabel } from "./productDb";
 
 const MAX_ATTEMPTS = 4;
 
@@ -120,7 +123,37 @@ export type ProposeInput = {
   board: Board;
   request: string;
   maker?: Maker;
+  /**
+   * 所有パーツ（在庫キーごとの本数）。
+   * mode="owned" ならこの本数を超えて使えない。mode="expand" なら活用を促すだけで、足りない分は買ってよい。
+   */
+  stock?: { counts: Map<string, number>; mode: "owned" | "expand" };
+  /** パターンごとの方向づけ（複数案を出すとき） */
+  hint?: string;
 };
+
+/** AIに見せる部品名（左右で品番が違う部品は dir も書く） */
+function stockName(stockKey: string): string {
+  const { partKey, right } = stockLabel(stockKey);
+  const part = getPart(partKey);
+  if (part.productsRight) return `${part.id} dir=${right ? "R" : "L"}`;
+  return part.handed ? `${part.id}（dir=L/Rどちらでも）` : part.id;
+}
+
+function stockText(counts: Map<string, number>): string {
+  const lines = [...counts.entries()].filter(([, n]) => n > 0).map(([k, n]) => `- ${stockName(k)}: ${n}本`);
+  return lines.length ? lines.join("\n") : "（なし）";
+}
+
+/** 所有数を超えて使っている部品（mode="owned" のときの検査） */
+export function overStock(pieces: Parameters<typeof usageOf>[0], counts: Map<string, number>): string[] {
+  const out: string[] = [];
+  for (const [k, used] of usageOf(pieces)) {
+    const have = counts.get(k) ?? 0;
+    if (used > have) out.push(`部品不足: ${stockName(k)} を${used}本使っているが、所有は${have}本。所有している部品だけで組み直す`);
+  }
+  return out;
+}
 
 export type ProposeResult = {
   plan: LayoutPlan;
@@ -129,6 +162,15 @@ export type ProposeResult = {
   remainingProblems: string | null;
   model: string;
 };
+
+function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
+  const result = evaluatePlan(plan, input.board, maker);
+  if (input.stock?.mode !== "owned") return result;
+  const over = overStock(result.build.pieces, input.stock.counts);
+  if (!over.length) return result;
+  const problems = [result.problems, ...over].filter(Boolean).join("\n");
+  return { ...result, problems };
+}
 
 export class ProposeError extends Error {}
 
@@ -157,8 +199,14 @@ export async function proposeLayout(
   let prompt = `線路: ${MAKER_INFO[maker].label} ${MAKER_INFO[maker].system}
 ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm
 要望: ${request.trim() || "ボードに収まる、楽しく運転できるレイアウト"}`;
+  if (input.hint) prompt += `\n今回の案の方向: ${input.hint}`;
+  if (input.stock?.mode === "owned") {
+    prompt += `\n\n## 使える部品（利用者の所有パーツ）\nこの本数を超えて使わないでください。全部使う必要はありません。端は車止めで終えてもかまいませんが、車止めも所有数の範囲で使います。\n${stockText(input.stock.counts)}`;
+  } else if (input.stock?.mode === "expand") {
+    prompt += `\n\n## 利用者の所有パーツ\n今あるレイアウトを広げる案です。これらをできるだけ活かし、足りない部品は追加で購入する前提で設計してください。description には何を買い足すと何ができるようになるかも書いてください。\n${stockText(input.stock.counts)}`;
+  }
 
-  let best: { plan: LayoutPlan; result: ReturnType<typeof evaluatePlan>; score: number } | null = null;
+  let best: { plan: LayoutPlan; result: ReturnType<typeof checkPlan>; score: number } | null = null;
   let attempts = 0;
   let lastText = "";
 
@@ -181,7 +229,7 @@ export async function proposeLayout(
     }
 
     const plan = parsed.data;
-    const result = evaluatePlan(plan, board, maker);
+    const result = checkPlan(plan, input, maker);
     const score = result.problems ? result.problems.split("\n").length : 0;
     if (!best || score < best.score) best = { plan, result, score };
     if (!result.problems) break;

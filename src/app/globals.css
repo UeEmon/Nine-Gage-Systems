@@ -185,3 +185,18 @@ button.danger { color: var(--danger); }
 .bom th, .bom td.num { white-space: nowrap; }
 .chip.on { background: var(--accent-weak); border-color: var(--accent); }
 .cats { margin-bottom: 8px; }
+
+/* 所有パーツ・提案・保存パターン */
+button.mini { padding: 1px 6px; font-size: 12px; margin-left: 2px; }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; cursor: pointer; }
+button.link:hover { text-decoration: underline; }
+.inventory select { font-size: 12px; }
+.proposals { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.proposals li { border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.proposals li.on { border-color: var(--accent); background: var(--accent-weak); }
+.proposals .hint { margin: 2px 0 6px; }
+.proposal-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13px; }
+.patterns { list-style: none; padding: 0; margin: 0 0 8px; font-size: 13px; }
+.patterns li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.patterns li.on button.link { font-weight: 700; }
+.patterns .actions { margin-left: auto; }

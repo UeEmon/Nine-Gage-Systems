@@ -16,9 +16,10 @@
 //     ミニカーブ: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_mini
 //
 // 品番・製品名・入数は一覧ページの記載どおり。直線の長さ・曲線の半径と角度は製品名・掲載値どおり。
-// 一覧ページに数値がない寸法（ポイントの直進長、交差の長さ、複線間隔など）は、製品名と
-// 各社線路規格の一般的な値から補い、その部品の geometryNote に「推定」と書いている。
-// （TOMIX の規格表PDFは画像のみで数値を読み取れなかった）
+// 一覧ページに数値がない寸法（ポイントの直進長、交差の長さなど）は、公式の製品ページ・
+// KATO USA の配線プラン資料・販売店の製品仕様で確認し、geometryStatus と geometrySources に
+// 出典を残している。確認できなかった値だけ geometryNote に「推定」と書いている。
+// メーカー希望小売価格は src/data/prices.ts。
 
 import { shape, type Route } from "../lib/shapes";
 
@@ -54,6 +55,14 @@ export type CatalogEntry = {
   /** 右向きの品番（左右で品番が違うもの） */
   productsRight?: CatalogProduct[];
   geometryNote?: string;
+  /**
+   * 寸法の確認状況。省略時は "official"（公式一覧の製品名・掲載値どおり）。
+   * "confirmed" = 公式一覧にはないが、公式の製品ページ・配線プラン資料や複数の販売店の記載で確認済み。
+   * "estimated" = 確認できる資料が見つからず、一般的な規格値から補った値を含む。
+   */
+  geometryStatus?: "official" | "confirmed" | "estimated";
+  /** 寸法の確認に使った資料（公式一覧以外） */
+  geometrySources?: string[];
 };
 
 export const CATALOG_SOURCES: Record<CatalogMaker, { label: string; urls: string[]; fetchedAt: string }> = {
@@ -105,7 +114,23 @@ const cv = (id: string, r: number, deg: number, products: CatalogProduct[], geom
   geometryNote,
 });
 
-const EST = "推定（一覧ページに寸法の数値がないため、製品名と一般的な規格値から）";
+const EST = "推定（公式一覧・製品ページ・販売店の記載で確認できなかったため、一般的な規格値から）";
+
+// 寸法の裏付けに使った資料（2026-11-14 確認）
+const SRC = {
+  katoUsa6: "https://dev3.katousa.com/PDF/plans/N-plan-6-turnouts.pdf",
+  sumida: "http://www.sumidacrossing.org/ModelTrains/TrackandRoadbed/KatoUnitrack/UnitrackSwitchesEtc/",
+  ix23: "https://trains.ix23.com/kato-unitrack-4-turnout-geometry/",
+  branchline: "https://branchline.com.au/collections/track-kato",
+  branchlineY: "https://www.branchline.com.au/products/kato-20-222-wye-turnout-481mm-radius-15-degree-124mm-long",
+  gaugemaster240: "https://www.gaugemasterretail.com/kato-k20-240.html",
+  sheffield240: "https://railsofsheffield.com/products/kato-20-240-kato-20-240-compact-left-hand-electric-turnout-r150mm-45-degree",
+  sheffield300: "https://railsofsheffield.com/products/kato-20-300-kato-20-300-crossing-left-186mm-15-deg",
+  sheffield320: "https://railsofsheffield.com/products/kato-20-320-kato-20-320-124mm-90-deg-crossing",
+  lombard320: "https://lombardhobby.com/products/kato-n-20-320-unitrack-90-degree-crossing-124mm-4-7-8",
+  katoBranch: "https://unitrack.katomodels.com/products/line_single/branch_cross",
+  tomix: (n: number) => `https://www.tomytec.co.jp/tomix/products/n/${n}.html`,
+};
 
 const TURNOUT_HELP = "j0=トング側, j1=直進側, j2=分岐側";
 const CROSSING_HELP = "j0→j1 が1本目、j2→j3 が2本目（交差）";
@@ -120,57 +145,61 @@ const KATO: CatalogEntry[] = [
   st("S186", 186, [p("20-010", "直線線路 186mm", 4), p("20-015", "アッシュピット線路 186mm"), p("20-016", "開放ピット線路 186mm")]),
   st("S124", 124, [p("20-020", "直線線路 124mm", 4), p("20-028", "PC直線線路124mm＜S124PC＞", 4), p("20-026", "リレーラー線路124mm(2本入り)", 2)]),
   st("S64", 64, [p("20-030", "直線線路 64mm", 2)]),
-  st("S62", 62, [p("20-040", "直線線路 62mm", 4), p("20-054", "PC直線線路62mm＜S62PC＞", 4), p("20-041", "フィーダー線路 62mm"), p("20-055", "PCフィーダー線路62mm＜S62FPC＞", 1), p("20-045", "ジョイント線路 62mm")]),
-  st("S45", 45, [p("20-091", "端数線路セット")], "長さは端数線路セットの規格図の表記（29mm・45mm）から"),
-  st("S38", 38, [p("20-092", "端数線路セットB")], "長さは端数線路セットBの規格図の表記（33mm・38mm）から"),
-  st("S33", 33, [p("20-092", "端数線路セットB")], "長さは端数線路セットBの規格図の表記（33mm・38mm）から"),
-  st("S29", 29, [p("20-091", "端数線路セット")], "長さは端数線路セットの規格図の表記（29mm・45mm）から"),
+  st("S62", 62, [p("20-040", "直線線路 62mm", 4), p("20-054", "PC直線線路62mm＜S62PC＞", 4), p("20-041", "フィーダー線路 62mm", 1), p("20-055", "PCフィーダー線路62mm＜S62FPC＞", 1), p("20-045", "ジョイント線路 62mm", 2)]),
+  st("S45", 45, [p("20-091", "端数線路セット", 2)], "長さは端数線路セットの規格図の表記（29mm・45mm）から"),
+  st("S38", 38, [p("20-092", "端数線路セットB", 4)], "長さは端数線路セットBの規格図の表記（33mm・38mm）から"),
+  st("S33", 33, [p("20-092", "端数線路セットB", 4)], "長さは端数線路セットBの規格図の表記（33mm・38mm）から"),
+  st("S29", 29, [p("20-091", "端数線路セット", 4)], "長さは端数線路セットの規格図の表記（29mm・45mm）から"),
   st("SL78", 78, [p("20-050", "スライド線路 78mm", 1)], "スライド線路は78〜108mmで伸縮。配置計算では最短の78mmとして扱う"),
   // 曲線
-  cv("R117-45", 117, 45, [p("20-176", "コンパクト曲線線路 R117mm")], "角度は「8本で1周」の記載から45°"),
-  cv("R150-45", 150, 45, [p("20-174", "コンパクト曲線線路 R150mm")], "角度は「8本で1周」の記載から45°"),
-  cv("R183-45", 183, 45, [p("20-172", "コンパクト曲線線路 R183mm")], "角度は「8本で1周」の記載から45°"),
-  cv("R216-45", 216, 45, [p("20-170", "曲線線路 R216-45°")]),
-  cv("R249-45", 249, 45, [p("20-100", "曲線線路 R249-45°")]),
-  cv("R282-45", 282, 45, [p("20-110", "曲線線路 R282-45°")]),
-  cv("R315-45", 315, 45, [p("20-120", "曲線線路 R315-45°"), p("20-124", "PC曲線線路R315-45°", 4)]),
-  cv("R348-45", 348, 45, [p("20-132", "曲線線路 R348-45°")]),
-  cv("R348-30", 348, 30, [p("20-130", "曲線線路 R348-30°")]),
-  cv("R381-30", 381, 30, [p("20-140", "曲線線路 R381-30°")]),
-  cv("R216-15", 216, 15, [p("20-171", "曲線線路 R216-15°")]),
-  cv("R249-15", 249, 15, [p("20-101", "曲線線路 R249-15°")]),
-  cv("R282-15", 282, 15, [p("20-111", "曲線線路 R282-15°")]),
-  cv("R315-15", 315, 15, [p("20-121", "曲線線路 R315-15°")]),
-  cv("R481-15", 481, 15, [p("20-160", "曲線線路 R481-15°")]),
-  cv("R718-15", 718, 15, [p("20-150", "曲線線路 R718-15°")]),
+  cv("R117-45", 117, 45, [p("20-176", "コンパクト曲線線路 R117mm", 4)], "角度は「8本で1周」の記載から45°"),
+  cv("R150-45", 150, 45, [p("20-174", "コンパクト曲線線路 R150mm", 4)], "角度は「8本で1周」の記載から45°"),
+  cv("R183-45", 183, 45, [p("20-172", "コンパクト曲線線路 R183mm", 4)], "角度は「8本で1周」の記載から45°"),
+  cv("R216-45", 216, 45, [p("20-170", "曲線線路 R216-45°", 4)]),
+  cv("R249-45", 249, 45, [p("20-100", "曲線線路 R249-45°", 4)]),
+  cv("R282-45", 282, 45, [p("20-110", "曲線線路 R282-45°", 4)]),
+  cv("R315-45", 315, 45, [p("20-120", "曲線線路 R315-45°", 4), p("20-124", "PC曲線線路R315-45°", 4)]),
+  cv("R348-45", 348, 45, [p("20-132", "曲線線路 R348-45°", 4)]),
+  cv("R348-30", 348, 30, [p("20-130", "曲線線路 R348-30°", 4)]),
+  cv("R381-30", 381, 30, [p("20-140", "曲線線路 R381-30°", 4)]),
+  cv("R216-15", 216, 15, [p("20-171", "曲線線路 R216-15°", 4)]),
+  cv("R249-15", 249, 15, [p("20-101", "曲線線路 R249-15°", 4)]),
+  cv("R282-15", 282, 15, [p("20-111", "曲線線路 R282-15°", 4)]),
+  cv("R315-15", 315, 15, [p("20-121", "曲線線路 R315-15°", 4)]),
+  cv("R481-15", 481, 15, [p("20-160", "曲線線路 R481-15°", 4)]),
+  cv("R718-15", 718, 15, [p("20-150", "曲線線路 R718-15°", 4)]),
   // 分岐
   {
     id: "TO6", category: "turnout", label: "6番ポイント", handed: true, jointHelp: TURNOUT_HELP,
     routes: shape.turnout(186, [{ r: 718, deg: 15, turn: "L" }]),
     products: [p("20-202", "電動ポイント6番(左)", 1)],
     productsRight: [p("20-203", "電動ポイント6番(右)", 1)],
-    geometryNote: `直進186mm・分岐R718-15°は${EST}`,
+    geometryNote: "直進186mm（KATO USAの配線プラン資料）、分岐R718-15°（製品名）",
+    geometryStatus: "confirmed", geometrySources: [SRC.katoUsa6, SRC.sumida],
   },
   {
     id: "TO4", category: "turnout", label: "4番ポイント", handed: true, jointHelp: TURNOUT_HELP,
     routes: shape.turnout(126, [{ r: 481, deg: 15, turn: "L" }]),
     products: [p("20-220", "電動ポイント4番(左)", 1)],
     productsRight: [p("20-221", "電動ポイント4番(右)", 1)],
-    geometryNote: `直進126mm・分岐R481-15°は${EST}`,
+    geometryNote: "直進126mm（付属の延長線路60mmで186mm）、分岐R481-15°",
+    geometryStatus: "confirmed", geometrySources: [SRC.ix23, SRC.sumida],
   },
   {
     id: "TOY2", category: "turnout", label: "Y字ポイント2番", handed: false,
     jointHelp: "j0=トング側, j1=左へ分岐, j2=右へ分岐（直進側はない）",
     routes: shape.turnout(null, [{ r: 481, deg: 15, turn: "L" }, { r: 481, deg: 15, turn: "R" }]),
     products: [p("20-222", "電動Y字ポイント2番", 1)],
-    geometryNote: `左右にR481-15°ずつ分かれる形は${EST}`,
+    geometryNote: "左右にR481-15°ずつ分かれる（#4ポイント2つ分の形）。全長124mm",
+    geometryStatus: "confirmed", geometrySources: [SRC.sumida, SRC.branchlineY],
   },
   {
     id: "TOC150", category: "turnout", label: "コンパクトポイントR150", handed: true, jointHelp: TURNOUT_HELP,
-    routes: shape.turnout(106, [{ r: 150, deg: 45, turn: "L" }]),
+    routes: shape.turnout(124, [{ r: 150, deg: 45, turn: "L" }]),
     products: [p("20-240", "電動ポイント R150mm 左", 1)],
     productsRight: [p("20-241", "電動ポイント R150mm 右", 1)],
-    geometryNote: `分岐R150は製品名から。分岐角45°・直進106mmは${EST}`,
+    geometryNote: "直進124mm・分岐R150-45°（販売店の製品仕様）",
+    geometryStatus: "confirmed", geometrySources: [SRC.gaugemaster240, SRC.sheffield240],
   },
   {
     id: "XO4", category: "turnout", label: "複線片渡りポイント4番", handed: true,
@@ -178,35 +207,39 @@ const KATO: CatalogEntry[] = [
     routes: shape.crossover(248, KATO_SPACING, false),
     products: [p("20-230", "複線片渡りポイント4番(左)", 1)],
     productsRight: [p("20-231", "複線片渡りポイント4番(右)", 1)],
-    geometryNote: `長さ248mmは製品ページの記載。間隔33mmは複線規格。渡り線の曲線は${EST}`,
+    geometryNote: `長さ248mmは公式ページ、間隔33mmは複線規格。渡り線の曲線の形は${EST}`,
+    geometryStatus: "estimated", geometrySources: [SRC.katoBranch, SRC.sumida],
   },
   {
     id: "DXO", category: "turnout", label: "複線両渡りポイント（ダブルクロス）", handed: false,
     jointHelp: `${DOUBLE_HELP}。j0→j3 と j2→j1 が渡り線`,
     routes: shape.crossover(310, KATO_SPACING, true),
     products: [p("20-210", "複線両渡りポイント（ダブルクロス）", 1)],
-    geometryNote: `長さ310mmは${EST}。間隔33mmは複線規格`,
+    geometryNote: `長さ310mm・間隔33mmは確認済み。渡り線の曲線の形は${EST}`,
+    geometryStatus: "estimated", geometrySources: [SRC.sumida, "https://www.branchline.com.au/collections/all/products/kato-20-210-double-crossover-310mm-long-electric"],
   },
   {
     id: "X15", category: "crossing", label: "交差線路15°", handed: true, jointHelp: CROSSING_HELP,
-    routes: shape.crossing(124, 15),
+    routes: shape.crossing(186, 15),
     products: [p("20-300", "交差線路15°(左)", 1)],
     productsRight: [p("20-301", "交差線路15°(右)", 1)],
-    geometryNote: `交差角15°は製品名から。長さ124mmは${EST}`,
+    geometryNote: "長さ186mm・交差角15°（販売店の製品名。斜めの側は実物では192mm）",
+    geometryStatus: "confirmed", geometrySources: [SRC.sumida, SRC.sheffield300],
   },
   {
     id: "X90", category: "crossing", label: "交差線路90°", handed: false, jointHelp: CROSSING_HELP,
-    routes: shape.crossing(45, 90),
+    routes: shape.crossing(124, 90),
     products: [p("20-320", "交差線路90°(補助線路付)", 1)],
-    geometryNote: `交差角90°は製品名から。長さ45mmは${EST}（端数線路セットの45mmと組み合わせる記載から）`,
+    geometryNote: "長さ124mm・交差角90°（販売店の製品名）",
+    geometryStatus: "confirmed", geometrySources: [SRC.sumida, SRC.sheffield320, SRC.lombard320],
   },
   // 複線
   ...(
     [
-      [248, [p("20-004", "複線直線線路 248mm"), p("20-006", "複線スラブ軌道直線線路248mm"), p("20-875", "複線駅構内延長線路")]],
+      [248, [p("20-004", "複線直線線路 248mm", 2), p("20-006", "複線スラブ軌道直線線路248mm"), p("20-875", "複線駅構内延長線路")]],
       [186, [p("20-012", "複線直線線路 186mm"), p("20-014", "複線スラブ軌道直線線路186mm")]],
-      [124, [p("20-023", "複線直線線路 124mm"), p("20-025", "複線スラブ軌道直線線路124mm")]],
-      [62, [p("20-042", "複線直線線路 62mm"), p("20-044", "複線スラブ軌道直線線路62mm"), p("20-043", "複線フィーダー線路セット"), p("20-049", "複線スラブ軌道フィーダー線路S")]],
+      [124, [p("20-023", "複線直線線路 124mm", 2), p("20-025", "複線スラブ軌道直線線路124mm")]],
+      [62, [p("20-042", "複線直線線路 62mm", 2), p("20-044", "複線スラブ軌道直線線路62mm"), p("20-043", "複線フィーダー線路セット", 2), p("20-049", "複線スラブ軌道フィーダー線路S")]],
     ] as [number, CatalogProduct[]][]
   ).map(([len, products]): CatalogEntry => ({
     id: `DS${len}`, category: "double", label: `複線直線 DS${len}`, handed: false, jointHelp: DOUBLE_HELP,
@@ -214,9 +247,9 @@ const KATO: CatalogEntry[] = [
   })),
   ...(
     [
-      [414, [p("20-181", "複線曲線線路R414/381mm45°"), p("20-187", "スラブ曲線R414/381-45")]],
+      [414, [p("20-181", "複線曲線線路R414/381mm45°", 2), p("20-187", "スラブ曲線R414/381-45")]],
       [315, [p("20-183", "複線曲線線路R315/282mm45°")]],
-      [480, [p("20-185", "複線曲線線路R480/447mm45°")]],
+      [480, [p("20-185", "複線曲線線路R480/447mm45°", 2)]],
     ] as [number, CatalogProduct[]][]
   ).map(([r, products]): CatalogEntry => ({
     id: `DR${r}-45`, category: "double", label: `複線曲線 R${r}/${r - KATO_SPACING}-45°`, handed: true,
@@ -234,31 +267,33 @@ const KATO: CatalogEntry[] = [
     jointHelp: `${DOUBLE_HELP}。複線曲線の両端に1本ずつ使う`,
     routes: shape.doubleCurve(r, 22.5, KATO_SPACING), products,
     geometryNote: `22.5°は製品ページの記載。内外の線路を同心の円弧として扱う（実物の端部の形は${EST}）`,
+    geometryStatus: "estimated",
   })),
   {
     id: "DW310", category: "double", label: "複線間隔変換 33→66mm", handed: true,
     jointHelp: `${DOUBLE_HELP}。左側の線路が33mm外へ広がる（j3 は間隔66mm）`,
     routes: shape.spacingChange(310, KATO_SPACING, 33),
-    products: [p("20-051", "複線間隔変換線路310mm左")],
-    productsRight: [p("20-052", "複線間隔変換線路310mm右")],
+    products: [p("20-051", "複線間隔変換線路310mm左", 1)],
+    productsRight: [p("20-052", "複線間隔変換線路310mm右", 1)],
     geometryNote: `長さ310mm・間隔33→66mmは製品ページの記載。S字の曲線は${EST}`,
+    geometryStatus: "estimated",
   },
   // 車止め
   {
     id: "BUMPER", category: "bumper", label: "車止め", handed: false, bumper: true,
     routes: shape.bumper(62),
-    products: [p("20-046", "車止め線路A"), p("20-047", "車止め線路B"), p("20-063", "車止め線路A(標識灯点灯)")],
+    products: [p("20-046", "車止め線路A", 2), p("20-047", "車止め線路B", 2), p("20-063", "車止め線路A(標識灯点灯)")],
   },
   {
     id: "BUMPER-C", category: "bumper", label: "車止め（短）", handed: false, bumper: true,
     routes: shape.bumper(50),
-    products: [p("20-048", "車止め線路C"), p("20-060", "車止め線路D"), p("20-064", "車止め線路C(標識灯点灯仕様)")],
+    products: [p("20-048", "車止め線路C", 2), p("20-060", "車止め線路D"), p("20-064", "車止め線路C(標識灯点灯仕様)")],
     geometryNote: "車止め線路Cは50mm（D は35mm、標識灯付きCは66mm）",
   },
 ];
 
 // ---- TOMIX ファイントラック ----
-const TOMIX_SPACING = 37; // 複線カーブ DC317・280 の半径差から
+const TOMIX_SPACING = 37; // 公式「標準複線間隔37mm」（複線レールDS280の製品ページ）
 
 const TOMIX: CatalogEntry[] = [
   // 直線
@@ -296,21 +331,24 @@ const TOMIX: CatalogEntry[] = [
     routes: shape.turnout(140, [{ r: 541, deg: 15, turn: "L" }]),
     products: [p("1272", "電動ポイントN-PL541-15(F)(完全選択式)", 1), p("1282", "電動合成枕木ポイントN-PL541-15-SY(F)", 1), p("1226", "手動合成枕木ポイントN-PL541-15-SY(F)", 1)],
     productsRight: [p("1271", "電動ポイントN-PR541-15(F)(完全選択式)", 1), p("1281", "電動合成枕木ポイントN-PR541-15-SY(F)", 1), p("1225", "手動合成枕木ポイントN-PR541-15-SY(F)", 1)],
-    geometryNote: `分岐R541-15°は製品名から。直進140mmは${EST}`,
+    geometryNote: "直進140mm・分岐R541-15°。C541-15と組み合わせて間隔37mm（公式製品ページ）",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(1272)],
   },
   {
     id: "PL280-30", category: "turnout", label: "ポイント PL280-30", handed: true, jointHelp: TURNOUT_HELP,
     routes: shape.turnout(140, [{ r: 280, deg: 30, turn: "L" }]),
     products: [p("1274", "電動ポイントN-PL280-30(F)(完全選択式)", 1)],
     productsRight: [p("1273", "電動ポイントN-PR280-30(F)(完全選択式)", 1)],
-    geometryNote: `分岐R280-30°は製品名から。直進140mmは${EST}`,
+    geometryNote: "直進140mm・分岐R280-30°（公式製品ページ）",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(1274)],
   },
   {
     id: "PL140-30", category: "turnout", label: "ミニポイント PL140-30", handed: true, jointHelp: TURNOUT_HELP,
     routes: shape.turnout(70, [{ r: 140, deg: 30, turn: "L" }]),
     products: [p("1232", "ミニ電動ポイントN-PL140-30(F)", 1)],
     productsRight: [p("1231", "ミニ電動ポイントN-PR140-30(F)", 1)],
-    geometryNote: `分岐R140-30°は製品名から。直進70mmは${EST}`,
+    geometryNote: "長さ70mm・分岐R140（公式製品ページ）、30°は製品名から",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(1232)],
   },
   {
     id: "PY280-15", category: "turnout", label: "Y字ポイント PY280-15", handed: false,
@@ -325,7 +363,8 @@ const TOMIX: CatalogEntry[] = [
     routes: shape.turnout(140, [{ r: 541, deg: 15, turn: "L" }, { r: 280, deg: 15, turn: "R" }]),
     products: [p("1262", "電動3方ポイントN-PLR541/280-15(F)", 1)],
     productsRight: [p("1261", "電動3方ポイントN-PRL541/280-15(F)", 1)],
-    geometryNote: `R541とR280の15°分岐は製品名から。どちらが左右か・直進140mmは${EST}`,
+    geometryNote: `左がR541・右がR280（公式製品ページ）。直進140mmは${EST}`,
+    geometryStatus: "estimated", geometrySources: [SRC.tomix(1262)],
   },
   {
     id: "CPL317/280-45", category: "turnout", label: "カーブポイント CPL317/280-45", handed: true,
@@ -340,7 +379,8 @@ const TOMIX: CatalogEntry[] = [
     jointHelp: `${DOUBLE_HELP}。j0→j3 と j2→j1 が渡り線`,
     routes: shape.crossover(280, TOMIX_SPACING, true),
     products: [p("1247", "電動ポイント N-PX280 (F)", 1)],
-    geometryNote: `長さ280mmは製品名から。間隔37mmは複線規格。渡り線の曲線は${EST}`,
+    geometryNote: `長さ280mm（公式製品ページ）・間隔37mm（標準複線間隔）。渡り線の曲線の形は${EST}`,
+    geometryStatus: "estimated", geometrySources: [SRC.tomix(1247)],
   },
   {
     id: "PXL140-15", category: "turnout", label: "ダブルスリップ PXL140-15", handed: true,
@@ -348,7 +388,8 @@ const TOMIX: CatalogEntry[] = [
     routes: shape.doubleSlip(140, 15),
     products: [p("1246", "電動ダブルスリップポイントN-PXL140-15(F)", 1)],
     productsRight: [p("1245", "電動ダブルスリップポイントN-PXR140-15(F)", 1)],
-    geometryNote: `長さ140mm・15°は製品名から。渡りの曲線は${EST}`,
+    geometryNote: `長さ140mm・15°は製品名から。渡りの曲線の形は${EST}`,
+    geometryStatus: "estimated",
   },
   // 交差
   {
@@ -380,7 +421,8 @@ const TOMIX: CatalogEntry[] = [
   ).map(([len, products]): CatalogEntry => ({
     id: `DS${len}`, category: "double", label: `複線直線 DS${len}`, handed: false, jointHelp: DOUBLE_HELP,
     routes: shape.doubleStraight(len, TOMIX_SPACING), products,
-    geometryNote: `間隔37mmは${EST}`,
+    geometryNote: "間隔37mm（公式製品ページ「標準複線間隔37mm」）",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(1812)],
   })),
   ...(
     [
@@ -398,7 +440,8 @@ const TOMIX: CatalogEntry[] = [
     id: "E", category: "bumper", label: "エンドレール", handed: false, bumper: true,
     routes: shape.bumper(40),
     products: [p("1421", "エンドレールE (F)"), p("1423", "エンドレールE(LED2・ノイズキャンセラー付)(F)"), p("1428", "エンドPCレールE-PC(LEDタイプ)(F)")],
-    geometryNote: "長さは一覧に記載がないため描画用の値",
+    geometryNote: `長さ40mmは${EST}`,
+    geometryStatus: "estimated",
   },
 ];
 

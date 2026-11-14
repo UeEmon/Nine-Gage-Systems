@@ -52,6 +52,23 @@ describe("proposeLayout (provider independent loop)", () => {
     expect(res.remainingProblems).toBeNull();
   });
 
+  it("in owned mode, lists the owned parts and retries when a part is over-used", async () => {
+    const { stockFromInventory } = await import("../src/lib/productDb");
+    // R718-15 は1箱(4本)、TO6 は左右1つずつ、直線・曲線は十分ある
+    const counts = stockFromInventory({
+      "kato:20-202": 1, "kato:20-203": 1, "kato:20-150": 1, "kato:20-100": 2,
+      "kato:20-000": 1, "kato:20-010": 1, "kato:20-020": 1,
+    });
+    const tooMany = sidingPlan();
+    tooMany.segments[0].pieces.splice(1, 0, { part: "TO6", dir: "L", enter: 0, exit: 1 });
+    const { session, prompts } = fakeSession([tooMany, sidingPlan()]);
+    const res = await proposeLayout({ board, request: "", stock: { counts, mode: "owned" } }, session, "m");
+    expect(prompts[0]).toContain("使える部品");
+    expect(prompts[0]).toContain("TO6 dir=L: 1本");
+    expect(prompts[1]).toContain("部品不足: TO6 dir=L を2本");
+    expect(res.remainingProblems).toBeNull();
+  });
+
   it("fails clearly when no attempt yields a plan", async () => {
     const { session } = fakeSession([null, null, null, null]);
     await expect(proposeLayout({ board, request: "" }, session, "tiny-model")).rejects.toThrow(/tiny-model/);
