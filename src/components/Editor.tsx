@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   analyze,
   newUid,
@@ -30,6 +31,9 @@ import { PartDetail } from "./PartDetail";
 import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { useLocalState } from "./useLocalState";
+
+// three.js はブラウザでだけ読み込む
+const DriveView = dynamic(() => import("./DriveView").then((m) => m.DriveView), { ssr: false });
 
 const STORAGE_KEY = "nine-gage-layout-v1";
 const SNAP_MM = 15;
@@ -118,6 +122,7 @@ export function Editor({ user }: { user: SessionUser }) {
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
   const [hideOthers, setHideOthers] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showDrive, setShowDrive] = useState(false);
   const [showPiers, setShowPiers] = useState(true);
   const [placeHeight, setPlaceHeight] = useState<PlaceHeight>("auto");
   const [applyToRun, setApplyToRun] = useState(true);
@@ -864,6 +869,14 @@ export function Editor({ user }: { user: SessionUser }) {
           <button className={showProfile ? "on" : ""} onClick={() => setShowProfile((v) => !v)}>
             断面図
           </button>
+          <button
+            className={showDrive ? "on" : ""}
+            onClick={() => setShowDrive(true)}
+            disabled={layout.pieces.length === 0}
+            title="線路の上を運転席の視点で走る3Dの映像（選択中の部品から走り始めます）"
+          >
+            ▶ 運転席で走る
+          </button>
         </div>
         {showProfile && (
           <LevelProfile
@@ -881,6 +894,7 @@ export function Editor({ user }: { user: SessionUser }) {
           <button onClick={() => fitView(b)}>全体表示</button>
         </div>
       </main>
+      {showDrive && <DriveView layout={layout} startUid={selectedUid} onClose={() => setShowDrive(false)} />}
 
       <aside className="panel right">
         <section className="ai">
