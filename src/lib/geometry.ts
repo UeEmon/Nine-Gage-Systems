@@ -1,4 +1,4 @@
-import { getPart, localJoints, normDeg, type Joint, type PartDef } from "./parts";
+import { getPart, localJoints, normDeg, type Joint, type Maker, type PartDef } from "./parts";
 
 export type Piece = {
   uid: string;
@@ -15,6 +15,8 @@ export type Board = { width: number; height: number };
 
 export type Layout = {
   title: string;
+  /** 使う線路のメーカー（古い保存データにはないので省略時は KATO） */
+  maker?: Maker;
   description: string;
   board: Board;
   pieces: Piece[];

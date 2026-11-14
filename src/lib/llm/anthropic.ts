@@ -1,6 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { LayoutPlanSchema } from "../plan";
 import type { AskResult, ChatSession, ResolvedAiSettings, SessionOptions } from "./types";
 
 /**
@@ -24,7 +23,7 @@ export function createAnthropicSession(
         max_tokens: 16000,
         ...(supportsFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
         system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
-        output_config: { effort: "high", format: betaZodOutputFormat(LayoutPlanSchema) },
+        output_config: { effort: "high", format: betaZodOutputFormat(opts.zodSchema) },
         messages,
       });
       messages.push({ role: "assistant", content: response.content });

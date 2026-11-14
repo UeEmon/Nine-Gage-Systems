@@ -11,7 +11,9 @@ import {
   type Piece,
   type WorldJoint,
 } from "@/lib/geometry";
-import { getPart, normDeg, PARTS } from "@/lib/parts";
+import { billOfMaterials } from "@/lib/bom";
+import { CATALOG_SOURCES } from "@/data/trackCatalog";
+import { getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import { AiSettingsPanel, useAiSettings } from "./AiSettingsPanel";
 import { TrackPiece } from "./TrackPiece";
 
@@ -28,6 +30,7 @@ const BOARD_PRESETS: { label: string; board: Board }[] = [
 
 const emptyLayout = (): Layout => ({
   title: "新しいレイアウト",
+  maker: "kato",
   description: "",
   board: { width: 1200, height: 600 },
   pieces: [],
@@ -83,7 +86,10 @@ export function Editor() {
   }, []);
   useEffect(() => fitView(layout.board), [layout.board, fitView]);
 
+  const maker: Maker = layout.maker ?? "kato";
   const analysis = useMemo(() => analyze(layout), [layout]);
+  const bom = useMemo(() => billOfMaterials(layout.pieces), [layout.pieces]);
+  const otherMakerPieces = layout.pieces.filter((p) => getPart(p.partId).maker !== maker).length;
   const openSet = useMemo(
     () => new Set(analysis.openJoints.map((j) => `${j.pieceUid}:${j.index}`)),
     [analysis],
@@ -229,7 +235,7 @@ export function Editor() {
       const res = await fetch("/api/propose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ board: layout.board, request, ai: aiSettings.settings }),
+        body: JSON.stringify({ board: layout.board, request, ai: aiSettings.settings, maker }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -321,6 +327,27 @@ export function Editor() {
 
         <section>
           <h2>線路パーツ</h2>
+          <div className="row">
+            <div className="seg">
+              {MAKERS.map((m) => (
+                <button
+                  key={m}
+                  className={maker === m ? "on" : ""}
+                  onClick={() => {
+                    setLayout((l) => ({ ...l, maker: m }));
+                    setAttachJoint(0);
+                  }}
+                >
+                  {MAKER_INFO[m].label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {otherMakerPieces > 0 && (
+            <p className="warn-text">
+              {MAKER_INFO[maker].label}以外の線路が{otherMakerPieces}本あります（つなぐには変換線路が必要です）
+            </p>
+          )}
           <p className="hint">
             {selection?.kind === "joint" ? "選択中の端（青）につなぎます" : "端（赤い丸）をクリックして選ぶと、そこにつなげます"}
           </p>
@@ -345,7 +372,7 @@ export function Editor() {
             </label>
           </div>
           <div className="palette">
-            {PARTS.map((p) => (
+            {partsFor(maker).map((p) => (
               <button key={p.id} className="part" onClick={() => addPart(p.id)} title={p.description}>
                 <PartIcon partId={p.id} mirror={p.handed && mirrorNext} />
                 <span>{p.name}</span>
@@ -503,19 +530,40 @@ export function Editor() {
           ) : (
             <>
               <table className="bom">
+                <thead>
+                  <tr>
+                    <th>品番</th>
+                    <th>製品</th>
+                    <th className="num">本</th>
+                    <th className="num">箱</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {Object.entries(analysis.partCounts)
-                    .sort()
-                    .map(([k, n]) => (
-                      <tr key={k}>
-                        <td>{k}</td>
-                        <td className="num">{n}</td>
-                      </tr>
-                    ))}
+                  {bom.map((r) => (
+                    <tr
+                      key={r.key}
+                      title={r.alternatives.length ? `ほかの品番: ${r.alternatives.map((a) => `${a.code} ${a.name}`).join(" / ")}` : undefined}
+                    >
+                      <td className="code">{r.product.code}</td>
+                      <td>
+                        {r.product.name}
+                        {r.alternatives.length > 0 && <span className="muted"> 他{r.alternatives.length}</span>}
+                      </td>
+                      <td className="num">{r.count}</td>
+                      <td className="num">{r.packs ?? "—"}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
               <p className="hint">
-                合計 {layout.pieces.length} 本 / 線路延長 約{(analysis.totalLengthMm / 1000).toFixed(2)}m
+                合計 {layout.pieces.length} 本 / 線路延長 約{(analysis.totalLengthMm / 1000).toFixed(2)}m。箱は代表品番の入数で計算（入数の記載がない品番は「—」）。
+              </p>
+              <p className="hint">
+                品番の出典:{" "}
+                <a href={CATALOG_SOURCES[maker].urls[0]} target="_blank" rel="noreferrer">
+                  {CATALOG_SOURCES[maker].label} 公式サイト
+                </a>
+                （{CATALOG_SOURCES[maker].fetchedAt} 時点）
               </p>
             </>
           )}

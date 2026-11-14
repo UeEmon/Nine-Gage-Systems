@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { analyze, placeAt, worldJoints, type Analysis, type Board, type Piece } from "./geometry";
-import { getPart, hasPart, PART_IDS } from "./parts";
+import { getPart, hasPart, partIdsFor, type Maker } from "./parts";
 
 /**
  * AIが出力する「線路の並び」。座標ではなく部品の順番で表し、
  * 実際の位置はアプリ側で計算する（AIに座標計算をさせると誤差が出やすいため）。
  */
-export const PlanPieceSchema = z.object({
-  part: z.enum(PART_IDS).describe("部品ID"),
+function planPieceSchema(partIds: [string, ...string[]] | null) {
+  return z.object({
+  part: (partIds ? z.enum(partIds) : z.string()).describe("部品ID"),
   dir: z.enum(["L", "R"]).describe("曲線・ポイントの向き（L=進行方向に向かって左, R=右）。直線・車止めはL"),
   enter: z
     .number()
@@ -17,9 +18,11 @@ export const PlanPieceSchema = z.object({
     .number()
     .int()
     .describe("次の部品をつなぐ側のジョイント番号。通常1。ポイントの分岐側へ進むなら2、合流側から入ったときは0。車止めは0を入れる（次はない）"),
-});
+  });
+}
 
-export const PlanSegmentSchema = z.object({
+function buildPlanSchema(partIds: [string, ...string[]] | null) {
+  const PlanSegmentSchema = z.object({
   from: z
     .object({
       segment: z.number().int().describe("分岐元の区間番号（0始まり）"),
@@ -28,10 +31,10 @@ export const PlanSegmentSchema = z.object({
     })
     .nullable()
     .describe("null なら start から始める（区間0のみ）。それ以外は既存部品の空きジョイントから伸ばす"),
-  pieces: z.array(PlanPieceSchema),
+  pieces: z.array(planPieceSchema(partIds)),
 });
 
-export const LayoutPlanSchema = z.object({
+  return z.object({
   title: z.string().describe("レイアウトの名前"),
   description: z.string().describe("レイアウトの説明（運転の楽しみ方、特徴）"),
   start: z.object({
@@ -40,9 +43,23 @@ export const LayoutPlanSchema = z.object({
     heading: z.number().describe("進行方向(度)。0=右(+x), 90=下(+y), -90=上, 180=左"),
   }),
   segments: z.array(PlanSegmentSchema),
-});
+  });
+}
 
+/** 型と汎用の検証用（部品IDは文字列） */
+export const LayoutPlanSchema = buildPlanSchema(null);
 export type LayoutPlan = z.infer<typeof LayoutPlanSchema>;
+
+const schemaCache = new Map<Maker, ReturnType<typeof buildPlanSchema>>();
+/** AIへの出力指定用。部品IDをそのメーカーの部品だけに絞る */
+export function planSchemaFor(maker: Maker) {
+  let s = schemaCache.get(maker);
+  if (!s) {
+    s = buildPlanSchema(partIdsFor(maker));
+    schemaCache.set(maker, s);
+  }
+  return s;
+}
 
 export type BuildResult = {
   pieces: Piece[];

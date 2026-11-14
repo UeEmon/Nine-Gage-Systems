@@ -2,6 +2,7 @@ import { z } from "zod";
 import { proposeLayout, ProposeError, sessionOptions } from "@/lib/ai";
 import { createSession, defaultProvider, resolveSettings, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
 import { AiSettingsSchema } from "@/lib/llm/request";
+import { MAKERS } from "@/lib/parts";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,6 +14,7 @@ const BodySchema = z.object({
   }),
   request: z.string().max(2000),
   ai: AiSettingsSchema.optional(),
+  maker: z.enum(MAKERS).default("kato"),
 });
 
 export async function POST(req: Request) {
@@ -20,13 +22,13 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで）" }, { status: 400 });
   }
-  const { board, request, ai } = parsed.data;
+  const { board, request, ai, maker } = parsed.data;
 
   let settings: ResolvedAiSettings | undefined;
   try {
     settings = resolveSettings(ai ?? { provider: defaultProvider() });
-    const session = createSession(settings, sessionOptions());
-    const result = await proposeLayout({ board, request }, session, settings.model);
+    const session = createSession(settings, sessionOptions(maker));
+    const result = await proposeLayout({ board, request, maker }, session, settings.model);
     return Response.json({ ...result, provider: settings.provider });
   } catch (err) {
     if (err instanceof ProposeError) return Response.json({ error: err.message }, { status: 422 });

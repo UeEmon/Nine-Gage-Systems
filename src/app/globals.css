@@ -177,3 +177,9 @@ button.danger { color: var(--danger); }
 .ai-settings .input-row { display: flex; gap: 6px; }
 .ai-settings .input-row input { flex: 1; min-width: 0; }
 .muted { color: var(--muted); font-weight: normal; }
+.bom th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11px; padding-bottom: 4px; }
+.bom th.num { text-align: right; }
+.bom td { vertical-align: top; padding-right: 6px; }
+.bom td.code { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.panel a { color: var(--accent); }
+.bom th, .bom td.num { white-space: nowrap; }

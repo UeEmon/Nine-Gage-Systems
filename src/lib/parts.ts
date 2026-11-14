@@ -1,15 +1,31 @@
-// 線路部品カタログ（KATOユニトラック互換の一般的な寸法, 単位: mm）
+// 線路部品の幾何定義。品番・寸法は src/data/trackCatalog.ts（各社公式サイトから抽出）から生成する。単位: mm
 //
 // 座標系: SVGと同じく x は右、y は下が正。角度(deg)は +x 方向を0とし、画面上で時計回りが正。
 // 各部品はローカル座標で定義し、ジョイント0は常に原点で外向き180°（-x方向）を向く。
 // 曲線・ポイントは「左（L）」を基準に定義し、右（R）は y 軸反転で表す。
 
+import { CATALOG, type CatalogEntry, type CatalogProduct } from "../data/trackCatalog";
+
 export type Joint = { x: number; y: number; deg: number };
 
 export type PartKind = "straight" | "curve" | "turnout" | "bumper";
 
+export const MAKERS = ["kato", "tomix"] as const;
+export type Maker = (typeof MAKERS)[number];
+
+export const MAKER_INFO: Record<Maker, { label: string; system: string; trackSpacing: number }> = {
+  kato: { label: "KATO", system: "ユニトラック", trackSpacing: 33 },
+  tomix: { label: "TOMIX", system: "ファイントラック", trackSpacing: 37 },
+};
+
 export type PartDef = {
   id: string;
+  maker: Maker;
+  /** 公式カタログの品番（右向きのポイントは productsRight） */
+  products: CatalogProduct[];
+  productsRight?: CatalogProduct[];
+  /** 寸法を規格値で補った場合の注記 */
+  geometryNote?: string;
   name: string;
   kind: PartKind;
   /** 直線長、またはポイントの直進側の長さ */
@@ -36,79 +52,76 @@ function arcEnd(radius: number, angle: number): Joint {
   };
 }
 
-function straight(length: number): PartDef {
-  return {
-    id: `S${length}`,
-    name: `直線 ${length}mm`,
-    kind: "straight",
-    length,
-    handed: false,
-    joints: [
-      { x: 0, y: 0, deg: 180 },
-      { x: length, y: 0, deg: 0 },
-    ],
-    description: `長さ${length}mmの直線`,
-  };
+function fromCatalog(maker: Maker, e: CatalogEntry): PartDef {
+  const base = { id: e.id, maker, products: e.products, productsRight: e.productsRight, geometryNote: e.geometryNote };
+  switch (e.kind) {
+    case "straight":
+      return {
+        ...base,
+        name: `直線 ${e.id}`,
+        kind: "straight",
+        length: e.length,
+        handed: false,
+        joints: [
+          { x: 0, y: 0, deg: 180 },
+          { x: e.length!, y: 0, deg: 0 },
+        ],
+        description: `長さ${e.length}mmの直線`,
+      };
+    case "curve":
+      return {
+        ...base,
+        name: `曲線 ${e.id}°`,
+        kind: "curve",
+        radius: e.radius,
+        angle: e.angle,
+        handed: true,
+        joints: [{ x: 0, y: 0, deg: 180 }, arcEnd(e.radius!, e.angle!)],
+        description: `半径${e.radius}mm・${e.angle}°の曲線（${Math.round(360 / e.angle!)}本で円）`,
+      };
+    case "turnout":
+      return {
+        ...base,
+        name: `ポイント ${e.id}`,
+        kind: "turnout",
+        length: e.length,
+        radius: e.radius,
+        angle: e.angle,
+        handed: true,
+        joints: [
+          { x: 0, y: 0, deg: 180 },
+          { x: e.length!, y: 0, deg: 0 },
+          arcEnd(e.radius!, e.angle!),
+        ],
+        description: `ポイント（左右あり）。直進${e.length}mm、分岐側はR${e.radius} ${e.angle}°。ジョイント1=直進側、2=分岐側`,
+      };
+    case "bumper":
+      return {
+        ...base,
+        name: "車止め",
+        kind: "bumper",
+        length: e.length,
+        handed: false,
+        joints: [{ x: 0, y: 0, deg: 180 }],
+        description: "線路の終端に置く車止め（ジョイントは1つ）",
+      };
+  }
 }
 
-function curve(radius: number, angle: number): PartDef {
-  return {
-    id: `R${radius}-${angle}`,
-    name: `曲線 R${radius} ${angle}°`,
-    kind: "curve",
-    radius,
-    angle,
-    handed: true,
-    joints: [{ x: 0, y: 0, deg: 180 }, arcEnd(radius, angle)],
-    description: `半径${radius}mm・${angle}°の曲線（${Math.round(360 / angle)}本で円）`,
-  };
+export const PARTS: PartDef[] = MAKERS.flatMap((m) => CATALOG[m].map((e) => fromCatalog(m, e)));
+
+export function partsFor(maker: Maker): PartDef[] {
+  return PARTS.filter((p) => p.maker === maker);
 }
 
-function turnout(length: number, radius: number, angle: number, label: string): PartDef {
-  return {
-    id: `TO${label}`,
-    name: `${label}番ポイント`,
-    kind: "turnout",
-    length,
-    radius,
-    angle,
-    handed: true,
-    joints: [
-      { x: 0, y: 0, deg: 180 },
-      { x: length, y: 0, deg: 0 },
-      arcEnd(radius, angle),
-    ],
-    description: `${label}番ポイント。直進${length}mm、分岐側はR${radius} ${angle}°。ジョイント1=直進側、2=分岐側`,
-  };
+export function partIdsFor(maker: Maker): [string, ...string[]] {
+  return partsFor(maker).map((p) => p.id) as [string, ...string[]];
 }
 
-const bumper: PartDef = {
-  id: "BUMPER",
-  name: "車止め",
-  kind: "bumper",
-  length: 40,
-  handed: false,
-  joints: [{ x: 0, y: 0, deg: 180 }],
-  description: "線路の終端に置く車止め（ジョイントは1つ）",
-};
-
-export const PARTS: PartDef[] = [
-  straight(248),
-  straight(186),
-  straight(124),
-  straight(64),
-  curve(216, 45),
-  curve(249, 45),
-  curve(282, 45),
-  curve(315, 45),
-  curve(348, 45),
-  curve(481, 15),
-  curve(718, 15),
-  turnout(186, 718, 15, "6"),
-  bumper,
-];
-
-export const PART_IDS = PARTS.map((p) => p.id) as [string, ...string[]];
+/** 部品の購入用の品番（左右のあるポイントは向きで変わる） */
+export function productsOf(part: PartDef, mirror: boolean): CatalogProduct[] {
+  return mirror && part.productsRight ? part.productsRight : part.products;
+}
 
 const byId = new Map(PARTS.map((p) => [p.id, p]));
 

@@ -4,14 +4,22 @@ AIと一緒にNゲージ鉄道模型の線路レイアウトを設計するWeb�
 
 ## できること
 
-- **線路エディタ**: 直線・曲線（R216〜R718）・#6ポイント・車止めを、選んだ端（赤い丸）につないでいきます。ドラッグで移動すると近くの端に吸着します。回転・左右反転・削除（キー: `R` / `F` / `Delete`）。
+- **メーカー選択**: KATO（ユニトラック）と TOMIX（ファイントラック）から選べます。パレット・AIの提案・部品リストがそのメーカーの線路になります。
+- **線路エディタ**: 直線・曲線・ポイント・車止めを、選んだ端（赤い丸）につないでいきます。ドラッグで移動すると近くの端に吸着します。回転・左右反転・削除（キー: `R` / `F` / `Delete`）。
 - **ボード設定**: 900×600、サブロク（1820×910）などのプリセットか任意のサイズ。はみ出した線路は赤く表示されます。
 - **AIレイアウト提案**: 要望を日本語で書くと、AIが線路部品の並びを提案します。アプリ側で組み立てて「つながっていない端・ずれ・ボード外・重なり」を検査し、問題があればAIに直させます（最大4回）。
 - **AIの切り替え**: Claude・OpenAI・Gemini・ローカルLLM（Ollama / LM Studio / vLLM など OpenAI 互換API）から選べます。モデル・APIキー・接続先URLは画面の「AI設定」かサーバーの環境変数で設定し、「一覧」ボタンで使えるモデルを取得できます。
-- **確認結果と部品リスト**: 必要な線路の種類と本数、線路延長を表示します。
+- **確認結果と部品リスト**: 必要な線路を**メーカー品番**ごとに本数・箱数で表示します（ポイントは左右別）。線路延長も表示します。
 - **保存**: ブラウザに自動保存。JSONファイルで保存・読み込みもできます。
 
-線路の寸法は KATO ユニトラック互換の一般的な規格です（`src/lib/parts.ts`）。
+## 線路カタログ
+
+品番・製品名・寸法・入数は、各社公式サイトの製品一覧から抽出して `src/data/trackCatalog.ts` にまとめています（出典URLと取得日をファイルに記載）。
+
+- KATO: [直線](https://unitrack.katomodels.com/products/line_single/straight_line) / [曲線](https://unitrack.katomodels.com/products/line_single/curve_line) / [分岐・交差](https://unitrack.katomodels.com/products/line_single/branch_cross) / [車止め](https://unitrack.katomodels.com/products/line_single/car_stop)
+- TOMIX: [基本レール](https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi) / [ポイント](https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_point) / [特殊レール](https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_spc)
+
+公式の一覧ページにポイントの直進長・分岐半径の数値がないものは、製品名と各社規格の一般的な値で補い、`geometryNote` に明記しています。Y字・3方・ダブルクロス・交差・コンパクト曲線・複線線路などは、まだ配置計算に対応していないため含めていません。新しい部品は `trackCatalog.ts` に1行足すとパレット・AI・部品リストに反映されます。
 
 ## 仕組み
 
@@ -25,7 +33,9 @@ AIに座標を直接計算させるとずれが出やすいため、AIには「�
 
 | ファイル | 役割 |
 |---|---|
-| `src/lib/parts.ts` | 部品カタログとジョイント（接続端）の定義 |
+| `src/data/trackCatalog.ts` | KATO・TOMIXの品番・寸法（公式サイトから抽出） |
+| `src/lib/parts.ts` | カタログから部品の形とジョイント（接続端）を生成 |
+| `src/lib/bom.ts` | 品番ごとの必要本数・箱数の集計 |
 | `src/lib/geometry.ts` | 配置計算、接続判定、はみ出し・重なり検査、部品集計 |
 | `src/lib/plan.ts` | AIの出力スキーマと、部品の並び → 配置への変換 |
 | `src/lib/ai.ts` | システムプロンプトと、検証・再試行ループ（プロバイダ共通） |

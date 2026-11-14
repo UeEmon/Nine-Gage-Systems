@@ -50,6 +50,8 @@ export interface ChatSession {
 
 export type SessionOptions = {
   system: string;
+  /** 出力の zod スキーマ（Claude の構造化出力で使う） */
+  zodSchema: import("zod").ZodType;
   /** 出力のJSON Schema */
   jsonSchema: Record<string, unknown>;
   schemaName: string;
