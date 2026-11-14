@@ -20,6 +20,7 @@ export function usageFromAnthropic(u: Anthropic.Beta.BetaUsage | undefined): Tok
     outputTokens: u.output_tokens ?? 0,
     cacheReadTokens: u.cache_read_input_tokens ?? 0,
     cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+    ...(u.cache_creation?.ephemeral_1h_input_tokens ? { cacheWrite1hTokens: u.cache_creation.ephemeral_1h_input_tokens } : {}),
   };
 }
 

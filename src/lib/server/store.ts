@@ -47,12 +47,21 @@ export type StoredAi = {
   byProvider: Partial<Record<ProviderId, ProviderSettings>>;
 };
 
+/** 管理画面の料金表示の設定 */
+export type StoredAiCost = {
+  /** 1米ドルあたりの円（料金の円換算に使う） */
+  usdJpy: number;
+};
+
+export const DEFAULT_USD_JPY = 150;
+
 export type StoreData = {
   version: 1;
   sessionSecret: string;
   users: StoredUser[];
   ai: StoredAi;
   notices: StoredNotice[];
+  aiCost: StoredAiCost;
 };
 
 export type Env = Record<string, string | undefined>;
@@ -75,6 +84,7 @@ function normalize(raw: unknown): StoreData {
       byProvider[p] = { model: str(s.model, 200), apiKey: str(s.apiKey, 500), baseUrl: str(s.baseUrl, 500) };
     }
   }
+  const usdJpy = (d.aiCost as Partial<StoredAiCost> | undefined)?.usdJpy;
   return {
     version: 1,
     sessionSecret:
@@ -97,6 +107,7 @@ function normalize(raw: unknown): StoreData {
             AUDIENCES.includes(n.audience),
         )
       : [],
+    aiCost: { usdJpy: typeof usdJpy === "number" && usdJpy > 0 && usdJpy < 10000 ? usdJpy : DEFAULT_USD_JPY },
   };
 }
 
