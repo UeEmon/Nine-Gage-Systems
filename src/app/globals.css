@@ -314,3 +314,72 @@ button.link:hover { text-decoration: underline; }
 .swatch.lv-elevated { background: var(--elevated); }
 h3.sub { font-size: 13px; margin: 12px 0 6px; }
 .bom tr.pier-row td { color: var(--muted); }
+
+/* ---- 道床の描き分け（キャンバスとパーツのアイコン共通） ---- */
+:root {
+  --bed-wood: #8a6a4a;
+  --bed-pc: #d2d0c8;
+  --slab: #c9ccc9;
+  --slab-seam: #9ea3a0;
+  --wide-pc: #a9a69c;
+  --bridge: #b4553f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bed-wood: #7a5c3f;
+    --bed-pc: #8e8c85;
+    --slab: #7b807d;
+    --slab-seam: #5a5f5c;
+    --wide-pc: #66645d;
+    --bridge: #c7705b;
+  }
+}
+.piece .sleepers { stroke: var(--bed-wood); stroke-width: 19; stroke-dasharray: 2.5 4.5; }
+.piece.bed-pc .sleepers, .piece.bed-viaduct .sleepers, .piece.bed-synthetic .sleepers { stroke: var(--bed-pc); }
+.piece.bed-slab .ballast { stroke: var(--slab); stroke-width: 21; }
+.piece.bed-slab .sleepers { stroke: var(--slab-seam); stroke-width: 21; stroke-dasharray: 1.2 34; }
+.piece.bed-widePc .ballast { stroke: var(--wide-pc); stroke-width: 31; }
+.piece.bed-widePc .sleepers { stroke: var(--bed-pc); stroke-width: 21; stroke-dasharray: 2.5 4; }
+.piece.cat-bridge .ballast { stroke: var(--bridge); stroke-width: 27; }
+.piece.cat-bridge .sleepers { stroke: var(--bed-wood); }
+
+/* パーツのアイコン */
+.part-icon .piece { cursor: inherit; }
+.part-icon.large { width: 100%; height: 180px; background: var(--board); border-radius: 6px; }
+.icon-badge { font-weight: 700; font-family: system-ui, sans-serif; }
+.icon-badge.cat { fill: var(--muted); }
+.icon-badge.bed { fill: #fff; }
+.icon-badge-bg { fill: var(--muted); }
+.icon-badge-bg.bed-slab { fill: #5b6b78; }
+.icon-badge-bg.bed-widePc { fill: #6b5b3a; }
+.icon-badge-bg.bed-viaduct { fill: var(--elevated-strong); }
+.icon-badge-bg.bed-pc, .icon-badge-bg.bed-synthetic { fill: #6b6b66; }
+
+/* パレットの部品と詳細ボタン */
+.part-wrap { position: relative; display: flex; }
+.part-wrap .part { flex: 1; min-width: 0; }
+.part-wrap .info {
+  position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; padding: 0;
+  border-radius: 50%; font-size: 12px; line-height: 18px; background: var(--panel);
+}
+.part .meta { font-size: 10px; color: var(--muted); }
+.chips.beds { margin-top: 4px; }
+
+/* 部品の仕様（ダイアログ） */
+.part-detail-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex;
+  align-items: center; justify-content: center; z-index: 50; padding: 16px;
+}
+.part-detail {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 14px 16px;
+}
+.part-detail header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.part-detail h3 { margin: 0; font-size: 16px; }
+.part-detail .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.part-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 13px; margin: 10px 0; }
+.part-detail dt { color: var(--muted); }
+.part-detail dd { margin: 0; }
+.part-detail h4 { font-size: 13px; margin: 12px 0 4px; color: var(--muted); }
+.part-detail .sources { font-size: 11px; word-break: break-all; }
+.nowrap { white-space: nowrap; }

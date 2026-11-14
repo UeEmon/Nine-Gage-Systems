@@ -17,6 +17,13 @@
 //     複線: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_double
 //     ミニカーブ: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_mini
 //     レール関連製品（鉄橋・橋脚）: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr
+//     ワイドPCレール: https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_wpc
+//     スラブレール・ワイドPCレール（2026-11-15 追加）: 各製品ページ https://www.tomytec.co.jp/tomix/products/n/<品番>.html
+//       と 2025年5月8日の価格改定のお知らせ（品番・製品名・新価格）で確認
+//
+// 道床（バラスト・PC・スラブ・ワイドPC など）の違う部品は、形が同じでも別の部品IDにしている
+// （例: S280 と S280-SL）。variantOf に同じ形の標準の部品IDを入れ、選択中の部品の道床を切り替えられる。
+// PCまくら木の製品は標準の部品と見た目・つなぎ方がほぼ同じなので、標準の部品の品番に含めている。
 //
 // 品番・製品名・入数は一覧ページの記載どおり。直線の長さ・曲線の半径と角度は製品名・掲載値どおり。
 // 一覧ページに数値がない寸法（ポイントの直進長、交差の長さなど）は、公式の製品ページ・
@@ -37,6 +44,27 @@ export type CatalogProduct = {
   perPack: number | null;
 };
 
+/**
+ * 道床（線路の土台）の種類。同じ形でも道床が違うと見た目と品番が変わる。
+ * - ballast: バラスト道床・木まくら木（KATO・TOMIXの標準）
+ * - pc: バラスト道床・PCまくら木（コンクリート製まくら木）
+ * - slab: スラブ軌道（バラストのないコンクリート板。新幹線・高架線向け）
+ * - widePc: ワイドPC（幅の広いバラスト道床・PCまくら木。曲線はカント付き）
+ * - viaduct: 高架橋付き（KATOの高架線路・TOMIXの高架橋付PCレール）
+ * - synthetic: 合成まくら木（TOMIXのSYポイント）
+ */
+export type BedType = "ballast" | "pc" | "slab" | "widePc" | "viaduct" | "synthetic";
+
+/** 製品名から道床の種類を判定する（判定できなければ fallback） */
+export function bedOfProductName(name: string, fallback: BedType = "ballast"): BedType {
+  if (/高架/.test(name)) return "viaduct";
+  if (/ワイド/.test(name)) return "widePc";
+  if (/スラブ/.test(name)) return "slab";
+  if (/合成枕木|-SY/.test(name)) return "synthetic";
+  if (/PC/.test(name)) return "pc";
+  return fallback;
+}
+
 export type PartCategory = "straight" | "curve" | "turnout" | "crossing" | "double" | "bridge" | "bumper";
 
 export type CatalogEntry = {
@@ -53,6 +81,10 @@ export type CatalogEntry = {
   bumper?: boolean;
   /** AI向けのジョイントの説明 */
   jointHelp?: string;
+  /** 道床の種類（省略時は "ballast"）。パレットの道床の切り替えとアイコンに使う */
+  bed?: BedType;
+  /** 道床違いの部品のとき、同じ形の標準の部品ID（選択中の部品の道床を切り替えるのに使う） */
+  variantOf?: string;
   /** 左向きの品番（左右のないものはこれだけ） */
   products: CatalogProduct[];
   /** 右向きの品番（左右で品番が違うもの） */
@@ -101,6 +133,7 @@ export const CATALOG_SOURCES: Record<CatalogMaker, { label: string; urls: string
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_double",
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_mini",
       "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr",
+      "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_wpc",
     ],
   },
 };
@@ -249,10 +282,10 @@ const KATO: CatalogEntry[] = [
   // 複線
   ...(
     [
-      [248, [p("20-004", "複線直線線路 248mm", 2), p("20-006", "複線スラブ軌道直線線路248mm"), p("20-875", "複線駅構内延長線路")]],
-      [186, [p("20-012", "複線直線線路 186mm"), p("20-014", "複線スラブ軌道直線線路186mm")]],
-      [124, [p("20-023", "複線直線線路 124mm", 2), p("20-025", "複線スラブ軌道直線線路124mm")]],
-      [62, [p("20-042", "複線直線線路 62mm", 2), p("20-044", "複線スラブ軌道直線線路62mm"), p("20-043", "複線フィーダー線路セット", 2), p("20-049", "複線スラブ軌道フィーダー線路S")]],
+      [248, [p("20-004", "複線直線線路 248mm", 2), p("20-875", "複線駅構内延長線路")]],
+      [186, [p("20-012", "複線直線線路 186mm")]],
+      [124, [p("20-023", "複線直線線路 124mm", 2)]],
+      [62, [p("20-042", "複線直線線路 62mm", 2), p("20-043", "複線フィーダー線路セット", 2)]],
     ] as [number, CatalogProduct[]][]
   ).map(([len, products]): CatalogEntry => ({
     id: `DS${len}`, category: "double", label: `複線直線 DS${len}`, handed: false, jointHelp: DOUBLE_HELP,
@@ -260,7 +293,7 @@ const KATO: CatalogEntry[] = [
   })),
   ...(
     [
-      [414, [p("20-181", "複線曲線線路R414/381mm45°", 2), p("20-187", "スラブ曲線R414/381-45")]],
+      [414, [p("20-181", "複線曲線線路R414/381mm45°", 2)]],
       [315, [p("20-183", "複線曲線線路R315/282mm45°")]],
       [480, [p("20-185", "複線曲線線路R480/447mm45°", 2)]],
     ] as [number, CatalogProduct[]][]
@@ -271,7 +304,7 @@ const KATO: CatalogEntry[] = [
   })),
   ...(
     [
-      [414, [p("20-182", "複線アプローチ線路セットR414/381mm(左・右)", 2), p("20-188", "スラブアプローチR414/381", 2)]],
+      [414, [p("20-182", "複線アプローチ線路セットR414/381mm(左・右)", 2)]],
       [315, [p("20-184", "複線アプローチ線路セットR315/282mm(左・右)", 2)]],
       [480, [p("20-186", "複線アプローチ線路セットR480/447mm(左・右)", 2)]],
     ] as [number, CatalogProduct[]][]
@@ -282,6 +315,34 @@ const KATO: CatalogEntry[] = [
     geometryNote: `22.5°は製品ページの記載。内外の線路を同心の円弧として扱う（実物の端部の形は${EST}）`,
     geometryStatus: "estimated",
   })),
+  // 複線スラブ軌道（道床違い。形は同じ長さ・半径の複線線路と同じ）
+  ...(
+    [
+      [248, [p("20-006", "複線スラブ軌道直線線路248mm")]],
+      [186, [p("20-014", "複線スラブ軌道直線線路186mm")]],
+      [124, [p("20-025", "複線スラブ軌道直線線路124mm")]],
+      [62, [p("20-044", "複線スラブ軌道直線線路62mm"), p("20-049", "複線スラブ軌道フィーダー線路S")]],
+    ] as [number, CatalogProduct[]][]
+  ).map(([len, products]): CatalogEntry => ({
+    id: `DS${len}-SL`, category: "double", label: `複線スラブ直線 DS${len}`, handed: false, jointHelp: DOUBLE_HELP,
+    routes: shape.doubleStraight(len, KATO_SPACING), products, bed: "slab", variantOf: `DS${len}`,
+    geometryNote: "スラブ軌道（バラストのないコンクリート道床）。形・線路間隔33mmは同じ長さの複線線路と同じ",
+  })),
+  {
+    id: "DR414-45-SL", category: "double", label: "複線スラブ曲線 R414/381-45°", handed: true,
+    jointHelp: `${DOUBLE_HELP}。L向きでは右側が外側R414、左側が内側R381`,
+    routes: shape.doubleCurve(414, 45, KATO_SPACING), products: [p("20-187", "スラブ曲線R414/381-45")],
+    bed: "slab", variantOf: "DR414-45",
+    geometryNote: "スラブ軌道。形は複線曲線R414/381-45°と同じ",
+  },
+  {
+    id: "DA414-22.5-SL", category: "double", label: "複線スラブアプローチ R414/381-22.5°", handed: true,
+    jointHelp: `${DOUBLE_HELP}。複線曲線の両端に1本ずつ使う`,
+    routes: shape.doubleCurve(414, 22.5, KATO_SPACING), products: [p("20-188", "スラブアプローチR414/381", 2)],
+    bed: "slab", variantOf: "DA414-22.5",
+    geometryNote: `スラブ軌道。形は複線アプローチR414/381と同じ（内外の線路を同心の円弧として扱う。実物の端部の形は${EST}）`,
+    geometryStatus: "estimated",
+  },
   {
     id: "DW310", category: "double", label: "複線間隔変換 33→66mm", handed: true,
     jointHelp: `${DOUBLE_HELP}。左側の線路が33mm外へ広がる（j3 は間隔66mm）`,
@@ -448,12 +509,91 @@ const TOMIX: CatalogEntry[] = [
     jointHelp: `${DOUBLE_HELP}。L向きでは右側が外側R${r}、左側が内側R${r - TOMIX_SPACING}`,
     routes: shape.doubleCurve(r, 45, TOMIX_SPACING), products,
   })),
+  // スラブレール（道床違い。形は同じ長さ・半径の基本レールと同じ）
+  ...(
+    [
+      ["S280", 280, [p("1048", "スラブレールS280-SL(F)(4本セット)", 4)]],
+      ["S140", 140, [p("1047", "スラブレールS140-SL(F)(4本セット)", 4)]],
+    ] as [string, number, CatalogProduct[]][]
+  ).map(([base, len, products]): CatalogEntry => ({
+    ...st(`${base}-SL`, len, products, "スラブ軌道（バラストのないコンクリート道床）。長さ・つなぎ方は基本レールと同じ"),
+    label: `スラブ直線 ${base}-SL`, bed: "slab", variantOf: base,
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(Number(products[0].code))],
+  })),
+  ...(
+    [
+      ["DS280", 280, [p("1067", "複線スラブレールDS280-SL(F)(2本セット)", 2)]],
+      ["DS140", 140, [p("1066", "複線スラブレールDS140-SL(F)(2本セット)", 2)]],
+      ["DS1120", 1120, [p("1070", "複線スラブレールDS1120-SL(F)(2本セット)", 2)]],
+    ] as [string, number, CatalogProduct[]][]
+  ).map(([base, len, products]): CatalogEntry => ({
+    id: `${base}-SL`, category: "double", label: `複線スラブ直線 ${base}-SL`, handed: false, jointHelp: DOUBLE_HELP,
+    routes: shape.doubleStraight(len, TOMIX_SPACING), products, bed: "slab", variantOf: base,
+    geometryNote: "スラブ軌道。間隔37mm・長さは同じ長さの複線レールと同じ。別売の橋脚で高架にもできる",
+    geometryStatus: "confirmed", geometrySources: [SRC.tomix(Number(products[0].code))],
+  })),
+  {
+    id: "DC465-45-SL", category: "double", label: "複線スラブ曲線 DC465/428-45-SL", handed: true,
+    jointHelp: `${DOUBLE_HELP}。L向きでは右側が外側R465、左側が内側R428`,
+    routes: shape.doubleCurve(465, 45, TOMIX_SPACING),
+    products: [p("1168", "複線スラブカーブレールDC465・428-45-SL(F)(2本セット)", 2)],
+    bed: "slab", variantOf: "DC465-45",
+    geometryNote: "スラブ軌道。形は複線カーブレールDC465・428-45と同じ（製品名から）",
+  },
+  {
+    id: "DC539-22.5-SL", category: "double", label: "複線スラブ曲線 DC539/502-22.5-SL", handed: true,
+    jointHelp: `${DOUBLE_HELP}。L向きでは右側が外側R539、左側が内側R502`,
+    routes: shape.doubleCurve(539, 22.5, TOMIX_SPACING),
+    products: [p("1169", "複線スラブカーブレールDC539・502-22.5-SL(F)(2本セット)", 2)],
+    bed: "slab",
+    geometryNote: "R539/R502・22.5°（16本で1周）は製品名から。同じ形の標準の複線レールはない",
+    geometrySources: [SRC.tomix(1169)],
+  },
+  // ワイドPCレール（幅の広いバラスト道床・PCまくら木。曲線はカント付き。形は基本レールと同じ）
+  ...(
+    [
+      ["S280", 280, [p("1762", "ワイドPCレールS280-WP(F)(4本セット)", 4), p("1730", "ワイドPCレールS280-WP(F)(10本セット)", 10), p("1767", "ワイドPCレールS280-WP(F)(ポイント分岐用)(4本セット)", 4)]],
+      ["S158.5", 158.5, [p("1736", "ワイドPCレールS158.5-WP(F)(4本セット)", 4)]],
+      ["S140", 140, [p("1761", "ワイドPCレールS140-WP(F)(4本セット)", 4), p("1769", "ワイドPCレールS140-WP(F)(ポイント分岐用)(4本セット)", 4)]],
+      ["S99", 99, [p("1735", "ワイドPCレールS99-WP(F)(4本セット)", 4)]],
+      ["S72.5", 72.5, [p("1763", "ワイドPCレールS72.5-WP(F)(4本セット)", 4)]],
+      ["S70", 70, [p("1764", "ワイドPCレールS70-WP(F)(4本セット)", 4)]],
+      ["V70", 70, [p("1528", "ワイドPCバリアブルレールV70-WP(F)(2本セット)", 2)]],
+    ] as [string, number, CatalogProduct[]][]
+  ).map(([base, len, products]): CatalogEntry => ({
+    ...st(`${base}-WP`, len, products,
+      base === "V70"
+        ? "ワイドPC。伸縮する。配置計算では70mmとして扱う"
+        : "ワイドPC（幅の広いバラスト道床）。長さ・つなぎ方は基本レールと同じ。ポイント分岐用はポイントの先で道床が干渉しない形"),
+    label: `ワイドPC直線 ${base}-WP`, bed: "widePc", variantOf: base,
+  })),
+  ...(
+    [
+      [280, 45, "1771"],
+      [317, 45, "1772"],
+      [354, 45, "1773"],
+      [391, 45, "1774"],
+      [541, 15, "1770"],
+    ] as [number, number, string][]
+  ).map(([r, deg, code]): CatalogEntry => ({
+    ...cv(`C${r}-${deg}-WP`, r, deg, [p(code, `ワイドPCカーブレールC${r}-${deg}-WP(F)(4本セット)`, 4)],
+      "ワイドPC。カント（内側への傾き）付き。半径・角度は基本のカーブレールと同じ（製品名から）"),
+    label: `ワイドPC曲線 C${r}-${deg}-WP`, bed: "widePc", variantOf: `C${r}-${deg}`,
+    geometrySources: [SRC.tomix(Number(code))],
+  })),
   // 車止め
   {
     id: "E", category: "bumper", label: "エンドレール", handed: false, bumper: true,
     routes: shape.bumper(40),
     products: [p("1421", "エンドレールE (F)"), p("1423", "エンドレールE(LED2・ノイズキャンセラー付)(F)"), p("1428", "エンドPCレールE-PC(LEDタイプ)(F)")],
     geometryNote: `長さ40mmは${EST}`,
+    geometryStatus: "estimated",
+  },
+  {
+    id: "E-WI", category: "bumper", label: "ワイドエンドレール", handed: false, bumper: true,
+    routes: shape.bumper(40), bed: "widePc", variantOf: "E",
+    products: [p("1425", "ワイドエンドレールE-WI(F)(2本セット)", 2)],
+    geometryNote: `ワイドPCレール用の車止め。長さ40mmは${EST}`,
     geometryStatus: "estimated",
   },
 ];
@@ -580,5 +720,6 @@ export const CATALOG: Record<CatalogMaker, CatalogEntry[]> = {
 export const NOT_MODELED: { maker: CatalogMaker; code: string; name: string; reason: string }[] = [
   { maker: "tomix", code: "1297", name: "安全側線レールPL541-15-S140-SY(F)", reason: "ポイントPL541-15とS140・車止めの組み合わせで代用できる" },
   { maker: "tomix", code: "1298", name: "安全側線レールPR541-15-C541-SY(F)", reason: "ポイントPR541-15とC541-15・車止めの組み合わせで代用できる" },
-  { maker: "tomix", code: "1425", name: "ワイドエンドレールE-WI(F)(2本セット)", reason: "ワイドPCレール用" },
+  { maker: "tomix", code: "1046", name: "スラブレールS140-SL(F)(2本セット)", reason: "4本セットの1047と同じ形。現行の価格が確認できなかった" },
+  { maker: "tomix", code: "1781〜1784", name: "ワイドPCアプローチレールCR(L)-22.5-WP(F)", reason: "緩和曲線の形（半径が途中で変わる）を確認できる資料が見つからなかった" },
 ];
