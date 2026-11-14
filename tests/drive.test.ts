@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDriveGraph, Drive, scaleKmhToMmPerSec, startRef } from "../src/lib/drive";
+import { buildDriveGraph, carPlacements, Drive, N_CAR, scaleKmhToMmPerSec, startRef, trainLength } from "../src/lib/drive";
 import { placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { buildFromPlan, type LayoutPlan } from "../src/lib/plan";
 import { p, sidingPlan } from "./fixtures";
@@ -94,6 +94,43 @@ describe("drive", () => {
     expect(pose.gradePct).toBeCloseTo((10 / 248) * 100, 1);
     drive.advance(400);
     expect(drive.poseAt().z).toBeCloseTo(20);
+  });
+
+  it("places N-scale cars on the track by their bogies, also right after starting", () => {
+    const pieces = oval();
+    const drive = new Drive(buildDriveGraph(pieces), startRef(pieces)!, Math.random, trainLength(3) + 20);
+    // 走り始めから後ろの車両も線路の上（通ってきた線路を逆にたどって用意する）
+    const front = drive.poseAt();
+    const cars = carPlacements(drive, 3);
+    expect(cars).toHaveLength(3);
+    // 1両目は直線の上なので前端から半両分うしろ。3両目は後ろの曲線にかかるので、線路に沿った距離より少し近い
+    const along = 2 * (N_CAR.length + N_CAR.gap) + N_CAR.length / 2;
+    const d3 = Math.hypot(cars[2].x - front.x, cars[2].y - front.y);
+    expect(d3).toBeGreaterThan(along - 30);
+    expect(d3).toBeLessThan(along);
+    drive.advance(200);
+    const [first] = carPlacements(drive, 1);
+    expect(first.x).toBeCloseTo(drive.poseAt().x - N_CAR.length / 2);
+    expect(first.y).toBeCloseTo(drive.poseAt().y);
+
+    // 半径249mmの曲線の中では、車体の中心は台車の間の弦の中点（中心線から内側へ 約4.3mm）
+    drive.advance(2 * 248 + 249 * Math.PI * 0.5 - 200);
+    const center = { x: 300 + 496, y: 80 + 249 };
+    const car = carPlacements(drive, 1)[0];
+    const r = Math.hypot(car.x - center.x, car.y - center.y);
+    expect(r).toBeCloseTo(Math.sqrt(249 ** 2 - (N_CAR.bogieCenters / 2) ** 2), 0);
+  });
+
+  it("keeps the cars on the track after turning back", () => {
+    const a = placeAt("kato:S248", false, 0, { x: 0, y: 0, deg: 0 }, "a");
+    const b = placeAt("kato:S248", false, 0, worldJoints(a)[1], "b");
+    const drive = new Drive(buildDriveGraph([a, b]), startRef([a, b], "a")!, Math.random, 300);
+    drive.advance(200);
+    drive.reverseDirection();
+    const [car] = carPlacements(drive, 1);
+    expect(car.heading).toBeCloseTo(180);
+    expect(car.x).toBeCloseTo(200 + N_CAR.length / 2);
+    expect(car.y).toBeCloseTo(0);
   });
 
   it("converts scale speed to model speed", () => {
