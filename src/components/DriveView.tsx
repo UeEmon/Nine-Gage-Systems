@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { placePiers } from "@/lib/elevation";
-import { buildDriveGraph, Drive, scaleKmhToMmPerSec, startRef, SWITCH_POLICIES, type SwitchPolicy } from "@/lib/drive";
+import { buildDriveGraph, carPlacements, Drive, trainLength, scaleKmhToMmPerSec, startRef, SWITCH_POLICIES, type SwitchPolicy } from "@/lib/drive";
 import { bedStyle, buildScene, buildTrain } from "@/lib/driveScene";
 import type { Layout } from "@/lib/geometry";
 import { getPart } from "@/lib/parts";
@@ -33,6 +33,11 @@ const EYE_MM = 18;
 /** 加速・減速（縮尺の km/h 毎秒） */
 const ACCEL_KMH_PER_S = 40;
 const MAX_KMH = 320;
+/** 後ろから見るときの編成の両数 */
+const CARS = 3;
+/** 後ろから見るときのカメラの位置（最後尾から線路に沿って後ろへ, mm）と高さ */
+const CHASE_BACK_MM = 160;
+const CHASE_UP_MM = 110;
 
 /** 作ったレイアウトの線路の上を、運転席の視点で走る3Dの映像 */
 export function DriveView({ layout, startUid, onClose }: Props) {
@@ -66,7 +71,7 @@ export function DriveView({ layout, startUid, onClose }: Props) {
       return;
     }
     const graph = buildDriveGraph(layout.pieces);
-    const drive = new Drive(graph, ref);
+    const drive = new Drive(graph, ref, Math.random, trainLength(CARS) + CHASE_BACK_MM + 20);
     drive.policy = policy;
     driveRef.current = drive;
     ctl.current.kmh = 0;
@@ -95,7 +100,7 @@ export function DriveView({ layout, startUid, onClose }: Props) {
     const piers = placePiers(layout.pieces, graph.elevation);
     const world = buildScene(graph, layout.pieces, piers, layout.board);
     scene.add(world.group);
-    const train = buildTrain();
+    const train = buildTrain(CARS);
     scene.add(train.group);
 
     const camera = new THREE.PerspectiveCamera(62, 1, 1, 20000);
@@ -161,10 +166,15 @@ export function DriveView({ layout, startUid, onClose }: Props) {
       const targetRoll = cant && Math.abs(pose.curvature) > 1e-4 ? (Math.sign(pose.curvature) * cant * Math.PI) / 180 : 0;
       roll += (targetRoll - roll) * Math.min(1, dt * 3);
 
-      // 車両は現在位置を先頭にして置く
-      train.group.position.copy(v(pose));
-      train.group.rotation.set(0, -(pose.heading * Math.PI) / 180, 0);
+      // 車両は現在位置を先頭の前端にして、各車両を前後の台車の位置で線路に沿わせる
       train.group.visible = c.view === "chase";
+      if (c.view === "chase") {
+        carPlacements(drive, CARS).forEach((p, i) => {
+          const car = train.cars[i];
+          car.position.copy(v(p));
+          car.rotation.set(0, -(p.heading * Math.PI) / 180, p.pitch, "YXZ");
+        });
+      }
 
       if (c.view === "cab") {
         camera.position.copy(v(pose, EYE_MM));
@@ -178,11 +188,13 @@ export function DriveView({ layout, startUid, onClose }: Props) {
         camera.lookAt(camera.position.clone().add(dir));
         camera.rotateZ(roll);
       } else {
-        const h = (pose.heading * Math.PI) / 180 + c.yaw;
-        const dist = 260;
-        camera.position.set(pose.x - Math.cos(h) * dist, pose.z + 120 + c.pitch * 150, pose.y - Math.sin(h) * dist);
+        // 線路に沿って編成の後ろの上から、先頭の車両を見る（ドラッグで回り込む）
+        const target = v(pose, 10);
+        const base = v(drive.poseAt(-(trainLength(CARS) + CHASE_BACK_MM)), CHASE_UP_MM + c.pitch * 150);
+        const offset = base.sub(target).applyAxisAngle(new THREE.Vector3(0, 1, 0), c.yaw);
+        camera.position.copy(target).add(offset);
         camera.up.set(0, 1, 0);
-        camera.lookAt(v(ahead, 10));
+        camera.lookAt(target);
       }
       renderer.render(scene, camera);
 

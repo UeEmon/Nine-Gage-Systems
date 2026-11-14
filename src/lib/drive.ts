@@ -178,13 +178,30 @@ export class Drive {
   policy: SwitchPolicy = "straight";
   /** 次のポイントだけ、選び方とは別に選ぶ進路（直進に近い順の番号） */
   nextOverride: number | null = null;
+  /** 現在位置より後ろに残しておく線路の長さ（後ろの車両を線路に沿って置くため） */
+  readonly keepBehind: number;
   private turnCount = new Map<string, number>();
   private rand: () => number;
 
-  constructor(graph: DriveGraph, start: SegmentRef, rand: () => number = Math.random) {
+  constructor(graph: DriveGraph, start: SegmentRef, rand: () => number = Math.random, keepBehind = 0) {
     this.graph = graph;
     this.segments = [makeSegment(graph, start)];
     this.rand = rand;
+    this.keepBehind = keepBehind;
+    this.fillBehind();
+  }
+
+  /** 後ろに keepBehind 分の線路がなければ、つながりを逆にたどって足す（行き止まりならそこまで） */
+  private fillBehind() {
+    for (let guard = 0; guard < 200 && this.s < this.keepBehind; guard++) {
+      const first = this.segments[0];
+      const back = makeSegment(this.graph, { uid: first.uid, routeIndex: first.routeIndex, reverse: !first.reverse }, 20);
+      const options = nextOptions(this.graph, back);
+      if (!options.length) return;
+      const prev = makeSegment(this.graph, { ...options[0], reverse: !options[0].reverse });
+      this.segments.unshift(prev);
+      this.s += prev.length;
+    }
   }
 
   /** 選び方でポイントの進路を決める */
@@ -275,7 +292,7 @@ export class Drive {
     const move = Math.min(ds, total - this.s);
     this.s += move;
     this.odometer += move;
-    while (this.segments.length > 1 && this.s >= this.segments[0].length) {
+    while (this.segments.length > 1 && this.s - this.segments[0].length >= this.keepBehind) {
       this.s -= this.segments[0].length;
       this.segments.shift();
     }
@@ -284,13 +301,17 @@ export class Drive {
 
   /** 進行方向を逆にする（行き止まりでの折り返し） */
   reverseDirection() {
-    const cur = this.segments[0];
-    const seg = makeSegment(this.graph, { uid: cur.uid, routeIndex: cur.routeIndex, reverse: !cur.reverse });
-    this.s = Math.max(0, seg.length - this.s);
-    this.segments = [seg];
+    // 通ってきた線路を前にして、全体を逆向きにする
+    const total = this.segments.reduce((a, g) => a + g.length, 0);
+    this.segments = this.segments
+      .slice()
+      .reverse()
+      .map((g) => makeSegment(this.graph, { uid: g.uid, routeIndex: g.routeIndex, reverse: !g.reverse }));
+    this.s = Math.max(0, total - this.s);
+    this.fillBehind();
   }
 
-  /** 現在位置から offset mm 先の位置（用意した区間の先は、その端） */
+  /** 現在位置から offset mm 先の位置（負なら後ろ。用意した区間の外は、その端） */
   poseAt(offset = 0): DrivePose {
     this.ensureAhead(offset + 1);
     let d = this.s + offset;
@@ -351,4 +372,62 @@ export function startRef(pieces: Piece[], uid?: string | null, reverse = false):
 /** 縮尺 1/150 の時速(km/h) → 模型の秒速(mm/s) */
 export function scaleKmhToMmPerSec(kmh: number, scale = 150): number {
   return (kmh * 1_000_000) / 3600 / scale;
+}
+
+/**
+ * Nゲージ（1/150）の20m級の車両の寸法(mm)。実物の 全長20m・車体幅2.9m・屋根の高さ約3.9m・台車中心間隔13.8m を 1/150 にしたもの
+ * （KATO・TOMIX の20m級の車両はおよそ全長133〜135mm）。
+ */
+export const N_CAR = {
+  length: 133,
+  width: 19.3,
+  /** レール面から屋根まで */
+  height: 26,
+  /** レール面から車体の床まで */
+  floor: 4,
+  /** 前後の台車の中心の間隔 */
+  bogieCenters: 92,
+  /** 連結した車両の間のすきま */
+  gap: 3,
+} as const;
+
+export type CarPlacement = {
+  /** 車体の中心（レール面の高さ） */
+  x: number;
+  y: number;
+  z: number;
+  /** 車体の向き（度, レイアウトの角度と同じ） */
+  heading: number;
+  /** 車体の前上がりの傾き（ラジアン） */
+  pitch: number;
+};
+
+/**
+ * 先頭の車両の前端を現在位置にして、cars 両の車体の置き方を求める。
+ * 実物と同じく、車体は前後の台車の位置（線路の上）を結んだ向きに置く（曲線では車体の端が少し外へ出る）
+ */
+export function carPlacements(drive: Drive, cars: number): CarPlacement[] {
+  const { length, bogieCenters, gap } = N_CAR;
+  const out: CarPlacement[] = [];
+  for (let i = 0; i < cars; i++) {
+    const front = -i * (length + gap);
+    const a = drive.poseAt(front - (length - bogieCenters) / 2);
+    const b = drive.poseAt(front - (length + bogieCenters) / 2);
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    const flat = Math.hypot(dx, dy) || 1;
+    out.push({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      z: (a.z + b.z) / 2,
+      heading: (Math.atan2(dy, dx) * 180) / Math.PI,
+      pitch: Math.atan2(a.z - b.z, flat),
+    });
+  }
+  return out;
+}
+
+/** 列車の長さ(mm) */
+export function trainLength(cars: number): number {
+  return cars * N_CAR.length + (cars - 1) * N_CAR.gap;
 }

@@ -6,7 +6,7 @@ import * as THREE from "three";
 import type { BedType } from "../data/trackCatalog";
 import { PIER_MIN_MM, type Pier } from "./elevation";
 import type { Board, Piece } from "./geometry";
-import { makeSegment, type DriveGraph, type DrivePoint } from "./drive";
+import { makeSegment, N_CAR, type DriveGraph, type DrivePoint } from "./drive";
 import { getPart } from "./parts";
 
 /** ボードの面の高さ（地上の線路のレール面からの深さ） */
@@ -330,23 +330,54 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
   };
 }
 
-/** 後ろから見るときの車両（1両） */
-export function buildTrain(color = 0x2f6fb5): Built {
+/**
+ * 後ろから見るときの列車（N_CAR の寸法の車両を cars 両）。
+ * 各車両のグループは車体の中心が原点で +X が前。位置と向きは carPlacements で合わせる
+ */
+export function buildTrain(cars: number, color = 0x2f6fb5): { cars: THREE.Group[]; group: THREE.Group; dispose: () => void } {
+  const { length, width, height, floor, bogieCenters } = N_CAR;
   const group = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x1b2430, roughness: 0.2, metalness: 0.3 });
-  const geo = new THREE.BoxGeometry(130, 16, 18);
-  geo.translate(-65, 11, 0);
-  const win = new THREE.BoxGeometry(2, 6, 15);
-  win.translate(0.5, 14, 0);
-  group.add(new THREE.Mesh(geo, body), new THREE.Mesh(win, glass));
+  const mats = {
+    body: new THREE.MeshStandardMaterial({ color, roughness: 0.5 }),
+    band: new THREE.MeshStandardMaterial({ color: 0xe9eef2, roughness: 0.5 }),
+    roof: new THREE.MeshStandardMaterial({ color: 0x8e959c, roughness: 0.7 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x1b2430, roughness: 0.2, metalness: 0.3 }),
+    under: new THREE.MeshStandardMaterial({ color: 0x2a2c2e, roughness: 0.8 }),
+  };
+  const roofH = 2.5;
+  const bodyTop = height - roofH;
+  const geos: THREE.BufferGeometry[] = [];
+  const box = (w: number, h: number, d: number, x: number, y: number, z = 0) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.translate(x, y, z);
+    geos.push(g);
+    return g;
+  };
+  const bodyGeo = box(length, bodyTop - floor, width, 0, (floor + bodyTop) / 2);
+  const roofGeo = box(length - 2, roofH, width - 3, 0, bodyTop + roofH / 2);
+  // 窓の帯（側面）と、先頭車の前面の窓
+  const sideWin = box(length - 16, 5, width + 0.2, 0, floor + 13);
+  const frontWin = box(0.6, 7, width - 4, length / 2, floor + 13);
+  const bogie = box(20, 3.5, 13, 0, 2.6);
+  const cargroups: THREE.Group[] = [];
+  for (let i = 0; i < cars; i++) {
+    const car = new THREE.Group();
+    car.add(new THREE.Mesh(bodyGeo, mats.body), new THREE.Mesh(roofGeo, mats.roof), new THREE.Mesh(sideWin, mats.glass));
+    if (i === 0) car.add(new THREE.Mesh(frontWin, mats.glass));
+    for (const sx of [-1, 1]) {
+      const b = new THREE.Mesh(bogie, mats.under);
+      b.position.x = (sx * bogieCenters) / 2;
+      car.add(b);
+    }
+    cargroups.push(car);
+    group.add(car);
+  }
   return {
+    cars: cargroups,
     group,
     dispose: () => {
-      geo.dispose();
-      win.dispose();
-      body.dispose();
-      glass.dispose();
+      for (const g of geos) g.dispose();
+      for (const m of Object.values(mats)) m.dispose();
     },
   };
 }
