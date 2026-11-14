@@ -12,6 +12,12 @@ describe("roadbed variants (slab, wide PC)", () => {
     expect(bedOfProductName("高架橋付PCレールHS280-PC(F)")).toBe("viaduct");
     expect(bedOfProductName("電動合成枕木ポイントN-PL541-15-SY(F)")).toBe("synthetic");
     expect(bedOfProductName("ストレートレールS280(F)")).toBe("ballast");
+    // 製品名の記号だけでも判定できる（公式「レール製品名の見方」）
+    expect(bedOfProductName("DC465・428-45-SL(F)")).toBe("slab");
+    expect(bedOfProductName("C391-45-WP(F)")).toBe("widePc");
+    expect(bedOfProductName("E-WI(F)")).toBe("widePc");
+    expect(bedOfProductName("HS140-PC(F)")).toBe("viaduct");
+    expect(bedOfProductName("N-PL541-15-SY(F)")).toBe("synthetic");
   });
 
   it("adds TOMIX slab and wide PC rails with the same shape as the basic rail", () => {
@@ -35,6 +41,15 @@ describe("roadbed variants (slab, wide PC)", () => {
     expect(getPart("tomix:S280-SL").bed).toBe("slab");
     expect(getPart("tomix:S280-WP").bed).toBe("widePc");
     expect(bedsFor("tomix")).toEqual(["ballast", "slab", "widePc"]);
+  });
+
+  it("models mixed wide PC packs (fraction rails, C605 curve with two S70)", () => {
+    const frac = findProduct("tomix", "1738")!;
+    expect(frac.contents.map((c) => [c.partId, c.count])).toEqual([["S33-WP", 4], ["S18.5-WP", 4]]);
+    const c605 = findProduct("tomix", "1750")!;
+    expect(c605.contents.map((c) => [c.partId, c.count]).sort()).toEqual([["C605-10-WP", 4], ["S70-WP", 2]]);
+    expect(c605.priceJpy).toBe(2420);
+    expect(getPart("tomix:C605-10-WP").shapeId).toBe("C605-10");
   });
 
   it("models the 22.5° double slab curve (16 pieces make a circle)", () => {
