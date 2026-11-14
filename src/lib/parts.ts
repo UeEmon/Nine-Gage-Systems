@@ -23,6 +23,7 @@ export const CATEGORY_LABELS: Record<PartCategory, string> = {
   turnout: "ポイント",
   crossing: "交差",
   double: "複線",
+  bridge: "鉄橋",
   bumper: "車止め",
 };
 
@@ -44,6 +45,15 @@ export type PartDef = {
   routeLength: number;
   products: CatalogProduct[];
   productsRight?: CatalogProduct[];
+  /** 高架（橋脚の上）に置くときの品番 */
+  elevatedProducts?: CatalogProduct[];
+  /** 一緒に買う必要がある部品（TOMIXの鉄橋のレールなど）。部品IDと本数 */
+  requires?: { id: string; count: number }[];
+  /**
+   * 勾配にできる部品の両端のジョイント（始点側, 終点側）。
+   * 単線は [[0],[1]]、複線は [[0,2],[1,3]]。ポイントや交差は勾配にできないので null
+   */
+  rampEnds: [number[], number[]] | null;
   geometryNote?: string;
   jointHelp?: string;
   /** AI向けの説明 */
@@ -60,9 +70,19 @@ function describe(category: PartCategory, routes: Route[], label: string): strin
       return m.t === "A" ? `半径${m.r}mm・${m.deg}°の曲線（${Math.round(360 / m.deg)}本で円）` : label;
     case "bumper":
       return "線路の終端に置く車止め（ジョイントは j0 だけ）";
+    case "bridge":
+      return `${label}（${m.t === "S" ? `長さ${m.len}mmの直線` : `半径${m.r}mm・${m.deg}°の曲線`}${routes.length > 1 ? "・複線" : ""}）`;
     default:
       return label;
   }
+}
+
+function rampEndsOf(joints: Joint[], category: PartCategory, routes: number): [number[], number[]] | null {
+  if (category === "turnout" || category === "crossing") return null;
+  if (joints.length === 2 && routes === 1) return [[0], [1]];
+  // 複線: j0→j1 が右側、j2→j3 が左側の線路
+  if (joints.length === 4 && routes === 2) return [[0, 2], [1, 3]];
+  return null;
 }
 
 export const PARTS: PartDef[] = MAKERS.flatMap((maker) =>
@@ -82,6 +102,9 @@ export const PARTS: PartDef[] = MAKERS.flatMap((maker) =>
       routeLength: e.routes.reduce((s, r) => s + routeLength(r), 0),
       products: e.products,
       productsRight: e.productsRight,
+      elevatedProducts: e.elevatedProducts,
+      requires: e.requires,
+      rampEnds: rampEndsOf(e.bumper ? [] : joints, e.category, e.routes.length),
       geometryNote: e.geometryNote,
       jointHelp: e.jointHelp,
       description: describe(e.category, e.routes, e.label),

@@ -15,6 +15,11 @@
   --sleeper: #b7b2a6;
   --warn: #dc2626;
   --header: #1d3a2f;
+  --elevated: #8fa6c4;
+  --elevated-strong: #3f6aa8;
+  --ramp: #d9b56b;
+  --ramp-strong: #b7862a;
+  --pier: #7a8796;
   font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
 }
 
@@ -33,6 +38,11 @@
     --rail: #d6d6d0;
     --sleeper: #57544d;
     --header: #10241c;
+    --elevated: #5d7697;
+    --elevated-strong: #8fb4ec;
+    --ramp: #8f7440;
+    --ramp-strong: #e0b65c;
+    --pier: #a7b3c2;
   }
 }
 
@@ -152,8 +162,32 @@ button.danger { color: var(--danger); }
 .piece .gauge { stroke: var(--ballast); stroke-width: 8; }
 .piece .hit { stroke: transparent; stroke-width: 28; }
 .piece .bumper { stroke: var(--danger); stroke-width: 6; }
+/* 階層（高さ）ごとの色。高架は道床を青灰色にして影を付け、勾配は黄土色 */
+.piece.lv-elevated .ballast { stroke: var(--elevated); filter: drop-shadow(4px 6px 3px rgba(0, 0, 0, 0.35)); }
+.piece.lv-ramp .ballast { stroke: var(--ramp); }
 .piece.is-warn .ballast { stroke: #f2a5a5; }
 .piece.is-selected .ballast { stroke: var(--accent); }
+.piece.is-dim { opacity: 0.18; pointer-events: none; }
+
+.pier { fill: var(--pier); stroke: var(--panel); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.pier.is-warn { fill: var(--warn); }
+.pier.is-dim { opacity: 0.18; }
+.z-label { fill: var(--text); paint-order: stroke; stroke: var(--panel); stroke-width: 3px; font-weight: 600; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+
+
+/* 断面図（高さの横からの見え方） */
+.profile { position: absolute; left: 12px; right: 12px; bottom: 52px; height: 170px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); }
+.profile svg { width: 100%; height: 100%; display: block; }
+.profile .p-track { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; }
+.profile .p-track.lv-ground { stroke: var(--rail); }
+.profile .p-track.lv-ramp { stroke: var(--ramp-strong); }
+.profile .p-track.lv-elevated { stroke: var(--elevated-strong); }
+.profile .p-track.is-selected { stroke: var(--accent); stroke-width: 5; }
+.profile .p-pier { stroke: var(--pier); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.profile .p-ground { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.profile .p-std { stroke: var(--muted); stroke-dasharray: 4 4; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.profile-head { position: absolute; left: 10px; top: 6px; right: 10px; display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); pointer-events: none; }
+.profile-head .seg { pointer-events: auto; }
 
 .joint { fill: var(--warn); stroke: #fff; stroke-width: 2; cursor: pointer; vector-effect: non-scaling-stroke; }
 .joint.is-selected { fill: var(--accent); }
@@ -263,3 +297,20 @@ button.link:hover { text-decoration: underline; }
 .notice-table td { padding: 8px 4px; border-top: 1px solid var(--border); vertical-align: top; }
 .notice-table td.actions { white-space: nowrap; text-align: right; }
 .notice-table td.actions button { margin-left: 6px; }
+
+/* 階層表示のツールバー（キャンバス左上） */
+.levels { position: absolute; left: 12px; top: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; pointer-events: none; }
+.levels > * { pointer-events: auto; }
+.levels .seg { width: auto; }
+.levels .seg button { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--panel); }
+.levels .seg button.on { background: var(--accent-weak); }
+.levels > button.on { background: var(--accent-weak); border-color: var(--accent); }
+.levels .check { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; }
+.check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.check input { width: auto; margin: 0; }
+.swatch { display: inline-block; width: 14px; height: 8px; border-radius: 2px; }
+.swatch.lv-ground { background: var(--sleeper); }
+.swatch.lv-ramp { background: var(--ramp); }
+.swatch.lv-elevated { background: var(--elevated); }
+h3.sub { font-size: 13px; margin: 12px 0 6px; }
+.bom tr.pier-row td { color: var(--muted); }

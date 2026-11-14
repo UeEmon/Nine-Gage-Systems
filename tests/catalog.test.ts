@@ -13,7 +13,7 @@ describe("track catalog", () => {
 
   it.each(MAKERS)("%s has every category, each with product codes", (maker) => {
     const cats = new Set(partsFor(maker).map((p) => p.category));
-    expect([...cats].sort()).toEqual(["bumper", "crossing", "curve", "double", "straight", "turnout"]);
+    expect([...cats].sort()).toEqual(["bridge", "bumper", "crossing", "curve", "double", "straight", "turnout"]);
     for (const e of CATALOG[maker]) expect(e.products.length).toBeGreaterThan(0);
   });
 

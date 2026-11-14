@@ -3,6 +3,8 @@
 
 import { CATALOG, CATALOG_SOURCES, NOT_MODELED, type PartCategory } from "../data/trackCatalog";
 import { PRICES, PRICES_FETCHED_AT } from "../data/prices";
+import { heightText, PIER_SYSTEMS } from "../data/piers";
+import { isPierKey, parsePierKey, pierStockKey } from "./elevation";
 import { MAKERS, MAKER_INFO, PARTS, type Maker, type PartDef } from "./parts";
 import type { Move } from "./shapes";
 
@@ -23,11 +25,26 @@ export type ProductContent = {
   count: number;
 };
 
+/** 品番の分類。線路の分類に「高架線路」と「橋脚」を加えたもの */
+export type ProductCategory = PartCategory | "elevated" | "pier";
+
+export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
+  straight: "直線",
+  curve: "曲線",
+  turnout: "ポイント",
+  crossing: "交差",
+  double: "複線",
+  elevated: "高架線路",
+  bridge: "鉄橋",
+  pier: "橋脚",
+  bumper: "車止め",
+};
+
 export type ProductRecord = {
   maker: Maker;
   code: string;
   name: string;
-  category: PartCategory;
+  category: ProductCategory;
   /** 1箱の部品数の合計（入数がわからないものは null） */
   perPack: number | null;
   contents: ProductContent[];
@@ -43,15 +60,31 @@ export type ProductRecord = {
   sources: string[];
 };
 
-/** 部品リスト・在庫で使うキー */
-export function stockKeyOf(part: PartDef, mirror: boolean): string {
+/**
+ * 部品リスト・在庫で使うキー。
+ * 左右で品番が違う部品の右向きは ":R"、高架用の品番がある部品を高架に置いたときは ":V" が付く。
+ * 橋脚は "kato:pier:S:50"（単線・高さ50mm）のような別の形。
+ */
+export function stockKeyOf(part: PartDef, mirror: boolean, elevated = false): string {
+  if (elevated && part.elevatedProducts) return `${part.key}:V`;
   return part.productsRight && mirror ? `${part.key}:R` : part.key;
 }
 
-/** 在庫キーをAI向け・画面向けの名前にする */
-export function stockLabel(stockKey: string): { partKey: string; right: boolean } {
+/** 在庫キーを部品キーと向き・高架に分ける（橋脚のキーはそのまま partKey に入る） */
+export function stockLabel(stockKey: string): { partKey: string; right: boolean; elevated: boolean } {
   const right = stockKey.endsWith(":R");
-  return { partKey: right ? stockKey.slice(0, -2) : stockKey, right };
+  const elevated = stockKey.endsWith(":V");
+  return { partKey: right || elevated ? stockKey.slice(0, -2) : stockKey, right, elevated };
+}
+
+/** 在庫キーの画面向けの名前 */
+export function stockKeyName(stockKey: string): string {
+  const pier = parsePierKey(stockKey);
+  if (pier) return `${pier.double ? "複線" : "単線"}橋脚 高さ${heightText(pier.height)}mm`;
+  const { partKey, right, elevated } = stockLabel(stockKey);
+  const part = PARTS.find((p) => p.key === partKey);
+  if (!part) return stockKey;
+  return `${part.name}${elevated ? "（高架）" : part.productsRight ? (right ? "（右）" : "（左）") : ""}`;
 }
 
 const fmt = (n: number) => String(Math.round(n * 10) / 10);
@@ -60,6 +93,7 @@ function moveText(m: Move): string {
 }
 
 export function specOf(part: PartDef): string {
+  if (part.category === "bridge") return `鉄橋 ${part.routes.map((r) => r.moves.map(moveText).join("+")).join(" / ")}`;
   const routes = part.routes.map((r) => r.moves.map(moveText).join("+"));
   switch (part.category) {
     case "straight":
@@ -77,15 +111,16 @@ function build(): ProductRecord[] {
   for (const maker of MAKERS) {
     for (const entry of CATALOG[maker]) {
       const part = PARTS.find((p) => p.key === `${maker}:${entry.id}`)!;
-      const lists: [typeof entry.products, boolean][] = [[entry.products, false]];
-      if (entry.productsRight) lists.push([entry.productsRight, true]);
-      for (const [products, right] of lists) {
+      const lists: [typeof entry.products, boolean, boolean][] = [[entry.products, false, false]];
+      if (entry.productsRight) lists.push([entry.productsRight, true, false]);
+      if (entry.elevatedProducts) lists.push([entry.elevatedProducts, false, true]);
+      for (const [products, right, elevated] of lists) {
         for (const prod of products) {
           const key = `${maker}:${prod.code}`;
           const content: ProductContent = {
             partKey: part.key,
             partId: part.id,
-            stockKey: stockKeyOf(part, right),
+            stockKey: stockKeyOf(part, right, elevated),
             count: prod.perPack ?? 1,
           };
           const existing = byCode.get(key);
@@ -101,22 +136,57 @@ function build(): ProductRecord[] {
             maker,
             code: prod.code,
             name: prod.name,
-            category: entry.category,
+            category: elevated ? "elevated" : entry.category,
             perPack: prod.perPack,
             contents: [content],
             priceJpy: PRICES[key] ?? null,
-            spec: specOf(part),
-            side: entry.productsRight ? (right ? "R" : "L") : null,
+            spec: elevated ? `高架 ${specOf(part)}` : specOf(part),
+            side: entry.productsRight && !elevated ? (right ? "R" : "L") : null,
             geometryStatus: status,
             geometryNote: entry.geometryNote ?? null,
-            sources: [CATALOG_SOURCES[maker].urls[0], ...(entry.geometrySources ?? [])],
+            sources: [listUrl(maker, elevated ? "elevated" : entry.category), ...(entry.geometrySources ?? [])],
           });
         }
       }
     }
+    // 橋脚
+    for (const pier of PIER_SYSTEMS[maker].products) {
+      const key = `${maker}:${pier.code}`;
+      const contents = pier.contents.map((c) => {
+        const stockKey = pierStockKey({ maker, double: pier.double, height: c.height });
+        return { partKey: stockKey, partId: stockKey, stockKey, count: c.count };
+      });
+      byCode.set(key, {
+        maker,
+        code: pier.code,
+        name: pier.name,
+        category: "pier",
+        perPack: contents.reduce((s, c) => s + c.count, 0),
+        contents,
+        priceJpy: PRICES[key] ?? null,
+        spec: `${pier.double ? "複線" : "単線"}用 高さ${[...new Set(pier.contents.map((c) => heightText(c.height)))].join("/")}mm`,
+        side: null,
+        geometryStatus: pier.note?.includes("推定") ? "estimated" : "confirmed",
+        geometryNote: pier.note ?? null,
+        sources: [PIER_SOURCES[maker]],
+      });
+    }
   }
   return [...byCode.values()];
 }
+
+/** 品番・価格の出典にする公式一覧のURL */
+function listUrl(maker: Maker, category: ProductCategory): string {
+  const urls = CATALOG_SOURCES[maker].urls;
+  if (maker === "kato" && category === "elevated") return urls.find((u) => u.endsWith("elevated_line"))!;
+  if (category === "bridge") return urls.find((u) => u.endsWith("iron_bridge") || u.endsWith("category=knr"))!;
+  return urls[0];
+}
+
+const PIER_SOURCES: Record<Maker, string> = {
+  kato: "https://unitrack.katomodels.com/products/line_single/elevated_line",
+  tomix: "https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=knr",
+};
 
 export const PRODUCTS: ProductRecord[] = build();
 const productByKey = new Map(PRODUCTS.map((p) => [`${p.maker}:${p.code}`, p]));
@@ -179,6 +249,8 @@ export type ShortfallRow = {
   used: number;
   /** 所有している本数 */
   owned: number;
+  /** ほかの不足分で買うセットに入っていて、それで足りる本数 */
+  fromSet: number;
   /** 足りない本数 */
   missing: number;
   /** 買う品番（安い順で最初のもの） */
@@ -196,16 +268,22 @@ export type Shortfall = {
   hasUnknownPrice: boolean;
 };
 
-/** 使う本数（在庫キーごと）と所有本数から、追加で買う品番・箱数・費用を出す */
+/**
+ * 使う本数（在庫キーごと）と所有本数から、追加で買う品番・箱数・費用を出す。
+ * 勾配橋脚セットのように1箱に何種類も入っている品番を買ったときは、
+ * 一緒に入っている分をほかの部品の不足に充てる。
+ */
 export function shortfall(usage: Map<string, number>, stock: Map<string, number>): Shortfall {
   const rows: ShortfallRow[] = [];
+  const fromSets = new Map<string, number>();
   let total = 0;
   let unknown = false;
-  for (const [stockKey, used] of [...usage.entries()].sort()) {
+  for (const [stockKey, used] of [...usage.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const owned = stock.get(stockKey) ?? 0;
-    const missing = Math.max(0, used - owned);
+    const bonus = fromSets.get(stockKey) ?? 0;
+    const missing = Math.max(0, used - owned - bonus);
     const { partKey, right } = stockLabel(stockKey);
-    const partId = PARTS.find((p) => p.key === partKey)?.id ?? partKey;
+    const partId = isPierKey(stockKey) ? stockKeyName(stockKey) : (PARTS.find((p) => p.key === partKey)?.id ?? partKey);
     let buy: ProductRecord | null = null;
     let packs = 0;
     let cost: number | null = 0;
@@ -216,8 +294,11 @@ export function shortfall(usage: Map<string, number>, stock: Map<string, number>
       cost = opt?.prod.priceJpy != null ? opt.prod.priceJpy * packs : null;
       if (cost === null) unknown = true;
       else total += cost;
+      for (const c of opt?.prod.contents ?? []) {
+        if (c.stockKey !== stockKey) fromSets.set(c.stockKey, (fromSets.get(c.stockKey) ?? 0) + c.count * packs);
+      }
     }
-    rows.push({ stockKey, partId, right, used, owned, missing, buy, packs, costJpy: cost });
+    rows.push({ stockKey, partId, right, used, owned, fromSet: Math.min(bonus, Math.max(0, used - owned)), missing, buy, packs, costJpy: cost });
   }
   return { rows, totalCostJpy: total, hasUnknownPrice: unknown };
 }
@@ -246,14 +327,6 @@ const CSV_HEADER = [
   "出典",
 ];
 
-const CATEGORY_JA: Record<PartCategory, string> = {
-  straight: "直線",
-  curve: "曲線",
-  turnout: "ポイント",
-  crossing: "交差",
-  double: "複線",
-  bumper: "車止め",
-};
 
 function csvCell(v: string | number | null): string {
   const s = v === null ? "" : String(v);
@@ -268,10 +341,12 @@ export function productsCsv(): string {
         MAKER_INFO[p.maker].label,
         p.code,
         p.name,
-        CATEGORY_JA[p.category],
+        PRODUCT_CATEGORY_LABELS[p.category],
         p.side === "L" ? "左" : p.side === "R" ? "右" : "",
         p.perPack,
-        p.contents.map((c) => `${c.partId}${c.stockKey.endsWith(":R") ? "(右)" : ""}×${c.count}`).join(" "),
+        p.contents
+          .map((c) => `${isPierKey(c.stockKey) ? stockKeyName(c.stockKey) : c.partId}${c.stockKey.endsWith(":R") ? "(右)" : c.stockKey.endsWith(":V") ? "(高架)" : ""}×${c.count}`)
+          .join(" "),
         p.spec,
         STATUS_LABELS[p.geometryStatus],
         p.geometryNote,

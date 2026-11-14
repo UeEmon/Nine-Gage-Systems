@@ -1,15 +1,21 @@
 import { localPaths, type Piece } from "@/lib/geometry";
 import { getPart } from "@/lib/parts";
 
+export type Level = "ground" | "ramp" | "elevated";
+
 type Props = {
   piece: Piece;
   selected: boolean;
   warn: boolean;
+  /** 高さの階層（色分けに使う）。省略時は地上 */
+  level?: Level;
+  /** ほかの階層を強調しているときに薄く表示する */
+  dim?: boolean;
   onPointerDown?: (e: React.PointerEvent<SVGGElement>) => void;
 };
 
 /** 1つの線路部品。道床(灰色)とレール2本を、太さの違う線を重ねて描く */
-export function TrackPiece({ piece, selected, warn, onPointerDown }: Props) {
+export function TrackPiece({ piece, selected, warn, level = "ground", dim = false, onPointerDown }: Props) {
   const part = getPart(piece.partId);
   const paths = localPaths(part);
   const flip = piece.mirror ? " scale(1,-1)" : "";
@@ -17,7 +23,7 @@ export function TrackPiece({ piece, selected, warn, onPointerDown }: Props) {
     <g
       transform={`translate(${piece.x} ${piece.y}) rotate(${piece.rot})${flip}`}
       onPointerDown={onPointerDown}
-      className={`piece${selected ? " is-selected" : ""}${warn ? " is-warn" : ""}`}
+      className={`piece lv-${level}${selected ? " is-selected" : ""}${warn ? " is-warn" : ""}${dim ? " is-dim" : ""}`}
       data-uid={piece.uid}
     >
       {paths.map((d, i) => (

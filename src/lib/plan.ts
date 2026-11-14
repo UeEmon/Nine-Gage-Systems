@@ -18,6 +18,11 @@ function planPieceSchema(partIds: [string, ...string[]] | null) {
     .number()
     .int()
     .describe("次の部品をつなぐ側のジョイント番号。通常1。ポイントの分岐側へ進むなら2、合流側から入ったときは0。車止めは0を入れる（次はない）"),
+  height: z
+    .number()
+    .nullable()
+    .default(0)
+    .describe("線路面の高さ(mm)。0=地上、高架は標準の高さ。null=勾配区間（前後の部品の高さの間を自動で上り下りする）"),
   });
 }
 
@@ -48,7 +53,8 @@ function buildPlanSchema(partIds: [string, ...string[]] | null) {
 
 /** 型と汎用の検証用（部品IDは文字列） */
 export const LayoutPlanSchema = buildPlanSchema(null);
-export type LayoutPlan = z.infer<typeof LayoutPlanSchema>;
+/** height は省略できる（省略時は地上）。AIの出力は省略しない形（JSON Schema では必須）で受け取る */
+export type LayoutPlan = z.input<typeof LayoutPlanSchema>;
 
 const schemaCache = new Map<Maker, ReturnType<typeof buildPlanSchema>>();
 /** AIへの出力指定用。部品IDをそのメーカーの部品だけに絞る */
@@ -116,7 +122,9 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
         cursor = null;
         return;
       }
-      const piece = placeAt(key, pp.dir === "R", pp.enter, cursor, `s${si}p${pi}`);
+      const placed = placeAt(key, pp.dir === "R", pp.enter, cursor, `s${si}p${pi}`);
+      const h = pp.height === undefined ? 0 : pp.height;
+      const piece: Piece = h === null ? { ...placed, ramp: true } : h ? { ...placed, z: h } : placed;
       pieces.push(piece);
       uids.push(piece.uid);
       byUid.set(piece.uid, piece);
@@ -160,8 +168,32 @@ export function describeProblems(build: BuildResult, analysis: Analysis, board: 
   for (const uid of analysis.outOfBoard) {
     lines.push(`ボード外: ${loc(uid)} がボード (0,0)〜(${board.width},${board.height}) からはみ出している`);
   }
+  const low = new Map(analysis.lowClearance.map((l) => [`${l.a}|${l.b}`, l]));
   for (const [a, b] of analysis.overlaps) {
-    lines.push(`重なり: ${loc(a)} と ${loc(b)} の線路が重なっている（線路中心の間隔は${22}mm以上必要）`);
+    const l = low.get(`${a}|${b}`);
+    lines.push(
+      l
+        ? `高さ不足: ${loc(a)} と ${loc(b)} が交差しているが高さの差が${l.dz.toFixed(0)}mmしかない（立体交差には${l.needed}mm以上必要。勾配区間を長くするか交差の位置をずらす）`
+        : `重なり: ${loc(a)} と ${loc(b)} の線路が重なっている（線路中心の間隔は${22}mm以上必要。立体交差にするなら高さの差をつける）`,
+    );
+  }
+  for (const s of analysis.heightSteps) {
+    lines.push(
+      `段差: ${loc(s.a.pieceUid)} と ${loc(s.b.pieceUid)} のつなぎ目で高さが${s.dz.toFixed(0)}mm違う。間に勾配区間（height=null）を入れる`,
+    );
+  }
+  for (const g of analysis.steepGrades) {
+    lines.push(`急勾配: ${loc(g.uid)} の勾配が${g.gradePct.toFixed(1)}%（上限${g.maxPct}%）。勾配区間を長くする`);
+  }
+  for (const h of analysis.pierHits) {
+    const p = analysis.piers[h.pier];
+    lines.push(
+      `橋脚の干渉: 高さ${p.z.toFixed(0)}mmの線路を支える橋脚 (x=${p.x.toFixed(0)}, y=${p.y.toFixed(0)}) が下の ${loc(h.uid)} に当たる。上の線路のつなぎ目を下の線路の真上からずらす`,
+    );
+  }
+  for (const i of analysis.pierMisfits) {
+    const p = analysis.piers[i];
+    lines.push(`橋脚なし: 高さ${p.z.toFixed(1)}mmに合う橋脚がない (x=${p.x.toFixed(0)}, y=${p.y.toFixed(0)})。高架は標準の高さにそろえる`);
   }
   return lines.length ? lines.join("\n") : null;
 }

@@ -6,6 +6,7 @@ import {
   newUid,
   placeAt,
   worldJoints,
+  worldSamples,
   type Board,
   type Layout,
   type Piece,
@@ -15,13 +16,16 @@ import { billOfMaterials, usageOf } from "@/lib/bom";
 import { shortfall, stockFromInventory, type Inventory, type Shortfall } from "@/lib/productDb";
 import type { SavedPattern } from "@/lib/patternFile";
 import { CATALOG_SOURCES } from "@/data/trackCatalog";
+import { heightText, PIER_SYSTEMS } from "@/data/piers";
+import { isRamp, PIER_MIN_MM, zRange } from "@/lib/elevation";
 import { CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import type { PartCategory } from "@/data/trackCatalog";
 import { routeSamples } from "@/lib/shapes";
 import type { SessionUser } from "@/lib/roles";
 import { AiStatus } from "./AiStatus";
 import { UserMenu } from "./UserMenu";
-import { TrackPiece } from "./TrackPiece";
+import { TrackPiece, type Level } from "./TrackPiece";
+import { LevelProfile } from "./LevelProfile";
 import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { useLocalState } from "./useLocalState";
@@ -60,6 +64,16 @@ type ProposedPattern =
     }
   | { ok: false; error: string };
 
+type LevelFilter = "all" | Level;
+const LEVEL_FILTERS: { value: LevelFilter; label: string }[] = [
+  { value: "all", label: "すべて" },
+  { value: "ground", label: "地上" },
+  { value: "ramp", label: "勾配" },
+  { value: "elevated", label: "高架" },
+];
+/** 新しく置く部品の高さ。auto はつなぐ先の部品に合わせる */
+type PlaceHeight = "auto" | "ground" | "elevated" | "ramp";
+
 type AiMode = "free" | "owned" | "expand";
 const AI_MODES: { mode: AiMode; label: string; help: string }[] = [
   { mode: "free", label: "自由に", help: "部品の制限なしで設計します" },
@@ -94,6 +108,12 @@ export function Editor({ user }: { user: SessionUser }) {
   const [library, setLibrary] = useLocalState<SavedPattern[]>("nine-gage-library-v1", [], isPatterns);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [view, setView] = useState({ x: -100, y: -100, w: 1400, h: 800 });
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
+  const [hideOthers, setHideOthers] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showPiers, setShowPiers] = useState(true);
+  const [placeHeight, setPlaceHeight] = useState<PlaceHeight>("auto");
+  const [applyToRun, setApplyToRun] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<
     | { kind: "piece"; uid: string; dx: number; dy: number; moved: boolean }
@@ -134,15 +154,70 @@ export function Editor({ user }: { user: SessionUser }) {
   const hasStock = stock.size > 0;
   const need = useMemo(() => shortfall(usageOf(layout.pieces), stock), [layout.pieces, stock]);
   const needByKey = useMemo(() => new Map(need.rows.map((r) => [r.stockKey, r])), [need]);
+  // 橋脚は勾配橋脚セットなどまとめ買いになるので、何も持っていない前提の買い方で箱数と費用を出す
+  const pierBuy = useMemo(() => {
+    const sf = shortfall(new Map([...usageOf(layout.pieces)].filter(([k]) => k.includes(":pier:"))), new Map());
+    return { rows: new Map(sf.rows.map((r) => [r.stockKey, r])), total: sf.totalCostJpy };
+  }, [layout.pieces]);
+  const trackTotal = bom
+    .filter((r) => r.kind === "track")
+    .reduce((s, r) => s + (r.priceJpy != null && r.packs != null ? r.priceJpy * r.packs : 0), 0);
   const otherMakerPieces = layout.pieces.filter((p) => getPart(p.partId).maker !== maker).length;
   const openSet = useMemo(
     () => new Set(analysis.openJoints.map((j) => `${j.pieceUid}:${j.index}`)),
     [analysis],
   );
   const warnSet = useMemo(
-    () => new Set([...analysis.outOfBoard, ...analysis.overlaps.flat()]),
+    () =>
+      new Set([
+        ...analysis.outOfBoard,
+        ...analysis.overlaps.flat(),
+        ...analysis.steepGrades.map((g) => g.uid),
+        ...analysis.heightSteps.flatMap((h) => [h.a.pieceUid, h.b.pieceUid]),
+        ...analysis.pierHits.map((h) => h.uid),
+      ]),
     [analysis],
   );
+  const standardHeight = PIER_SYSTEMS[maker].standardHeight;
+  // 部品ごとの階層（地上・勾配・高架）
+  const levels = useMemo(() => {
+    const m = new Map<string, Level>();
+    for (const p of layout.pieces) {
+      m.set(p.uid, isRamp(p) ? "ramp" : zRange(analysis.elevation, p.uid).max >= PIER_MIN_MM ? "elevated" : "ground");
+    }
+    return m;
+  }, [layout.pieces, analysis]);
+  const levelOf = (uid: string): Level => levels.get(uid) ?? "ground";
+  const isVisible = (uid: string) => levelFilter === "all" || levelOf(uid) === levelFilter;
+  const levelCounts = useMemo(() => {
+    const c: Record<Level, number> = { ground: 0, ramp: 0, elevated: 0 };
+    for (const l of levels.values()) c[l] += 1;
+    return c;
+  }, [levels]);
+  // 低い部品から描き、高架が上に重なるようにする
+  const drawOrder = useMemo(
+    () =>
+      [...layout.pieces].sort(
+        (a, b) => zRange(analysis.elevation, a.uid).max - zRange(analysis.elevation, b.uid).max,
+      ),
+    [layout.pieces, analysis],
+  );
+  /** 選択中の部品の高さの説明 */
+  const heightInfo = (uid: string): string => {
+    const zs = analysis.elevation.joints.get(uid) ?? [0];
+    const grade = analysis.elevation.grades.get(uid);
+    const piers = analysis.piers.filter((p) => p.owners.includes(uid));
+    const lo = Math.min(...zs);
+    const hi = Math.max(...zs);
+    const z = lo === hi ? `高さ ${heightText(Math.round(lo * 10) / 10)}mm` : `高さ ${heightText(Math.round(lo * 10) / 10)}〜${heightText(Math.round(hi * 10) / 10)}mm`;
+    const g = grade !== undefined ? `・勾配 ${grade.toFixed(1)}%` : "";
+    const p = piers.length ? `・橋脚 ${piers.map((q) => `${heightText(q.height)}mm`).join("/")}` : "";
+    const viaduct = hi >= PIER_MIN_MM && !getPart(layout.pieces.find((q) => q.uid === uid)?.partId ?? "").elevatedProducts && levelOf(uid) !== "ground"
+      ? "。この部品には高架用の品番がないため、台の自作が必要です"
+      : "";
+    return `${z}${g}${p}${viaduct}`;
+  };
+  const pierWarn = useMemo(() => new Set([...analysis.pierMisfits, ...analysis.pierHits.map((h) => h.pier)]), [analysis]);
 
   const setPieces = (fn: (pieces: Piece[]) => Piece[]) => setLayout((l) => ({ ...l, pieces: fn(l.pieces) }));
 
@@ -161,7 +236,15 @@ export function Editor({ user }: { user: SessionUser }) {
       // 何も選んでいなければ、ボード上部の中央付近から右向きに置く
       target = { x: b.width / 2 - 250, y: Math.max(60, b.height * 0.12), deg: 0 };
     }
-    const piece = placeAt(partId, mirrorNext, jIdx, target, newUid());
+    // 置く高さ: つなぐ先に合わせる（auto）か、指定した階層
+    let height: Pick<Piece, "z" | "ramp"> = {};
+    const src = selection?.kind === "joint" ? layout.pieces.find((q) => q.uid === selection.uid) : undefined;
+    if (placeHeight === "elevated") height = { z: standardHeight };
+    else if (placeHeight === "ramp") height = { ramp: true };
+    else if (placeHeight === "auto" && src) height = isRamp(src) ? { ramp: true } : src.z ? { z: src.z } : {};
+    if (height.ramp && !part.rampEnds) height = {}; // ポイントなどは勾配にできない
+    if (part.category === "bridge" && !height.ramp && !height.z) height = { z: standardHeight };
+    const piece: Piece = { ...placeAt(partId, mirrorNext, jIdx, target, newUid()), ...height };
     const next = [...layout.pieces, piece];
     setPieces(() => next);
     // 続けてつなげるよう、新しい部品の空いている出口を選ぶ
@@ -183,6 +266,44 @@ export function Editor({ user }: { user: SessionUser }) {
     setSelection(null);
   };
   const flipSelected = () => updateSelected((p) => ({ ...p, mirror: !p.mirror }));
+
+  /** 選択中の部品の高さを変える。applyToRun なら、同じ設定でつながっている部品にもまとめて適用 */
+  const setSelectedHeight = (next: { z?: number; ramp?: boolean }) => {
+    if (!selectedUid) return;
+    const origin = layout.pieces.find((p) => p.uid === selectedUid);
+    if (!origin) return;
+    const sameSetting = (p: Piece) => Boolean(p.ramp) === Boolean(origin.ramp) && (p.z ?? 0) === (origin.z ?? 0);
+    const targets = new Set([selectedUid]);
+    if (applyToRun) {
+      const adj = new Map<string, string[]>();
+      for (const c of analysis.connections) {
+        adj.set(c.a.pieceUid, [...(adj.get(c.a.pieceUid) ?? []), c.b.pieceUid]);
+        adj.set(c.b.pieceUid, [...(adj.get(c.b.pieceUid) ?? []), c.a.pieceUid]);
+      }
+      const byUid = new Map(layout.pieces.map((p) => [p.uid, p]));
+      const queue = [selectedUid];
+      while (queue.length) {
+        const u = queue.pop()!;
+        for (const v of adj.get(u) ?? []) {
+          const pv = byUid.get(v);
+          if (pv && !targets.has(v) && sameSetting(pv)) {
+            targets.add(v);
+            queue.push(v);
+          }
+        }
+      }
+    }
+    setPieces((ps) =>
+      ps.map((p) => {
+        if (!targets.has(p.uid)) return p;
+        const { z: _z, ramp: _r, ...rest } = p;
+        void _z;
+        void _r;
+        if (next.ramp && getPart(p.partId).rampEnds) return { ...rest, ramp: true };
+        return next.z ? { ...rest, z: next.z } : rest;
+      }),
+    );
+  };
   const rotateSelected = (d: number) => updateSelected((p) => ({ ...p, rot: normDeg(p.rot + d) }));
 
   useEffect(() => {
@@ -435,6 +556,17 @@ export function Editor({ user }: { user: SessionUser }) {
               </select>
             </label>
           </div>
+          <div className="row">
+            <label className="small">
+              置く高さ
+              <select value={placeHeight} onChange={(e) => setPlaceHeight(e.target.value as PlaceHeight)}>
+                <option value="auto">つなぐ先に合わせる</option>
+                <option value="ground">地上</option>
+                <option value="elevated">高架（{standardHeight}mm）</option>
+                <option value="ramp">勾配（前後の高さの間を自動で上り下り）</option>
+              </select>
+            </label>
+          </div>
           <div className="chips cats">
             {(Object.keys(CATEGORY_LABELS) as PartCategory[])
               .filter((c) => partsFor(maker).some((p) => p.category === c))
@@ -480,6 +612,55 @@ export function Editor({ user }: { user: SessionUser }) {
                 </button>
               </div>
               <p className="hint">ドラッグで移動、近くの端に吸着します。キー: Delete / R / F</p>
+              <h3 className="sub">高さ</h3>
+              <div className="row">
+                <div className="seg">
+                  <button
+                    className={!selectedPiece.ramp && !selectedPiece.z ? "on" : ""}
+                    onClick={() => setSelectedHeight({})}
+                  >
+                    地上
+                  </button>
+                  <button
+                    className={!selectedPiece.ramp && (selectedPiece.z ?? 0) > 0 ? "on" : ""}
+                    onClick={() => setSelectedHeight({ z: standardHeight })}
+                  >
+                    高架
+                  </button>
+                  <button
+                    className={selectedPiece.ramp ? "on" : ""}
+                    disabled={!getPart(selectedPiece.partId).rampEnds}
+                    title={getPart(selectedPiece.partId).rampEnds ? "前後の高さの間を自動で上り下りします" : "ポイント・交差は勾配にできません"}
+                    onClick={() => setSelectedHeight({ ramp: true })}
+                  >
+                    勾配
+                  </button>
+                </div>
+              </div>
+              {!selectedPiece.ramp && (
+                <div className="row">
+                  <label className="small">
+                    高さ（レール面、地上からmm）
+                    <span className="input-row">
+                      <input
+                        type="number"
+                        min={0}
+                        max={300}
+                        step={5}
+                        value={selectedPiece.z ?? 0}
+                        onChange={(e) => setSelectedHeight({ z: Math.max(0, Math.min(300, Number(e.target.value) || 0)) })}
+                        aria-label="高さ"
+                      />
+                      <span className="unit">mm</span>
+                    </span>
+                  </label>
+                </div>
+              )}
+              <label className="check">
+                <input type="checkbox" checked={applyToRun} onChange={(e) => setApplyToRun(e.target.checked)} />
+                つながっている同じ高さの線路にもまとめて適用
+              </label>
+              <p className="hint">{heightInfo(selectedPiece.uid)}</p>
             </>
           ) : (
             <p className="hint">線路をクリックすると選択できます</p>
@@ -534,16 +715,53 @@ export function Editor({ user }: { user: SessionUser }) {
           <text x={4} y={-12} className="board-label">
             {b.width} × {b.height} mm（グリッド100mm）
           </text>
-          {layout.pieces.map((p) => (
-            <TrackPiece
-              key={p.uid}
-              piece={p}
-              selected={p.uid === selectedUid}
-              warn={warnSet.has(p.uid)}
-              onPointerDown={onPiecePointerDown(p)}
-            />
-          ))}
-          {layout.pieces.flatMap((p) =>
+          {drawOrder.map((p) => {
+            const visible = isVisible(p.uid);
+            if (!visible && hideOthers) return null;
+            return (
+              <TrackPiece
+                key={p.uid}
+                piece={p}
+                selected={p.uid === selectedUid}
+                warn={warnSet.has(p.uid)}
+                level={levelOf(p.uid)}
+                dim={!visible}
+                onPointerDown={visible ? onPiecePointerDown(p) : undefined}
+              />
+            );
+          })}
+          {showPiers &&
+            analysis.piers.map((pier, i) => {
+              const visible = pier.owners.some(isVisible);
+              if (!visible && hideOthers) return null;
+              const s = pier.double ? 14 : 10;
+              return (
+                <rect
+                  key={`pier${i}`}
+                  x={pier.x - s / 2}
+                  y={pier.y - s / 2}
+                  width={s}
+                  height={s}
+                  rx={2}
+                  className={`pier${pierWarn.has(i) ? " is-warn" : ""}${visible ? "" : " is-dim"}`}
+                >
+                  <title>{`${pier.double ? "複線" : "単線"}橋脚 ${heightText(pier.height)}mm（線路の高さ ${heightText(pier.z)}mm）`}</title>
+                </rect>
+              );
+            })}
+          {layout.pieces
+            .filter((p) => levelOf(p.uid) !== "ground" && isVisible(p.uid))
+            .map((p) => {
+              const zs = analysis.elevation.joints.get(p.uid) ?? [0];
+              const mid = midPoint(p);
+              const text = levelOf(p.uid) === "ramp" ? `${heightText(Math.round(zs[0]))}→${heightText(Math.round(zs[1] ?? zs[0]))}` : heightText(zs[0]);
+              return (
+                <text key={`z${p.uid}`} x={mid.x} y={mid.y} className="z-label" style={{ fontSize: Math.max(view.w / 110, 9) }}>
+                  {text}
+                </text>
+              );
+            })}
+          {layout.pieces.filter((p) => isVisible(p.uid)).flatMap((p) =>
             worldJoints(p)
               .filter((j) => openSet.has(`${j.pieceUid}:${j.index}`))
               .map((j) => {
@@ -564,6 +782,45 @@ export function Editor({ user }: { user: SessionUser }) {
               }),
           )}
         </svg>
+        <div className="levels">
+          <span className="seg" role="group" aria-label="表示する階層">
+            {LEVEL_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                className={levelFilter === f.value ? "on" : ""}
+                onClick={() => setLevelFilter(f.value)}
+                title={f.value === "all" ? "すべての高さを表示" : `${f.label}の線路だけを強調`}
+              >
+                {f.value !== "all" && <i className={`swatch lv-${f.value}`} />}
+                {f.label}
+                {f.value !== "all" && <span className="muted"> {levelCounts[f.value]}</span>}
+              </button>
+            ))}
+          </span>
+          <label className="check">
+            <input type="checkbox" checked={hideOthers} onChange={(e) => setHideOthers(e.target.checked)} disabled={levelFilter === "all"} />
+            ほかの階層を隠す
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={showPiers} onChange={(e) => setShowPiers(e.target.checked)} />
+            橋脚
+          </label>
+          <button className={showProfile ? "on" : ""} onClick={() => setShowProfile((v) => !v)}>
+            断面図
+          </button>
+        </div>
+        {showProfile && (
+          <LevelProfile
+            pieces={layout.pieces.filter((p) => isVisible(p.uid))}
+            elevation={analysis.elevation}
+            piers={analysis.piers.filter((pr) => pr.owners.some(isVisible))}
+            board={b}
+            standardHeight={standardHeight}
+            levelOf={levelOf}
+            selectedUid={selectedUid}
+            onClose={() => setShowProfile(false)}
+          />
+        )}
         <div className="zoom">
           <button onClick={() => fitView(b)}>全体表示</button>
         </div>
@@ -693,8 +950,33 @@ export function Editor({ user }: { user: SessionUser }) {
             </li>
             <li className={analysis.nearMisses.length ? "ng" : "ok"}>ずれ: {analysis.nearMisses.length}</li>
             <li className={analysis.outOfBoard.length ? "ng" : "ok"}>ボード外: {analysis.outOfBoard.length}</li>
-            <li className={analysis.overlaps.length ? "ng" : "ok"}>重なり: {analysis.overlaps.length}</li>
+            <li className={analysis.overlaps.length ? "ng" : "ok"}>
+              重なり: {analysis.overlaps.length}
+              {analysis.lowClearance.length > 0 && `（うち高さ不足 ${analysis.lowClearance.length}）`}
+            </li>
+            <li className={analysis.heightSteps.length ? "ng" : "ok"}>段差: {analysis.heightSteps.length}</li>
+            <li className={analysis.steepGrades.length ? "ng" : "ok"}>
+              急勾配（{PIER_SYSTEMS[maker].maxGradePct}%超）: {analysis.steepGrades.length}
+            </li>
+            <li className={analysis.pierHits.length || analysis.pierMisfits.length ? "ng" : "ok"}>
+              橋脚の問題: {analysis.pierHits.length + analysis.pierMisfits.length}
+            </li>
+            {analysis.crossings.length > 0 && <li className="ok">立体交差: {analysis.crossings.length}</li>}
           </ul>
+          {(analysis.elevation.grades.size > 0 || analysis.piers.length > 0) && (
+            <p className="hint">
+              {analysis.elevation.grades.size > 0 &&
+                `最大勾配 ${Math.max(...analysis.elevation.grades.values()).toFixed(1)}%。`}
+              {analysis.piers.length > 0 && `橋脚 ${analysis.piers.length}本。`}
+              {PIER_SYSTEMS[maker].note}。立体交差は高さの差 {PIER_SYSTEMS[maker].clearance}mm 以上。
+            </p>
+          )}
+          {analysis.pierHits.length > 0 && (
+            <p className="warn-text">橋脚が下の線路に当たっています（赤い四角）。上の線路のつなぎ目を下の線路の真上からずらしてください。</p>
+          )}
+          {analysis.pierMisfits.length > 0 && (
+            <p className="warn-text">合う高さの橋脚がない所があります（赤い四角）。高架は標準の高さにそろえるのがおすすめです。</p>
+          )}
         </section>
 
         <section>
@@ -715,30 +997,46 @@ export function Editor({ user }: { user: SessionUser }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {bom.map((r) => (
-                    <tr
-                      key={r.key}
-                      title={r.alternatives.length ? `ほかの品番: ${r.alternatives.map((a) => `${a.code} ${a.name}`).join(" / ")}` : undefined}
-                    >
-                      <td className="code">{r.product.code}</td>
-                      <td>
-                        {r.product.name}
-                        {r.alternatives.length > 0 && <span className="muted"> 他{r.alternatives.length}</span>}
-                      </td>
-                      <td className="num">{r.count}</td>
-                      {hasStock && (
-                        <td className={`num${(needByKey.get(r.key)?.missing ?? 0) > 0 ? " warn-text" : ""}`}>
-                          {needByKey.get(r.key)?.missing || "—"}
+                  {bom.map((r) => {
+                    const pier = r.kind === "pier" ? pierBuy.rows.get(r.key) : undefined;
+                    return (
+                      <tr
+                        key={r.key}
+                        className={r.kind === "pier" ? "pier-row" : undefined}
+                        title={r.alternatives.length ? `ほかの品番: ${r.alternatives.map((a) => `${a.code} ${a.name}`).join(" / ")}` : undefined}
+                      >
+                        <td className="code">{pier ? (pier.buy?.code ?? "—") : r.product.code}</td>
+                        <td>
+                          {r.kind === "pier" ? r.label : r.product.name}
+                          {r.kind === "track" && r.alternatives.length > 0 && <span className="muted"> 他{r.alternatives.length}</span>}
+                          {pier && pier.packs === 0 && <span className="muted">（セットに含む）</span>}
                         </td>
-                      )}
-                      <td className="num">{r.packs ?? "—"}</td>
-                      <td className="num">{r.priceJpy != null && r.packs != null ? yen(r.priceJpy * r.packs) : "—"}</td>
-                    </tr>
-                  ))}
+                        <td className="num">{r.count}</td>
+                        {hasStock && (
+                          <td className={`num${(needByKey.get(r.key)?.missing ?? 0) > 0 ? " warn-text" : ""}`}>
+                            {needByKey.get(r.key)?.missing || "—"}
+                          </td>
+                        )}
+                        <td className="num">{pier ? pier.packs || "—" : (r.packs ?? "—")}</td>
+                        <td className="num">
+                          {pier
+                            ? pier.packs
+                              ? pier.costJpy === null
+                                ? "—"
+                                : yen(pier.costJpy)
+                              : "—"
+                            : r.priceJpy != null && r.packs != null
+                              ? yen(r.priceJpy * r.packs)
+                              : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               <p className="hint">
-                すべて新しく買う場合: {yen(bom.reduce((s, r) => s + (r.priceJpy != null && r.packs != null ? r.priceJpy * r.packs : 0), 0))}
+                すべて新しく買う場合: {yen(trackTotal + pierBuy.total)}
+                {pierBuy.total > 0 && `（うち橋脚 ${yen(pierBuy.total)}）`}
                 {hasStock && (
                   <>
                     <br />
@@ -749,6 +1047,7 @@ export function Editor({ user }: { user: SessionUser }) {
               </p>
               <p className="hint">
                 合計 {layout.pieces.length} 本 / 線路延長 約{(analysis.totalLengthMm / 1000).toFixed(2)}m。箱と価格は代表品番の入数・メーカー希望小売価格（税込）で計算。不足の追加費用は1本あたりが安い品番で計算。
+                高さのある線路は高架用の品番（高架線路・高架橋付レール）で数え、橋脚は高さごとに数えています。
               </p>
               <p className="hint">
                 品番の出典:{" "}
@@ -763,6 +1062,12 @@ export function Editor({ user }: { user: SessionUser }) {
       </aside>
     </div>
   );
+}
+
+/** 部品の中心線のまんなかの点（高さの表示位置） */
+function midPoint(piece: Piece) {
+  const pts = worldSamples(piece, 10);
+  return pts[Math.floor(pts.length / 2)] ?? { x: piece.x, y: piece.y };
 }
 
 function PartIcon({ partId, mirror }: { partId: string; mirror: boolean }) {
