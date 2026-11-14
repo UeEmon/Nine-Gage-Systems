@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminAiPanel } from "@/components/AdminAiPanel";
+import { AdminNoticesPanel } from "@/components/AdminNoticesPanel";
 import { AdminUsersPanel } from "@/components/AdminUsersPanel";
 import { UserMenu } from "@/components/UserMenu";
 import { currentUser } from "@/lib/server/auth";
@@ -22,6 +23,7 @@ export default async function AdminPage() {
       <main className="page">
         <AdminAiPanel />
         <AdminUsersPanel currentUserId={user.id} />
+        <AdminNoticesPanel />
       </main>
     </div>
   );
