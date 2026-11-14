@@ -18,14 +18,15 @@ import type { SavedPattern } from "@/lib/patternFile";
 import { CATALOG_SOURCES } from "@/data/trackCatalog";
 import { heightText, PIER_SYSTEMS } from "@/data/piers";
 import { isRamp, PIER_MIN_MM, zRange } from "@/lib/elevation";
-import { CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
-import type { PartCategory } from "@/data/trackCatalog";
-import { routeSamples } from "@/lib/shapes";
+import { BED_INFO, bedVariantsOf, CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
+import type { BedType, PartCategory } from "@/data/trackCatalog";
 import type { SessionUser } from "@/lib/roles";
 import { AiStatus } from "./AiStatus";
 import { UserMenu } from "./UserMenu";
 import { TrackPiece, type Level } from "./TrackPiece";
 import { LevelProfile } from "./LevelProfile";
+import { PartIcon } from "./PartIcon";
+import { PartDetail } from "./PartDetail";
 import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { useLocalState } from "./useLocalState";
@@ -97,6 +98,10 @@ export function Editor({ user }: { user: SessionUser }) {
   const [mirrorNext, setMirrorNext] = useState(false);
   const [attachJoint, setAttachJoint] = useState(0);
   const [category, setCategory] = useState<PartCategory>("straight");
+  /** パレットの道床の絞り込み（"all" はすべて） */
+  const [bedFilter, setBedFilter] = useState<BedType | "all">("all");
+  /** 仕様を表示している部品のキー */
+  const [detailKey, setDetailKey] = useState<string | null>(null);
   const [request, setRequest] = useState("エンドレスに待避線を1本。駅を置けるスペースもほしい");
   const [ai, setAi] = useState<AiState>({ status: "idle" });
   const [aiMode, setAiMode] = useState<AiMode>("free");
@@ -266,6 +271,8 @@ export function Editor({ user }: { user: SessionUser }) {
     setSelection(null);
   };
   const flipSelected = () => updateSelected((p) => ({ ...p, mirror: !p.mirror }));
+  /** 選択中の部品を、同じ形で道床の違う部品に取り替える（位置・向き・高さはそのまま） */
+  const changeBed = (partKey: string) => updateSelected((p) => ({ ...p, partId: partKey }));
 
   /** 選択中の部品の高さを変える。applyToRun なら、同じ設定でつながっている部品にもまとめて適用 */
   const setSelectedHeight = (next: { z?: number; ramp?: boolean }) => {
@@ -576,21 +583,45 @@ export function Editor({ user }: { user: SessionUser }) {
                 </button>
               ))}
           </div>
-          <div className="palette">
-            {partsFor(maker)
-              .filter((p) => p.category === category)
-              .map((p) => (
-              <button
-                key={p.key}
-                className="part"
-                onClick={() => addPart(p.key)}
-                title={[p.description, p.jointHelp, p.geometryNote].filter(Boolean).join("\n")}
-              >
-                <PartIcon partId={p.key} mirror={mirrorNext} />
-                <span>{p.name}</span>
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const inCat = partsFor(maker).filter((p) => p.category === category);
+            const beds = (Object.keys(BED_INFO) as BedType[]).filter((b) => inCat.some((p) => p.bed === b));
+            const shown = bedFilter === "all" || !beds.includes(bedFilter) ? inCat : inCat.filter((p) => p.bed === bedFilter);
+            return (
+              <>
+                {beds.length > 1 && (
+                  <div className="chips beds" role="group" aria-label="道床で絞り込む">
+                    <span className="hint" style={{ margin: 0, alignSelf: "center" }}>道床</span>
+                    <button className={`chip${bedFilter === "all" || !beds.includes(bedFilter) ? " on" : ""}`} onClick={() => setBedFilter("all")}>
+                      すべて
+                    </button>
+                    {beds.map((b) => (
+                      <button key={b} className={`chip${bedFilter === b ? " on" : ""}`} onClick={() => setBedFilter(b)} title={BED_INFO[b].note}>
+                        {BED_INFO[b].label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="palette">
+                  {shown.map((p) => (
+                    <div key={p.key} className="part-wrap">
+                      <button
+                        className="part"
+                        onClick={() => addPart(p.key)}
+                        title={[p.description, p.jointHelp, p.geometryNote].filter(Boolean).join("\n")}
+                      >
+                        <PartIcon partId={p.key} mirror={mirrorNext} />
+                        <span>{p.name}</span>
+                      </button>
+                      <button className="info" onClick={() => setDetailKey(p.key)} aria-label={`${p.name}の仕様`} title="仕様の詳細">
+                        i
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </section>
 
         <section>
@@ -607,11 +638,33 @@ export function Editor({ user }: { user: SessionUser }) {
                 <button onClick={flipSelected}>
                   左右反転
                 </button>
+                <button onClick={() => setDetailKey(selectedPiece.partId)}>仕様</button>
                 <button className="danger" onClick={deleteSelected}>
                   削除
                 </button>
               </div>
               <p className="hint">ドラッグで移動、近くの端に吸着します。キー: Delete / R / F</p>
+              {(() => {
+                const variants = bedVariantsOf(getPart(selectedPiece.partId));
+                if (variants.length < 2) return null;
+                return (
+                  <>
+                    <h3 className="sub">道床</h3>
+                    <div className="chips beds" role="group" aria-label="道床を変える">
+                      {variants.map((v) => (
+                        <button
+                          key={v.key}
+                          className={`chip${v.key === getPart(selectedPiece.partId).key ? " on" : ""}`}
+                          onClick={() => changeBed(v.key)}
+                          title={BED_INFO[v.bed].note}
+                        >
+                          {BED_INFO[v.bed].label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
               <h3 className="sub">高さ</h3>
               <div className="row">
                 <div className="seg">
@@ -1060,6 +1113,18 @@ export function Editor({ user }: { user: SessionUser }) {
           )}
         </section>
       </aside>
+      {detailKey && (
+        <PartDetail
+          partKey={detailKey}
+          mirror={mirrorNext}
+          onClose={() => setDetailKey(null)}
+          onShow={setDetailKey}
+          onPlace={(k) => {
+            addPart(k);
+            setDetailKey(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1068,22 +1133,4 @@ export function Editor({ user }: { user: SessionUser }) {
 function midPoint(piece: Piece) {
   const pts = worldSamples(piece, 10);
   return pts[Math.floor(pts.length / 2)] ?? { x: piece.x, y: piece.y };
-}
-
-function PartIcon({ partId, mirror }: { partId: string; mirror: boolean }) {
-  const part = getPart(partId);
-  // 形の外接矩形に合わせて表示範囲を決める
-  const pts = part.routes.flatMap((r) => routeSamples(r, 20)).map((p) => ({ x: p.x, y: mirror ? -p.y : p.y }));
-  const minX = Math.min(...pts.map((p) => p.x)) - 15;
-  const maxX = Math.max(...pts.map((p) => p.x)) + 15;
-  const minY = Math.min(...pts.map((p) => p.y)) - 15;
-  const maxY = Math.max(...pts.map((p) => p.y)) + 15;
-  const size = Math.max(maxX - minX, maxY - minY, 120);
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  return (
-    <svg className="part-icon" viewBox={`${cx - size / 2} ${cy - size / 2} ${size} ${size}`} aria-hidden>
-      <TrackPiece piece={{ uid: "icon", partId, mirror, x: 0, y: 0, rot: 0 }} selected={false} warn={false} />
-    </svg>
-  );
 }

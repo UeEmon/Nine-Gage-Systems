@@ -1,11 +1,11 @@
 // 品番データベース。線路カタログ（部品の形）と価格表から、品番ごとの1行を作る。
 // 所有パーツの登録・不足数と追加費用の計算・CSV出力はすべてこのデータを使う。
 
-import { CATALOG, CATALOG_SOURCES, NOT_MODELED, type PartCategory } from "../data/trackCatalog";
+import { bedOfProductName, CATALOG, CATALOG_SOURCES, NOT_MODELED, type BedType, type PartCategory } from "../data/trackCatalog";
 import { PRICES, PRICES_FETCHED_AT } from "../data/prices";
 import { heightText, PIER_SYSTEMS } from "../data/piers";
 import { isPierKey, parsePierKey, pierStockKey } from "./elevation";
-import { MAKERS, MAKER_INFO, PARTS, type Maker, type PartDef } from "./parts";
+import { BED_INFO, MAKERS, MAKER_INFO, PARTS, type Maker, type PartDef } from "./parts";
 import type { Move } from "./shapes";
 
 export type GeometryStatus = "official" | "confirmed" | "estimated";
@@ -54,6 +54,8 @@ export type ProductRecord = {
   spec: string;
   /** 左右の区別（左右で品番が違うもののみ） */
   side: "L" | "R" | null;
+  /** 道床の種類（橋脚は null） */
+  bed: BedType | null;
   geometryStatus: GeometryStatus;
   geometryNote: string | null;
   /** 品番・価格の出典（公式一覧）と、寸法の確認に使った資料 */
@@ -142,6 +144,7 @@ function build(): ProductRecord[] {
             priceJpy: PRICES[key] ?? null,
             spec: elevated ? `高架 ${specOf(part)}` : specOf(part),
             side: entry.productsRight && !elevated ? (right ? "R" : "L") : null,
+            bed: elevated ? "viaduct" : bedOfProductName(prod.name, entry.bed ?? "ballast"),
             geometryStatus: status,
             geometryNote: entry.geometryNote ?? null,
             sources: [listUrl(maker, elevated ? "elevated" : entry.category), ...(entry.geometrySources ?? [])],
@@ -164,6 +167,7 @@ function build(): ProductRecord[] {
         perPack: contents.reduce((s, c) => s + c.count, 0),
         contents,
         priceJpy: PRICES[key] ?? null,
+        bed: null,
         spec: `${pier.double ? "複線" : "単線"}用 高さ${[...new Set(pier.contents.map((c) => heightText(c.height)))].join("/")}mm`,
         side: null,
         geometryStatus: pier.note?.includes("推定") ? "estimated" : "confirmed",
@@ -193,6 +197,11 @@ const productByKey = new Map(PRODUCTS.map((p) => [`${p.maker}:${p.code}`, p]));
 
 export function productsForMaker(maker: Maker): ProductRecord[] {
   return PRODUCTS.filter((p) => p.maker === maker);
+}
+
+/** 部品（左右・高架を含む）が入っている品番。カタログ順 */
+export function productsOfPart(part: PartDef): ProductRecord[] {
+  return PRODUCTS.filter((p) => p.contents.some((c) => c.partKey === part.key));
 }
 
 export function findProduct(maker: Maker, code: string): ProductRecord | undefined {
@@ -321,6 +330,7 @@ const CSV_HEADER = [
   "入数",
   "内容（部品ID×本数）",
   "寸法",
+  "道床",
   "寸法の確認状況",
   "寸法の注記",
   "希望小売価格(税込円)",
@@ -348,6 +358,7 @@ export function productsCsv(): string {
           .map((c) => `${isPierKey(c.stockKey) ? stockKeyName(c.stockKey) : c.partId}${c.stockKey.endsWith(":R") ? "(右)" : c.stockKey.endsWith(":V") ? "(高架)" : ""}×${c.count}`)
           .join(" "),
         p.spec,
+        p.bed ? BED_INFO[p.bed].label : "",
         STATUS_LABELS[p.geometryStatus],
         p.geometryNote,
         p.priceJpy,

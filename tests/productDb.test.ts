@@ -6,13 +6,15 @@ import { exampleFor } from "../src/lib/ai";
 import { findProduct, PRODUCTS, productsCsv, shortfall, stockFromInventory } from "../src/lib/productDb";
 import { mergePatterns, parsePatternFile, toPatternFile } from "../src/lib/patternFile";
 import { getPart } from "../src/lib/parts";
+import { PRICE_UNKNOWN } from "../src/data/prices";
 
 describe("product database", () => {
   it("has one row per maker and code, each with contents and a price", () => {
     const keys = PRODUCTS.map((p) => `${p.maker}:${p.code}`);
     expect(new Set(keys).size).toBe(keys.length);
     const noPrice = PRODUCTS.filter((p) => p.priceJpy === null).map((p) => `${p.maker}:${p.code}`);
-    expect(noPrice).toEqual([]);
+    // 定価を確認できなかった品番だけ価格不明（src/data/prices.ts の PRICE_UNKNOWN）
+    expect(noPrice).toEqual(PRICE_UNKNOWN);
     for (const p of PRODUCTS) expect(p.contents.length).toBeGreaterThan(0);
   });
 

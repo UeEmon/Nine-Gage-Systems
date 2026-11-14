@@ -14,7 +14,7 @@ type Props = {
   onPointerDown?: (e: React.PointerEvent<SVGGElement>) => void;
 };
 
-/** 1つの線路部品。道床(灰色)とレール2本を、太さの違う線を重ねて描く */
+/** 1つの線路部品。道床・まくら木・レール2本を、太さの違う線を重ねて描く。道床の種類は bed-* のクラスで描き分ける */
 export function TrackPiece({ piece, selected, warn, level = "ground", dim = false, onPointerDown }: Props) {
   const part = getPart(piece.partId);
   const paths = localPaths(part);
@@ -23,11 +23,14 @@ export function TrackPiece({ piece, selected, warn, level = "ground", dim = fals
     <g
       transform={`translate(${piece.x} ${piece.y}) rotate(${piece.rot})${flip}`}
       onPointerDown={onPointerDown}
-      className={`piece lv-${level}${selected ? " is-selected" : ""}${warn ? " is-warn" : ""}${dim ? " is-dim" : ""}`}
+      className={`piece bed-${part.bed} cat-${part.category} lv-${level}${selected ? " is-selected" : ""}${warn ? " is-warn" : ""}${dim ? " is-dim" : ""}`}
       data-uid={piece.uid}
     >
       {paths.map((d, i) => (
         <path key={`b${i}`} d={d} className="ballast" />
+      ))}
+      {paths.map((d, i) => (
+        <path key={`s${i}`} d={d} className="sleepers" />
       ))}
       {paths.map((d, i) => (
         <path key={`r${i}`} d={d} className="rails" />
