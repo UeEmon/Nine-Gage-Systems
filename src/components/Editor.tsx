@@ -18,7 +18,9 @@ import { CATALOG_SOURCES } from "@/data/trackCatalog";
 import { CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import type { PartCategory } from "@/data/trackCatalog";
 import { routeSamples } from "@/lib/shapes";
-import { AiSettingsPanel, useAiSettings } from "./AiSettingsPanel";
+import type { SessionUser } from "@/lib/roles";
+import { AiStatus } from "./AiStatus";
+import { UserMenu } from "./UserMenu";
 import { TrackPiece } from "./TrackPiece";
 import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
@@ -75,7 +77,7 @@ const isInventory = (v: unknown): v is Inventory =>
   !!v && typeof v === "object" && Object.values(v as object).every((n) => typeof n === "number");
 const isPatterns = (v: unknown): v is SavedPattern[] => Array.isArray(v);
 
-export function Editor() {
+export function Editor({ user }: { user: SessionUser }) {
   const [layout, setLayout] = useState<Layout>(emptyLayout);
   const [selection, setSelection] = useState<Selection>(null);
   const [mirrorNext, setMirrorNext] = useState(false);
@@ -83,7 +85,6 @@ export function Editor() {
   const [category, setCategory] = useState<PartCategory>("straight");
   const [request, setRequest] = useState("エンドレスに待避線を1本。駅を置けるスペースもほしい");
   const [ai, setAi] = useState<AiState>({ status: "idle" });
-  const aiSettings = useAiSettings();
   const [aiMode, setAiMode] = useState<AiMode>("free");
   const [patternCount, setPatternCount] = useState(1);
   const [inventory, setInventory] = useLocalState<Inventory>("nine-gage-inventory-v1", {}, isInventory);
@@ -291,7 +292,6 @@ export function Editor() {
         body: JSON.stringify({
           board: layout.board,
           request,
-          ai: aiSettings.settings,
           maker,
           mode: aiMode,
           inventory,
@@ -342,6 +342,7 @@ export function Editor() {
           onChange={(e) => setLayout((l) => ({ ...l, title: e.target.value }))}
           aria-label="レイアウト名"
         />
+        <UserMenu user={user} />
       </header>
 
       <aside className="panel left">
@@ -567,7 +568,7 @@ export function Editor() {
       <aside className="panel right">
         <section className="ai">
           <h2>AIにレイアウトを提案してもらう</h2>
-          <AiSettingsPanel {...aiSettings} />
+          <AiStatus user={user} />
           <div className="row">
             <div className="seg">
               {AI_MODES.map((m) => (
