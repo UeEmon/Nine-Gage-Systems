@@ -70,7 +70,7 @@ const AI_MODES: { mode: AiMode; label: string; help: string }[] = [
 type AiState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "done"; provider: string; mode: AiMode; patterns: ProposedPattern[]; shown: number }
+  | { status: "done"; provider: string; mode: AiMode; budgetJpy: number | null; patterns: ProposedPattern[]; shown: number }
   | { status: "error"; message: string };
 
 const isInventory = (v: unknown): v is Inventory =>
@@ -87,6 +87,9 @@ export function Editor({ user }: { user: SessionUser }) {
   const [ai, setAi] = useState<AiState>({ status: "idle" });
   const [aiMode, setAiMode] = useState<AiMode>("free");
   const [patternCount, setPatternCount] = useState(1);
+  /** 追加購入の予算上限（円）。空なら制限なし */
+  const [budget, setBudget] = useState("");
+  const budgetJpy = aiMode !== "owned" && budget.trim() !== "" && Number(budget) >= 0 ? Math.floor(Number(budget)) : undefined;
   const [inventory, setInventory] = useLocalState<Inventory>("nine-gage-inventory-v1", {}, isInventory);
   const [library, setLibrary] = useLocalState<SavedPattern[]>("nine-gage-library-v1", [], isPatterns);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -296,13 +299,14 @@ export function Editor({ user }: { user: SessionUser }) {
           mode: aiMode,
           inventory,
           patterns: patternCount,
+          budgetJpy,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       const patterns = data.patterns as ProposedPattern[];
       const first = patterns.findIndex((p) => p.ok);
-      setAi({ status: "done", provider: data.provider, mode: data.mode, patterns, shown: first });
+      setAi({ status: "done", provider: data.provider, mode: data.mode, budgetJpy: data.budgetJpy ?? null, patterns, shown: first });
       if (first >= 0) {
         const p = patterns[first];
         if (p.ok) {
@@ -596,6 +600,31 @@ export function Editor({ user }: { user: SessionUser }) {
               </select>
             </label>
           </div>
+          {aiMode !== "owned" && (
+            <div className="row">
+              <label className="small">
+                予算の上限（任意）
+                <span className="input-row">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1000}
+                    value={budget}
+                    placeholder="上限なし"
+                    onChange={(e) => setBudget(e.target.value)}
+                    aria-label="予算の上限"
+                  />
+                  <span className="unit">円</span>
+                </span>
+              </label>
+            </div>
+          )}
+          {budgetJpy !== undefined && (
+            <p className="hint">
+              追加で買う部品の合計（メーカー希望小売価格・税込）が{yen(budgetJpy)}以内の案だけを出します
+              {hasStock ? "。所有パーツの分は費用に数えません" : ""}。
+            </p>
+          )}
           <button className="primary" onClick={runAi} disabled={ai.status === "loading"}>
             {ai.status === "loading" ? "設計中…（1〜3分かかります）" : "提案してもらう"}
           </button>
@@ -616,13 +645,13 @@ export function Editor({ user }: { user: SessionUser }) {
                       {p.hint && <p className="hint">{p.hint}</p>}
                       <p className="hint">
                         {p.pieces.length}本
-                        {ai.mode !== "free" &&
+                        {(ai.mode !== "free" || ai.budgetJpy !== null) &&
                           (p.shortfall.totalCostJpy > 0 || p.shortfall.hasUnknownPrice
-                            ? ` ／ 追加 ${p.shortfall.rows.filter((r) => r.missing > 0).length}品番・${yen(p.shortfall.totalCostJpy)}${p.shortfall.hasUnknownPrice ? "＋価格不明分" : ""}`
+                            ? ` ／ 追加 ${p.shortfall.rows.filter((r) => r.missing > 0).length}品番・${yen(p.shortfall.totalCostJpy)}${p.shortfall.hasUnknownPrice ? "＋価格不明分" : ""}${ai.budgetJpy !== null ? `（上限${yen(ai.budgetJpy)}）` : ""}`
                             : " ／ 追加購入なし")}
                         {` ／ ${p.model}・${p.attempts}回`}
                       </p>
-                      {ai.mode !== "free" && p.shortfall.rows.some((r) => r.missing > 0) && (
+                      {(ai.mode !== "free" || ai.budgetJpy !== null) && p.shortfall.rows.some((r) => r.missing > 0) && (
                         <table className="bom">
                           <tbody>
                             {p.shortfall.rows

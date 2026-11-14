@@ -23,7 +23,20 @@ const BodySchema = z.object({
   inventory: z.record(z.string().max(40), z.number().int().min(0).max(999)).default({}),
   /** 出す案の数 */
   patterns: z.number().int().min(1).max(3).default(1),
+  /** 追加で買う部品の合計金額の上限（円・税込）。自由・拡張案のみ。未指定なら制限なし */
+  budgetJpy: z.number().int().min(0).max(10_000_000).optional(),
 });
+
+const yen = (n: number) => `${n.toLocaleString("ja-JP")}円`;
+
+/** 予算があるときの拡張案の方向づけ（規模を予算に合わせる） */
+function expandHints(budget: number): string[] {
+  return [
+    `追加購入を少なめ（${yen(Math.round(budget * 0.3))}程度）に抑えた小さな拡張案`,
+    `待避線や引き込み線を加える中くらいの拡張案（${yen(Math.round(budget * 0.6))}程度）`,
+    `予算${yen(budget)}をいっぱいまで使って大きく発展させる案`,
+  ];
+}
 
 /** 複数案を出すときの方向づけ */
 const HINTS: Record<"free" | "owned" | "expand", string[]> = {
@@ -49,6 +62,8 @@ export async function POST(req: Request) {
     return Response.json({ error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで）" }, { status: 400 });
   }
   const { board, request, maker, mode, inventory, patterns } = parsed.data;
+  // 手持ちだけの案は買い足しがないので予算は使わない
+  const budgetJpy = mode === "owned" ? undefined : parsed.data.budgetJpy;
   const counts = stockFromInventory(inventory, maker);
   if (mode === "owned" && counts.size === 0) {
     return Response.json({ error: "所有パーツが登録されていません。先に所有パーツを登録してください。" }, { status: 400 });
@@ -62,7 +77,8 @@ export async function POST(req: Request) {
     return Response.json({ error: e.message }, { status: e.status });
   }
 
-  const hints = patterns > 1 ? HINTS[mode].slice(0, patterns) : [undefined];
+  const hintList = mode === "expand" && budgetJpy !== undefined ? expandHints(budgetJpy) : HINTS[mode];
+  const hints = patterns > 1 ? hintList.slice(0, patterns) : [undefined];
   const runs = await Promise.allSettled(
     hints.map(async (hint) => {
       const input: ProposeInput = {
@@ -70,11 +86,19 @@ export async function POST(req: Request) {
         request,
         maker,
         hint,
-        stock: mode === "free" ? undefined : { counts, mode },
+        stock: mode === "free" && counts.size === 0 ? undefined : { counts, mode },
+        budgetJpy,
       };
       const session = createSession(settings, sessionOptions(maker));
       const result = await proposeLayout(input, session, settings.model);
-      return { ...result, hint: hint ?? null, shortfall: shortfall(usageOf(result.pieces), counts) };
+      const sf = shortfall(usageOf(result.pieces), counts);
+      if (budgetJpy !== undefined && sf.totalCostJpy > budgetJpy) {
+        // 上限を入れたときは、上限内に収まった案だけを出す
+        throw new ProposeError(
+          `予算${yen(budgetJpy)}以内の案を作れませんでした（いちばん近い案で追加${yen(sf.totalCostJpy)}）。上限を上げるか、要望を小さくしてお試しください。`,
+        );
+      }
+      return { ...result, hint: hint ?? null, shortfall: sf, budgetJpy: budgetJpy ?? null };
     }),
   );
 
@@ -94,5 +118,5 @@ export async function POST(req: Request) {
     const e = toLlmError(err, settings);
     return Response.json({ error: e.message }, { status: e.status });
   }
-  return Response.json({ provider: settings.provider, mode, patterns: results });
+  return Response.json({ provider: settings.provider, mode, budgetJpy: budgetJpy ?? null, patterns: results });
 }

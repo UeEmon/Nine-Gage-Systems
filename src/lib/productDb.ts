@@ -165,6 +165,12 @@ function buyOptions(stockKey: string): { prod: ProductRecord; per: number }[] {
     });
 }
 
+/** 在庫キーの部品を1本買うときのいちばん安い単価（円。価格不明なら null） */
+export function unitPriceOf(stockKey: string): number | null {
+  const opt = buyOptions(stockKey)[0];
+  return opt?.prod.priceJpy != null ? Math.round(opt.prod.priceJpy / opt.per) : null;
+}
+
 export type ShortfallRow = {
   stockKey: string;
   partId: string;
