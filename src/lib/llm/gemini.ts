@@ -33,11 +33,21 @@ export function createGeminiSession(
       // 思考の署名などを保つため、モデルの応答は受け取った形のまま履歴へ戻す
       contents.push(candidate?.content ?? { role: "model", parts: [{ text }] });
       const reason = candidate?.finishReason ?? "";
+      const um = response.usageMetadata;
+      const cached = um?.cachedContentTokenCount ?? 0;
       return {
         json: extractJson(text),
         text,
         refused: reason === "SAFETY" || reason === "PROHIBITED_CONTENT" || Boolean(response.promptFeedback?.blockReason),
         truncated: reason === "MAX_TOKENS",
+        usage: um
+          ? {
+              inputTokens: (um.promptTokenCount ?? 0) - cached,
+              outputTokens: (um.candidatesTokenCount ?? 0) + (um.thoughtsTokenCount ?? 0),
+              cacheReadTokens: cached,
+              cacheWriteTokens: 0,
+            }
+          : undefined,
       };
     },
   };

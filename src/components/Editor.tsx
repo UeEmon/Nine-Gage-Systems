@@ -62,6 +62,8 @@ type ProposedPattern =
       model: string;
       hint: string | null;
       shortfall: Shortfall;
+      /** 同じ条件の前回の結果をそのまま返した（AIは呼んでいない） */
+      cached?: boolean;
     }
   | { ok: false; error: string };
 
@@ -410,7 +412,7 @@ export function Editor({ user }: { user: SessionUser }) {
     setAi((a) => (a.status === "done" ? { ...a, shown: index } : a));
   };
 
-  const runAi = async () => {
+  const runAi = async (fresh = false) => {
     if (aiMode !== "free" && !hasStock) {
       setAi({ status: "error", message: "先に左の「所有パーツ」に品番と箱数を登録してください。" });
       return;
@@ -428,6 +430,7 @@ export function Editor({ user }: { user: SessionUser }) {
           inventory,
           patterns: patternCount,
           budgetJpy,
+          fresh,
         }),
       });
       const data = await res.json();
@@ -935,11 +938,19 @@ export function Editor({ user }: { user: SessionUser }) {
               {hasStock ? "。所有パーツの分は費用に数えません" : ""}。
             </p>
           )}
-          <button className="primary" onClick={runAi} disabled={ai.status === "loading"}>
+          <button className="primary" onClick={() => runAi()} disabled={ai.status === "loading"}>
             {ai.status === "loading" ? "設計中…（1〜3分かかります）" : "提案してもらう"}
           </button>
           <p className="hint">今のボードの大きさで設計し、1つ目の案がキャンバスに表示されます（編集中の線路は置き換わります）。</p>
           {ai.status === "error" && <p className="error">{ai.message}</p>}
+          {ai.status === "done" && ai.patterns.some((p) => p.ok && p.cached) && (
+            <p className="hint">
+              前回と同じ条件なので、保存しておいた案を表示しています（AIは使っていません）。
+              <button type="button" className="link-button" onClick={() => runAi(true)}>
+                新しく作り直す
+              </button>
+            </p>
+          )}
           {ai.status === "done" && (
             <ol className="proposals">
               {ai.patterns.map((p, i) => (

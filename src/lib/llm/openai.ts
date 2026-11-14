@@ -68,6 +68,15 @@ export function createOpenAiSession(
         text,
         refused: Boolean(choice?.message?.refusal),
         truncated: choice?.finish_reason === "length",
+        usage: completion.usage
+          ? {
+              // prompt_tokens には自動キャッシュから読んだ分も含まれるので分けて数える
+              inputTokens: completion.usage.prompt_tokens - (completion.usage.prompt_tokens_details?.cached_tokens ?? 0),
+              outputTokens: completion.usage.completion_tokens,
+              cacheReadTokens: completion.usage.prompt_tokens_details?.cached_tokens ?? 0,
+              cacheWriteTokens: 0,
+            }
+          : undefined,
       };
     },
   };

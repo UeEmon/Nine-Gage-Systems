@@ -383,3 +383,5 @@ h3.sub { font-size: 13px; margin: 12px 0 6px; }
 .part-detail h4 { font-size: 13px; margin: 12px 0 4px; color: var(--muted); }
 .part-detail .sources { font-size: 11px; word-break: break-all; }
 .nowrap { white-space: nowrap; }
+.table-scroll { overflow-x: auto; }
+button.link-button { border: none; background: none; padding: 0 0 0 4px; color: var(--accent); text-decoration: underline; cursor: pointer; }

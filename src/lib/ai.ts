@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Board } from "./geometry";
 import { sanitizeSchema } from "./llm/json";
-import type { ChatSession, SessionOptions } from "./llm/types";
+import { addUsage, emptyUsage, type ChatSession, type SessionOptions, type TokenUsage } from "./llm/types";
 import { MAKER_INFO, partsFor, type Maker } from "./parts";
 import { evaluatePlan, planSchemaFor, type LayoutPlan } from "./plan";
 import { usageOf } from "./bom";
@@ -245,6 +245,8 @@ export type ProposeResult = {
   attempts: number;
   remainingProblems: string | null;
   model: string;
+  /** この案を作るのに使ったトークン（全試行の合計） */
+  usage: TokenUsage;
 };
 
 function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
@@ -257,17 +259,35 @@ function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
   return { ...result, problems };
 }
 
-export class ProposeError extends Error {}
+export class ProposeError extends Error {
+  constructor(
+    message: string,
+    /** 失敗するまでに使ったトークン（集計用） */
+    public readonly usage?: TokenUsage,
+  ) {
+    super(message);
+  }
+}
 
-/** 各プロバイダに渡すシステムプロンプトと出力スキーマ */
+const sessionOptionsCache = new Map<Maker, SessionOptions>();
+
+/**
+ * 各プロバイダに渡すシステムプロンプトと出力スキーマ。
+ * メーカーごとに常に同じ内容（プロンプトキャッシュが効くよう、日時や利用者ごとの値は入れない）。
+ */
 export function sessionOptions(maker: Maker = "kato"): SessionOptions {
-  const schema = planSchemaFor(maker);
-  return {
-    system: systemPrompt(maker),
-    zodSchema: schema,
-    jsonSchema: sanitizeSchema(z.toJSONSchema(schema)) as Record<string, unknown>,
-    schemaName: "layout_plan",
-  };
+  let opts = sessionOptionsCache.get(maker);
+  if (!opts) {
+    const schema = planSchemaFor(maker);
+    opts = {
+      system: systemPrompt(maker),
+      zodSchema: schema,
+      jsonSchema: sanitizeSchema(z.toJSONSchema(schema)) as Record<string, unknown>,
+      schemaName: "layout_plan",
+    };
+    sessionOptionsCache.set(maker, opts);
+  }
+  return opts;
 }
 
 /**
@@ -301,13 +321,15 @@ export async function proposeLayout(
   let best: { plan: LayoutPlan; result: ReturnType<typeof checkPlan>; score: number } | null = null;
   let attempts = 0;
   let lastText = "";
+  let usage = emptyUsage();
 
   for (; attempts < MAX_ATTEMPTS; ) {
     attempts++;
     const answer = await session.ask(prompt);
+    usage = addUsage(usage, answer.usage);
     lastText = answer.text;
     if (answer.refused) {
-      throw new ProposeError("AIがこの依頼への回答を控えました。要望の書き方を変えてお試しください。");
+      throw new ProposeError("AIがこの依頼への回答を控えました。要望の書き方を変えてお試しください。", usage);
     }
 
     const parsed = planSchemaFor(maker).safeParse(answer.json);
@@ -333,6 +355,7 @@ export async function proposeLayout(
       `AIの出力をレイアウトとして読み取れませんでした（${model}）。より大きなモデルを選ぶと改善することがあります。${
         lastText ? `\n出力の先頭: ${lastText.slice(0, 200)}` : ""
       }`,
+      usage,
     );
   }
   return {
@@ -341,5 +364,6 @@ export async function proposeLayout(
     attempts,
     remainingProblems: best.result.problems,
     model,
+    usage,
   };
 }

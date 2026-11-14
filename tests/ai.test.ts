@@ -156,21 +156,94 @@ describe("extractJson", () => {
 });
 
 describe("Claude adapter", () => {
-  it("sends structured output request and keeps history append-only", async () => {
+  function fakeClient(usage: Record<string, number> = {}) {
     const plan = sidingPlan();
-    const parse = vi.fn(async () => ({
-      stop_reason: "end_turn",
-      parsed_output: plan,
-      content: [{ type: "text", text: JSON.stringify(plan) }],
-    }));
-    const client = { beta: { messages: { parse } } } as unknown as Anthropic;
-    const session = createAnthropicSession({ provider: "anthropic", model: "claude-opus-5-5" }, sessionOptions(), client);
+    const stream = vi.fn(() => {
+      const listeners: ((e: { type: string }) => void)[] = [];
+      return {
+        on: (name: string, fn: (e: { type: string }) => void) => {
+          if (name === "streamEvent") listeners.push(fn);
+        },
+        finalMessage: async () => {
+          for (const fn of listeners) fn({ type: "message_start" });
+          return {
+            stop_reason: "end_turn",
+            parsed_output: plan,
+            content: [{ type: "text", text: JSON.stringify(plan) }],
+            usage: { input_tokens: 50, output_tokens: 300, cache_read_input_tokens: 9000, cache_creation_input_tokens: 0, ...usage },
+          };
+        },
+      };
+    });
+    return { stream, client: { beta: { messages: { stream } } } as unknown as Anthropic };
+  }
+
+  it("sends structured output request and keeps history append-only", async () => {
+    const { stream, client } = fakeClient();
+    const session = createAnthropicSession({ provider: "anthropic", model: "claude-opus-5-5" }, sessionOptions(), client, {});
     await session.ask("1");
     await session.ask("2");
-    const req = (parse.mock.calls[1] as unknown as [Record<string, unknown>])[0];
+    const req = (stream.mock.calls[1] as unknown as [Record<string, unknown>])[0];
     expect(req.model).toBe("claude-opus-5-5");
     expect(req.fallbacks).toBe("default");
     expect((req.messages as unknown[]).length).toBe(4);
+  });
+
+  it("caches the fixed system prompt and the growing conversation", async () => {
+    const { stream, client } = fakeClient();
+    const opts = sessionOptions("tomix");
+    const session = createAnthropicSession({ provider: "anthropic", model: "claude-opus-5-5" }, opts, client, {});
+    await session.ask("ボード 1200x600");
+    const req = (stream.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    // 自動キャッシュ（出し直しで前の会話を読む）
+    expect(req.cache_control).toEqual({ type: "ephemeral" });
+    // システムプロンプトは固定で、利用者ごとの値を含まない
+    const system = req.system as { text: string; cache_control: unknown }[];
+    expect(system).toHaveLength(1);
+    expect(system[0].text).toBe(opts.system);
+    expect(system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(system[0].text).not.toContain("1200");
+    expect(sessionOptions("tomix").system).toBe(opts.system);
+  });
+
+  it("uses the 1 hour TTL for the system prompt when configured", async () => {
+    const { stream, client } = fakeClient();
+    const session = createAnthropicSession({ provider: "anthropic", model: "claude-opus-5-5" }, sessionOptions(), client, {
+      ANTHROPIC_CACHE_TTL: "1h",
+    });
+    await session.ask("1");
+    const req = (stream.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect((req.system as { cache_control: unknown }[])[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    expect(req.cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("reports token usage and when the response started", async () => {
+    const { client } = fakeClient({ cache_creation_input_tokens: 120 });
+    const onResponseStart = vi.fn();
+    const session = createAnthropicSession(
+      { provider: "anthropic", model: "claude-opus-5-5" },
+      { ...sessionOptions(), onResponseStart },
+      client,
+      {},
+    );
+    const r = await session.ask("1");
+    expect(onResponseStart).toHaveBeenCalledTimes(1);
+    expect(r.usage).toEqual({ inputTokens: 50, outputTokens: 300, cacheReadTokens: 9000, cacheWriteTokens: 120 });
+  });
+});
+
+describe("proposeLayout usage", () => {
+  it("adds up token usage across attempts", async () => {
+    const outputs: unknown[] = [{ title: "x" }, sidingPlan()];
+    const session: ChatSession = {
+      ask: async () => {
+        const json = outputs.shift() ?? null;
+        return { json, text: "", usage: { inputTokens: 10, outputTokens: 100, cacheReadTokens: 5000, cacheWriteTokens: 1 } };
+      },
+    };
+    const r = await proposeLayout({ board, request: "" }, session, "m");
+    expect(r.attempts).toBe(2);
+    expect(r.usage).toEqual({ inputTokens: 20, outputTokens: 200, cacheReadTokens: 10000, cacheWriteTokens: 2 });
   });
 });
 
