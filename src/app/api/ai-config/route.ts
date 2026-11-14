@@ -1,8 +1,11 @@
-import { serverAiInfo } from "@/lib/llm";
+import { publicAiView } from "@/lib/server/aiSettings";
+import { requireUser } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
 
-/** サーバー側のAI設定の状況（キーの有無だけで、キーそのものは返さない） */
-export function GET() {
-  return Response.json(serverAiInfo());
+/** 使うAIの名前と、使える状態か（キーは返さない） */
+export async function GET(req: Request) {
+  const g = await requireUser(req);
+  if (!g.ok) return g.response;
+  return Response.json(publicAiView(g.data.ai));
 }

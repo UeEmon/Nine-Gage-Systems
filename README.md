@@ -8,7 +8,8 @@ AIと一緒にNゲージ鉄道模型の線路レイアウトを設計するWeb�
 - **線路エディタ**: 直線・曲線・ポイント・車止めを、選んだ端（赤い丸）につないでいきます。ドラッグで移動すると近くの端に吸着します。回転・左右反転・削除（キー: `R` / `F` / `Delete`）。
 - **ボード設定**: 900×600、サブロク（1820×910）などのプリセットか任意のサイズ。はみ出した線路は赤く表示されます。
 - **AIレイアウト提案**: 要望を日本語で書くと、AIが線路部品の並びを提案します。アプリ側で組み立てて「つながっていない端・ずれ・ボード外・重なり」を検査し、問題があればAIに直させます（最大4回）。
-- **AIの切り替え**: Claude・OpenAI・Gemini・ローカルLLM（Ollama / LM Studio / vLLM など OpenAI 互換API）から選べます。モデル・APIキー・接続先URLは画面の「AI設定」かサーバーの環境変数で設定し、「一覧」ボタンで使えるモデルを取得できます。
+- **ログインとロール**: ユーザーごとに「管理者」「一般」のロールがあります。AIのAPI設定とユーザー管理は管理者だけができます。
+- **AIの切り替え**: Claude・OpenAI・Gemini・ローカルLLM（Ollama / LM Studio / vLLM など OpenAI 互換API）から選べます。管理者が「管理」画面でプロバイダ・モデル・APIキー・接続先URLを設定し（環境変数でも可）、全員のAI提案にその設定が使われます。「一覧」ボタンで使えるモデルを取得できます。
 - **確認結果と部品リスト**: 必要な線路を**メーカー品番**ごとに本数・箱数で表示します（ポイントは左右別）。線路延長も表示します。
 - **保存**: ブラウザに自動保存。JSONファイルで保存・読み込みもできます。
 
@@ -76,7 +77,9 @@ AIに座標を直接計算させるとずれが出やすいため、AIには「�
 | `src/lib/plan.ts` | AIの出力スキーマと、部品の並び → 配置への変換 |
 | `src/lib/ai.ts` | システムプロンプトと、検証・再試行ループ（プロバイダ共通） |
 | `src/lib/llm/` | プロバイダごとの呼び出し（`anthropic.ts` / `openai.ts`（ローカルLLMも） / `gemini.ts`）と設定の解決 |
-| `src/app/api/models/route.ts` | モデル一覧API |
+| `src/lib/server/` | ユーザーとAI設定の保存（`store.ts`）、パスワード、ログイン状態、ロールの確認（`auth.ts`）、ユーザー管理 |
+| `src/app/api/auth/`、`src/app/api/admin/` | ログイン・ログアウト・パスワード変更、ユーザー管理とAI設定（管理者だけ） |
+| `src/app/api/models/route.ts` | モデル一覧API（管理者だけ） |
 | `src/app/api/propose/route.ts` | 提案API |
 | `src/components/Editor.tsx` | エディタ画面 |
 
@@ -84,11 +87,26 @@ AIに座標を直接計算させるとずれが出やすいため、AIには「�
 
 ```bash
 npm install
-cp .env.example .env.local   # 使うAIのAPIキーを設定（画面から入力してもよい）
+cp .env.example .env.local   # NINEGAGE_ADMIN_PASSWORD（最初の管理者）を設定。AIのキーは管理画面でも入れられる
 npm run dev                  # http://localhost:3000
 npm test                     # ジオメトリとAIループのテスト
 npm run typecheck
 ```
+
+## ログインとロール
+
+| ロール | できること |
+|---|---|
+| 管理者 | レイアウトの作成・AI提案に加えて、「管理」画面でAIの設定（プロバイダ・モデル・APIキー・接続先URL）とユーザー管理（追加・ロール変更・パスワード再設定・削除） |
+| 一般 | レイアウトの作成・AI提案（管理者が設定したAIを使う）・自分のパスワード変更。AIの設定は見えず、変えられない |
+
+- 最初の管理者は、ユーザーが1人もいないときだけ `NINEGAGE_ADMIN_USER` と `NINEGAGE_ADMIN_PASSWORD`（10文字以上）から作られます。以降は「管理」画面でユーザーを追加してください。
+- ユーザーとAI設定は `NINEGAGE_DATA_DIR`（既定 `./data`、Docker では `/data`）の `store.json` に保存します（権限600）。パスワードは scrypt のハッシュで、APIキーは平文で入るので、このファイルの扱いに注意してください。
+- ログイン状態は署名付きの Cookie（HttpOnly、SameSite=Lax、本番は Secure）で14日間です。パスワードの変更・再設定やロールの変更で、そのユーザーのほかのログインは切れます。
+- 管理者が1人もいなくなる変更（最後の管理者を一般にする・削除する）と、自分自身の削除はできません。
+- ログインの失敗は、同じ送信元またはユーザー名で15分に10回までです。
+- 書き換えの要求は、同じサイトの画面からだけ受け付けます（Origin を確認）。
+- `http://` で試すときは `NINEGAGE_INSECURE_COOKIE=true`（`npm run dev` では不要）。
 
 ## AIの設定
 
@@ -99,10 +117,10 @@ npm run typecheck
 | Gemini | `GEMINI_API_KEY` | `GEMINI_MODEL`（gemini-2.5-pro） | — |
 | ローカルLLM | `LOCAL_LLM_API_KEY`（任意） | `LOCAL_LLM_MODEL`（llama3.1） | `LOCAL_LLM_BASE_URL`（http://localhost:11434/v1） |
 
-- 画面の入力が環境変数より優先されます。画面で入れたキーはそのブラウザの localStorage にだけ保存されます。
+- 管理画面の設定が環境変数より優先されます。空欄の項目は環境変数を使います。キーは管理画面にも末尾4文字しか表示しません。
 - 構造化出力（JSON Schema）に対応していないローカルLLMでは、自動で「JSONだけを出力」する指示に切り替えます。小さなモデルだと線路がうまく閉じないことがあるので、14B以上を目安にしてください。
 - ローカルLLMのURLは、このアプリの**サーバーから見た**アドレスです。クラウドに置いた場合、手元PCのOllamaにはそのままでは届きません。
-- 本番環境（`NODE_ENV=production`）では、画面から接続先URLを変えることは既定で禁止です（任意のURLへサーバーから通信させないため）。自分専用のサーバーなら `AI_ALLOW_CUSTOM_BASE_URL=true` で許可できます。
+- 接続先URLを変えられるのは管理者だけです。一般ユーザーの画面からはキーもURLも送れません。
 
 ## デプロイ
 
@@ -110,7 +128,7 @@ npm run typecheck
 
 ```bash
 docker build -t nine-gage .
-docker run -p 3000:3000 --env-file .env.local nine-gage
+docker run -p 3000:3000 -v nine-gage-data:/data --env-file .env.local nine-gage
 ```
 
 AI提案は1回に1〜3分かかることがあるため、リバースプロキシのタイムアウトは300秒程度にしてください。

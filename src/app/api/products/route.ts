@@ -1,7 +1,10 @@
+import { requireUser } from "@/lib/server/auth";
 import { DB_INFO, PRODUCTS, productsCsv } from "@/lib/productDb";
 
 /** 品番データベースを JSON（既定）または CSV（?format=csv）で返す */
-export function GET(req: Request) {
+export async function GET(req: Request) {
+  const g = await requireUser(req);
+  if (!g.ok) return g.response;
   const format = new URL(req.url).searchParams.get("format");
   if (format === "csv") {
     // Excel で文字化けしないよう BOM を付ける

@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { proposeLayout, ProposeError, sessionOptions, type ProposeInput } from "@/lib/ai";
 import { usageOf } from "@/lib/bom";
-import { createSession, defaultProvider, resolveSettings, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
-import { AiSettingsSchema } from "@/lib/llm/request";
+import { createSession, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
+import { settingsForUse } from "@/lib/server/aiSettings";
+import { requireUser } from "@/lib/server/auth";
 import { MAKERS } from "@/lib/parts";
 import { shortfall, stockFromInventory } from "@/lib/productDb";
 
@@ -15,7 +16,6 @@ const BodySchema = z.object({
     height: z.number().min(200).max(10000),
   }),
   request: z.string().max(2000),
-  ai: AiSettingsSchema.optional(),
   maker: z.enum(MAKERS).default("kato"),
   /** free=自由に設計, owned=所有パーツだけで組む, expand=所有パーツを広げる拡張案 */
   mode: z.enum(["free", "owned", "expand"]).default("free"),
@@ -40,12 +40,15 @@ const HINTS: Record<"free" | "owned" | "expand", string[]> = {
   ],
 };
 
+/** ログインした人なら誰でも使える。AIは管理者が設定したもの（画面からキーやURLは送れない） */
 export async function POST(req: Request) {
+  const g = await requireUser(req);
+  if (!g.ok) return g.response;
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで）" }, { status: 400 });
   }
-  const { board, request, ai, maker, mode, inventory, patterns } = parsed.data;
+  const { board, request, maker, mode, inventory, patterns } = parsed.data;
   const counts = stockFromInventory(inventory, maker);
   if (mode === "owned" && counts.size === 0) {
     return Response.json({ error: "所有パーツが登録されていません。先に所有パーツを登録してください。" }, { status: 400 });
@@ -53,7 +56,7 @@ export async function POST(req: Request) {
 
   let settings: ResolvedAiSettings;
   try {
-    settings = resolveSettings(ai ?? { provider: defaultProvider() });
+    settings = settingsForUse(g.data.ai);
   } catch (err) {
     const e = toLlmError(err, undefined);
     return Response.json({ error: e.message }, { status: e.status });
