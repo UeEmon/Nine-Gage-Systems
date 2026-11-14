@@ -1,4 +1,5 @@
 import { getPart, localJoints, normDeg, type Joint, type Maker, type PartDef } from "./parts";
+import { routeSamples, routeSvg } from "./shapes";
 
 export type Piece = {
   uid: string;
@@ -79,54 +80,12 @@ export function placeAt(
 
 /** ローカル座標でのSVGパス（左向き基準。右向きは描画側で scale(1,-1)） */
 export function localPaths(part: PartDef): string[] {
-  switch (part.kind) {
-    case "straight":
-      return [`M0 0 L${part.length} 0`];
-    case "curve": {
-      const e = part.joints[1];
-      return [`M0 0 A${part.radius} ${part.radius} 0 0 0 ${e.x.toFixed(3)} ${e.y.toFixed(3)}`];
-    }
-    case "turnout": {
-      const e = part.joints[2];
-      return [
-        `M0 0 L${part.length} 0`,
-        `M0 0 A${part.radius} ${part.radius} 0 0 0 ${e.x.toFixed(3)} ${e.y.toFixed(3)}`,
-      ];
-    }
-    case "bumper":
-      return [`M0 0 L${part.length} 0`];
-  }
+  return part.routes.map(routeSvg);
 }
 
 /** 中心線上の点（ローカル座標, 左向き基準） */
 function localSamples(part: PartDef, step = 10): { x: number; y: number }[] {
-  const pts: { x: number; y: number }[] = [];
-  const line = (len: number) => {
-    const n = Math.max(1, Math.ceil(len / step));
-    for (let i = 0; i <= n; i++) pts.push({ x: (len * i) / n, y: 0 });
-  };
-  const arc = (r: number, a: number) => {
-    const len = (r * rad(a));
-    const n = Math.max(1, Math.ceil(len / step));
-    for (let i = 0; i <= n; i++) {
-      const t = rad((a * i) / n);
-      pts.push({ x: r * Math.sin(t), y: -r * (1 - Math.cos(t)) });
-    }
-  };
-  switch (part.kind) {
-    case "straight":
-    case "bumper":
-      line(part.length!);
-      break;
-    case "curve":
-      arc(part.radius!, part.angle!);
-      break;
-    case "turnout":
-      line(part.length!);
-      arc(part.radius!, part.angle!);
-      break;
-  }
-  return pts;
+  return part.routes.flatMap((r) => routeSamples(r, step));
 }
 
 export function worldSamples(piece: Piece, step = 10) {
@@ -234,11 +193,9 @@ export function analyze(layout: Pick<Layout, "board" | "pieces">): Analysis {
   let totalLengthMm = 0;
   for (const p of layout.pieces) {
     const part = getPart(p.partId);
-    const label = part.handed ? `${p.partId}${p.mirror ? "(右)" : "(左)"}` : p.partId;
+    const label = part.handed ? `${part.id}${p.mirror ? "(右)" : "(左)"}` : part.id;
     partCounts[label] = (partCounts[label] ?? 0) + 1;
-    if (part.kind === "straight") totalLengthMm += part.length!;
-    if (part.kind === "curve") totalLengthMm += part.radius! * rad(part.angle!);
-    if (part.kind === "turnout") totalLengthMm += part.length!;
+    if (!part.bumper) totalLengthMm += part.routeLength;
   }
 
   const deadEnds = openJoints.length;

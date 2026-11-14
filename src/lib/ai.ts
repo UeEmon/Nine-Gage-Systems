@@ -13,7 +13,8 @@ function catalogText(maker: Maker): string {
       const ends = p.joints
         .map((j, i) => `j${i}=(${j.x.toFixed(1)}, ${j.y.toFixed(1)}, 外向き${j.deg.toFixed(1)}°)`)
         .join(" ");
-      return `- ${p.id}: ${p.description}。左向き(L)のローカル座標: ${ends}`;
+      const lr = p.handed ? "左右あり" : "左右なし";
+      return `- ${p.id}: ${p.description}（${lr}）${p.jointHelp ? `。${p.jointHelp}` : ""}。L向きのローカル座標: ${ends}`;
     })
     .join("\n");
 }
@@ -70,7 +71,7 @@ const MAKER_GUIDE: Record<Maker, { example: LayoutPlan; tips: string }> = {
 export function systemPrompt(maker: Maker): string {
   const info = MAKER_INFO[maker];
   const guide = MAKER_GUIDE[maker];
-  const bumper = partsFor(maker).find((p) => p.kind === "bumper")!.id;
+  const bumper = partsFor(maker).find((p) => p.bumper)!.id;
   return `あなたはNゲージ鉄道模型（軌間9mm）のレイアウト設計の専門家です。
 利用者の要望とボードの大きさから、${info.label}の${info.system}だけを使って、実際に組めて楽しく運転できる線路配置を設計します。
 
@@ -85,9 +86,9 @@ export function systemPrompt(maker: Maker): string {
 ## 座標と向き
 - ボードの左上が(0,0)。xは右、yは下が正。単位はmm。
 - 角度は +x(右) が0°、画面上で時計回りが正。90°=下、-90°=上、180°=左。
-- dir=L は進行方向に向かって左へ曲がる（角度が減る）、dir=R は右へ曲がる（角度が増える）。
+- dir=L は進行方向に向かって左へ曲がる（角度が減る）、dir=R は右へ曲がる（角度が増える）。dir=R は部品を鏡像にして置くことなので、複線部品を dir=R にすると左側の線路が右側に来ます（周回の内側に2本目を置くときは、曲線と同じ dir にそろえる）。左右なしの部品は L/R どちらでも同じ品番です。
 - 曲線・直線は常に enter=0, exit=1。曲がる向きは dir だけで決めます。
-- ポイントは j0=トング側, j1=直進側, j2=分岐側。
+- ポイントは j0=トング側, j1=直進側, j2=分岐側（部品ごとのジョイントの意味はカタログを参照）。複線部品は j0→j1 が右側の線路、j2→j3 が左側の線路。
   - 分かれる向きに通るとき: enter=0, exit=1(直進) または 2(分岐)。dir は分岐側が進行方向の左右どちらに出るか。
   - 合流する向きに通るとき: enter=1(直進側から入る) または 2(分岐側から入る), exit=0。dir は j0 から見たときの分岐の左右で、進行方向から見ると逆になる点に注意。
 - 行き止まりの線路は最後に車止め ${bumper} を置きます（exit は 0）。
@@ -102,7 +103,7 @@ ${catalogText(maker)}
 - 円の直径はおよそ 2×R。ボード端から線路中心まで25mm以上空けるとはみ出しません。
 ${guide.tips}
 - 平行な複線は中心間隔${info.trackSpacing}mmが${info.label}の標準です（重なり判定は22mm未満）。
-- 線路の交差（平面交差・立体交差）は使わない計画にしてください。
+- 線路を交差させるときは、交差・ダブルスリップ部品を使ってください（部品同士を重ねるのは不可）。立体交差は使わない計画にしてください。
 - ボードからはみ出さないこと。曲線の外側にも余裕を取ること。
 
 ## 例（ボード1400×800mm）
@@ -180,7 +181,7 @@ export async function proposeLayout(
     }
 
     const plan = parsed.data;
-    const result = evaluatePlan(plan, board);
+    const result = evaluatePlan(plan, board, maker);
     const score = result.problems ? result.problems.split("\n").length : 0;
     if (!best || score < best.score) best = { plan, result, score };
     if (!result.problems) break;

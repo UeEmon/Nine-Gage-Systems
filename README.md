@@ -16,10 +16,19 @@ AIと一緒にNゲージ鉄道模型の線路レイアウトを設計するWeb�
 
 品番・製品名・寸法・入数は、各社公式サイトの製品一覧から抽出して `src/data/trackCatalog.ts` にまとめています（出典URLと取得日をファイルに記載）。
 
-- KATO: [直線](https://unitrack.katomodels.com/products/line_single/straight_line) / [曲線](https://unitrack.katomodels.com/products/line_single/curve_line) / [分岐・交差](https://unitrack.katomodels.com/products/line_single/branch_cross) / [車止め](https://unitrack.katomodels.com/products/line_single/car_stop)
-- TOMIX: [基本レール](https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi) / [ポイント](https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_point) / [特殊レール](https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi?category=rail_spc)
+| 種類 | KATO ユニトラック | TOMIX ファイントラック |
+|---|---|---|
+| 直線 | S248〜S62、S64、端数(S45/S38/S33/S29)、スライド線路 | S280〜S70、S72.5、端数(S33/S18.5)、バリアブルV70 |
+| 曲線 | R117〜R381（45°/30°/15°）、R481-15、R718-15、コンパクト曲線 | C243〜C391（45°/15°）、C541-15、C605-10、ミニ/スーパーミニ(C103/C140/C177) |
+| ポイント | 6番・4番（左右）、Y字2番、コンパクトR150、複線片渡り4番、ダブルクロス | PL541-15・PL280-30・ミニPL140-30（左右）、Y字PY280-15、3方、カーブポイント、ダブルクロッシングPX280、ダブルスリップ |
+| 交差 | 15°（左右）、90° | XL/XR140-15、X72.5-30、X37-90 |
+| 複線 | 直線DS248〜DS62、曲線R414/R315/R480、アプローチ、間隔変換33→66 | 直線DS280/DS140/DS1120、曲線DC317/DC391/DC465 |
+| 車止め | 車止め線路A〜D | エンドレールE |
 
-公式の一覧ページにポイントの直進長・分岐半径の数値がないものは、製品名と各社規格の一般的な値で補い、`geometryNote` に明記しています。Y字・3方・ダブルクロス・交差・コンパクト曲線・複線線路などは、まだ配置計算に対応していないため含めていません。新しい部品は `trackCatalog.ts` に1行足すとパレット・AI・部品リストに反映されます。
+- 出典: KATO [線路単品](https://unitrack.katomodels.com/products/line_single)、TOMIX [トミックスレール製品一覧](https://www.tomytec.co.jp/tomix/nyumon/tomixrail/raillineup.cgi)
+- PC版・スラブ版・高架橋付・フィーダー付などは、形が同じなので同じ部品の「ほかの品番」として載せています。
+- 公式の一覧ページに数値がない寸法（ポイントの直進長、交差の長さ、複線間隔、渡り線の曲線など）は、製品名と一般的な規格値で補い、部品ごとの `geometryNote` に「推定」と明記しています。TOMIXの規格表PDFは画像のみで数値を読み取れませんでした。
+- 部品の形は `src/lib/shapes.ts` の「経路（直線と円弧の並び）」で表すので、ジョイントが3つ以上の部品（3方・交差・ダブルクロス・複線）も同じ仕組みで配置・接続判定できます。
 
 ## 仕組み
 
@@ -34,7 +43,8 @@ AIに座標を直接計算させるとずれが出やすいため、AIには「�
 | ファイル | 役割 |
 |---|---|
 | `src/data/trackCatalog.ts` | KATO・TOMIXの品番・寸法（公式サイトから抽出） |
-| `src/lib/parts.ts` | カタログから部品の形とジョイント（接続端）を生成 |
+| `src/lib/shapes.ts` | 部品の形（直線・円弧の経路）と、そこから求めるジョイント |
+| `src/lib/parts.ts` | カタログから部品定義を生成 |
 | `src/lib/bom.ts` | 品番ごとの必要本数・箱数の集計 |
 | `src/lib/geometry.ts` | 配置計算、接続判定、はみ出し・重なり検査、部品集計 |
 | `src/lib/plan.ts` | AIの出力スキーマと、部品の並び → 配置への変換 |

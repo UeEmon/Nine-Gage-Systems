@@ -13,7 +13,9 @@ import {
 } from "@/lib/geometry";
 import { billOfMaterials } from "@/lib/bom";
 import { CATALOG_SOURCES } from "@/data/trackCatalog";
-import { getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
+import { CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
+import type { PartCategory } from "@/data/trackCatalog";
+import { routeSamples } from "@/lib/shapes";
 import { AiSettingsPanel, useAiSettings } from "./AiSettingsPanel";
 import { TrackPiece } from "./TrackPiece";
 
@@ -49,6 +51,7 @@ export function Editor() {
   const [selection, setSelection] = useState<Selection>(null);
   const [mirrorNext, setMirrorNext] = useState(false);
   const [attachJoint, setAttachJoint] = useState(0);
+  const [category, setCategory] = useState<PartCategory>("straight");
   const [request, setRequest] = useState("エンドレスに待避線を1本。駅を置けるスペースもほしい");
   const [ai, setAi] = useState<AiState>({ status: "idle" });
   const aiSettings = useAiSettings();
@@ -116,7 +119,7 @@ export function Editor() {
       // 何も選んでいなければ、ボード上部の中央付近から右向きに置く
       target = { x: b.width / 2 - 250, y: Math.max(60, b.height * 0.12), deg: 0 };
     }
-    const piece = placeAt(partId, part.handed && mirrorNext, jIdx, target, newUid());
+    const piece = placeAt(partId, mirrorNext, jIdx, target, newUid());
     const next = [...layout.pieces, piece];
     setPieces(() => next);
     // 続けてつなげるよう、新しい部品の空いている出口を選ぶ
@@ -137,7 +140,7 @@ export function Editor() {
     setPieces((ps) => ps.filter((p) => p.uid !== selectedUid));
     setSelection(null);
   };
-  const flipSelected = () => updateSelected((p) => (getPart(p.partId).handed ? { ...p, mirror: !p.mirror } : p));
+  const flipSelected = () => updateSelected((p) => ({ ...p, mirror: !p.mirror }));
   const rotateSelected = (d: number) => updateSelected((p) => ({ ...p, rot: normDeg(p.rot + d) }));
 
   useEffect(() => {
@@ -354,10 +357,10 @@ export function Editor() {
           <div className="row">
             <div className="seg">
               <button className={!mirrorNext ? "on" : ""} onClick={() => setMirrorNext(false)}>
-                左カーブ
+                左向き
               </button>
               <button className={mirrorNext ? "on" : ""} onClick={() => setMirrorNext(true)}>
-                右カーブ
+                右向き
               </button>
             </div>
           </div>
@@ -365,16 +368,33 @@ export function Editor() {
             <label className="small">
               つなぐ側
               <select value={attachJoint} onChange={(e) => setAttachJoint(Number(e.target.value))}>
-                <option value={0}>始端 (ポイントはトング側)</option>
-                <option value={1}>終端 (ポイントは直進側)</option>
-                <option value={2}>ポイント分岐側</option>
+                <option value={0}>j0 始端（ポイントはトング側）</option>
+                <option value={1}>j1 終端（ポイントは直進側）</option>
+                <option value={2}>j2（ポイントの分岐側・複線の左側の線路）</option>
+                <option value={3}>j3（3方ポイント・交差・複線の左側の終端）</option>
               </select>
             </label>
           </div>
+          <div className="chips cats">
+            {(Object.keys(CATEGORY_LABELS) as PartCategory[])
+              .filter((c) => partsFor(maker).some((p) => p.category === c))
+              .map((c) => (
+                <button key={c} className={`chip${category === c ? " on" : ""}`} onClick={() => setCategory(c)}>
+                  {CATEGORY_LABELS[c]}
+                </button>
+              ))}
+          </div>
           <div className="palette">
-            {partsFor(maker).map((p) => (
-              <button key={p.id} className="part" onClick={() => addPart(p.id)} title={p.description}>
-                <PartIcon partId={p.id} mirror={p.handed && mirrorNext} />
+            {partsFor(maker)
+              .filter((p) => p.category === category)
+              .map((p) => (
+              <button
+                key={p.key}
+                className="part"
+                onClick={() => addPart(p.key)}
+                title={[p.description, p.jointHelp, p.geometryNote].filter(Boolean).join("\n")}
+              >
+                <PartIcon partId={p.key} mirror={mirrorNext} />
                 <span>{p.name}</span>
               </button>
             ))}
@@ -385,11 +405,14 @@ export function Editor() {
           <h2>選択中の部品</h2>
           {selectedPiece ? (
             <>
-              <p className="hint">{getPart(selectedPiece.partId).name}</p>
+              <p className="hint">
+                {getPart(selectedPiece.partId).name}
+                {getPart(selectedPiece.partId).jointHelp && <><br />{getPart(selectedPiece.partId).jointHelp}</>}
+              </p>
               <div className="row wrap">
                 <button onClick={() => rotateSelected(-15)}>⟲ 15°</button>
                 <button onClick={() => rotateSelected(15)}>⟳ 15°</button>
-                <button onClick={flipSelected} disabled={!getPart(selectedPiece.partId).handed}>
+                <button onClick={flipSelected}>
                   左右反転
                 </button>
                 <button className="danger" onClick={deleteSelected}>
@@ -574,13 +597,19 @@ export function Editor() {
 }
 
 function PartIcon({ partId, mirror }: { partId: string; mirror: boolean }) {
-  const piece: Piece = { uid: "icon", partId, mirror, x: 0, y: 0, rot: 0 };
   const part = getPart(partId);
-  const len = part.kind === "curve" ? Math.max(part.joints[1].x, 120) : Math.max(part.length ?? 60, 60);
-  const span = Math.max(len, 120) + 30;
+  // 形の外接矩形に合わせて表示範囲を決める
+  const pts = part.routes.flatMap((r) => routeSamples(r, 20)).map((p) => ({ x: p.x, y: mirror ? -p.y : p.y }));
+  const minX = Math.min(...pts.map((p) => p.x)) - 15;
+  const maxX = Math.max(...pts.map((p) => p.x)) + 15;
+  const minY = Math.min(...pts.map((p) => p.y)) - 15;
+  const maxY = Math.max(...pts.map((p) => p.y)) + 15;
+  const size = Math.max(maxX - minX, maxY - minY, 120);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
   return (
-    <svg className="part-icon" viewBox={`-15 ${-span / 2} ${span} ${span}`} aria-hidden>
-      <TrackPiece piece={{ ...piece, y: mirror ? -span / 4 : span / 4 }} selected={false} warn={false} />
+    <svg className="part-icon" viewBox={`${cx - size / 2} ${cy - size / 2} ${size} ${size}`} aria-hidden>
+      <TrackPiece piece={{ uid: "icon", partId, mirror, x: 0, y: 0, rot: 0 }} selected={false} warn={false} />
     </svg>
   );
 }

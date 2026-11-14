@@ -183,3 +183,5 @@ button.danger { color: var(--danger); }
 .bom td.code { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .panel a { color: var(--accent); }
 .bom th, .bom td.num { white-space: nowrap; }
+.chip.on { background: var(--accent-weak); border-color: var(--accent); }
+.cats { margin-bottom: 8px; }

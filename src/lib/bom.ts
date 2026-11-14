@@ -20,9 +20,9 @@ export function billOfMaterials(pieces: Piece[]): BomRow[] {
   const rows = new Map<string, BomRow>();
   for (const piece of pieces) {
     const part = getPart(piece.partId);
-    // 曲線は左右どちらにも使えるので向きで分けない。ポイントは左右で品番が違う
-    const right = part.kind === "turnout" && piece.mirror;
-    const key = `${part.maker}:${part.id}${right ? ":R" : ""}`;
+    // 左右で品番が違う部品（ポイントなど）だけ向きで分ける。曲線などは同じ品番
+    const right = Boolean(part.productsRight) && piece.mirror;
+    const key = `${part.key}${right ? ":R" : ""}`;
     const row = rows.get(key);
     if (row) {
       row.count += 1;
@@ -33,7 +33,7 @@ export function billOfMaterials(pieces: Piece[]): BomRow[] {
       key,
       partId: part.id,
       maker: MAKER_INFO[part.maker].label,
-      label: part.kind === "turnout" ? `${part.name}（${right ? "右" : "左"}）` : part.name,
+      label: part.productsRight ? `${part.name}（${right ? "右" : "左"}）` : part.name,
       count: 1,
       product: products[0],
       packs: null,

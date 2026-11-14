@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { analyze, placeAt, worldJoints, type Analysis, type Board, type Piece } from "./geometry";
-import { getPart, hasPart, partIdsFor, type Maker } from "./parts";
+import { getPart, hasPart, partIdsFor, partKey, type Maker } from "./parts";
 
 /**
  * AIが出力する「線路の並び」。座標ではなく部品の順番で表し、
@@ -68,7 +68,7 @@ export type BuildResult = {
   errors: string[];
 };
 
-export function buildFromPlan(plan: LayoutPlan): BuildResult {
+export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildResult {
   const pieces: Piece[] = [];
   const index: string[][] = [];
   const errors: string[] = [];
@@ -103,23 +103,24 @@ export function buildFromPlan(plan: LayoutPlan): BuildResult {
 
     seg.pieces.forEach((pp, pi) => {
       if (!cursor) return;
-      if (!hasPart(pp.part)) {
+      const key = partKey(maker, pp.part);
+      if (!hasPart(key)) {
         errors.push(`区間${si}の部品${pi}: 未知の部品 ${pp.part}`);
         cursor = null;
         return;
       }
-      const part = getPart(pp.part);
+      const part = getPart(key);
       const n = part.joints.length;
       if (pp.enter < 0 || pp.enter >= n) {
         errors.push(`区間${si}の部品${pi}(${pp.part}): enter=${pp.enter} は範囲外（0〜${n - 1}）`);
         cursor = null;
         return;
       }
-      const piece = placeAt(pp.part, part.handed && pp.dir === "R", pp.enter, cursor, `s${si}p${pi}`);
+      const piece = placeAt(key, pp.dir === "R", pp.enter, cursor, `s${si}p${pi}`);
       pieces.push(piece);
       uids.push(piece.uid);
       byUid.set(piece.uid, piece);
-      if (part.kind === "bumper") {
+      if (part.bumper) {
         cursor = null;
         if (pi !== seg.pieces.length - 1) errors.push(`区間${si}: 車止めの後ろに部品は置けません`);
         return;
@@ -165,8 +166,8 @@ export function describeProblems(build: BuildResult, analysis: Analysis, board: 
   return lines.length ? lines.join("\n") : null;
 }
 
-export function evaluatePlan(plan: LayoutPlan, board: Board) {
-  const build = buildFromPlan(plan);
+export function evaluatePlan(plan: LayoutPlan, board: Board, maker: Maker = "kato") {
+  const build = buildFromPlan(plan, maker);
   const analysis = analyze({ board, pieces: build.pieces });
   return { build, analysis, problems: describeProblems(build, analysis, board) };
 }

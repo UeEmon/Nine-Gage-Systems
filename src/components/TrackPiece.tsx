@@ -29,7 +29,9 @@ export function TrackPiece({ piece, selected, warn, onPointerDown }: Props) {
       {paths.map((d, i) => (
         <path key={`g${i}`} d={d} className="gauge" />
       ))}
-      {part.kind === "bumper" && <line x1={part.length} y1={-9} x2={part.length} y2={9} className="bumper" />}
+      {part.bumper && (
+        <line x1={part.routeLength} y1={-9} x2={part.routeLength} y2={9} className="bumper" />
+      )}
       {paths.map((d, i) => (
         <path key={`h${i}`} d={d} className="hit" />
       ))}
