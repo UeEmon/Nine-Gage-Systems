@@ -69,6 +69,34 @@ describe("proposeLayout (provider independent loop)", () => {
     expect(res.remainingProblems).toBeNull();
   });
 
+  it("with a budget, passes unit prices and retries plans that cost too much", async () => {
+    const circle = {
+      title: "円",
+      description: "",
+      start: { x: 600, y: 100, heading: 0 },
+      segments: [{ from: null, pieces: Array(8).fill({ part: "R249-45", dir: "R", enter: 0, exit: 1 }) }],
+    };
+    const { session, prompts } = fakeSession([sidingPlan(), circle]);
+    const res = await proposeLayout({ board, request: "", budgetJpy: 2500 }, session, "m");
+    expect(prompts[0]).toContain("2,500円以内");
+    expect(prompts[0]).toMatch(/R249-45: 約248円\/本/);
+    expect(prompts[1]).toContain("予算超過");
+    expect(res.remainingProblems).toBeNull();
+    expect(res.plan.title).toBe("円");
+  });
+
+  it("does not charge for owned parts when checking the budget", async () => {
+    const { stockFromInventory } = await import("../src/lib/productDb");
+    const counts = stockFromInventory({
+      "kato:20-202": 1, "kato:20-203": 1, "kato:20-150": 1, "kato:20-100": 2,
+      "kato:20-000": 1, "kato:20-010": 1, "kato:20-020": 1,
+    });
+    const { session, prompts } = fakeSession([sidingPlan()]);
+    const res = await proposeLayout({ board, request: "", budgetJpy: 0, stock: { counts, mode: "expand" } }, session, "m");
+    expect(prompts).toHaveLength(1);
+    expect(res.remainingProblems).toBeNull();
+  });
+
   it("fails clearly when no attempt yields a plan", async () => {
     const { session } = fakeSession([null, null, null, null]);
     await expect(proposeLayout({ board, request: "" }, session, "tiny-model")).rejects.toThrow(/tiny-model/);

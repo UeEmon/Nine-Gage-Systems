@@ -6,7 +6,7 @@ import { MAKER_INFO, partsFor, type Maker } from "./parts";
 import { evaluatePlan, planSchemaFor, type LayoutPlan } from "./plan";
 import { usageOf } from "./bom";
 import { getPart } from "./parts";
-import { stockLabel } from "./productDb";
+import { shortfall, stockKeyOf, stockLabel, unitPriceOf } from "./productDb";
 
 const MAX_ATTEMPTS = 4;
 
@@ -127,10 +127,48 @@ export type ProposeInput = {
    * 所有パーツ（在庫キーごとの本数）。
    * mode="owned" ならこの本数を超えて使えない。mode="expand" なら活用を促すだけで、足りない分は買ってよい。
    */
-  stock?: { counts: Map<string, number>; mode: "owned" | "expand" };
+  stock?: { counts: Map<string, number>; mode: "free" | "owned" | "expand" };
   /** パターンごとの方向づけ（複数案を出すとき） */
   hint?: string;
+  /**
+   * 追加で買う部品の合計（メーカー希望小売価格・税込）の上限（円）。
+   * 所有パーツ（stock）がある分は費用に数えない。未指定なら制限なし。
+   */
+  budgetJpy?: number;
 };
+
+const yenText = (n: number) => `${n.toLocaleString("ja-JP")}円`;
+
+/** 予算を指定したときにAIへ渡す、部品1本あたりの価格表 */
+function priceText(maker: Maker): string {
+  const lines: string[] = [];
+  for (const part of partsFor(maker)) {
+    const keys = part.productsRight ? [stockKeyOf(part, false), stockKeyOf(part, true)] : [stockKeyOf(part, false)];
+    const prices = keys.map((k) => unitPriceOf(k));
+    if (prices.every((p) => p === null)) continue;
+    const p = prices.find((x) => x !== null)!;
+    lines.push(`- ${part.id}: 約${yenText(p)}/本`);
+  }
+  return lines.join("\n");
+}
+
+/** 予算の検査に使う、追加購入の合計金額 */
+function extraCost(pieces: Parameters<typeof usageOf>[0], input: ProposeInput): ReturnType<typeof shortfall> {
+  return shortfall(usageOf(pieces), input.stock?.counts ?? new Map());
+}
+
+function overBudget(pieces: Parameters<typeof usageOf>[0], input: ProposeInput): string | null {
+  if (input.budgetJpy === undefined) return null;
+  const sf = extraCost(pieces, input);
+  if (sf.totalCostJpy <= input.budgetJpy) return null;
+  const top = sf.rows
+    .filter((r) => r.costJpy)
+    .sort((a, b) => (b.costJpy ?? 0) - (a.costJpy ?? 0))
+    .slice(0, 3)
+    .map((r) => `${stockName(r.stockKey)} ${r.missing}本(${yenText(r.costJpy ?? 0)})`)
+    .join("、");
+  return `予算超過: 追加で買う部品が${yenText(sf.totalCostJpy)}で、上限${yenText(input.budgetJpy)}を${yenText(sf.totalCostJpy - input.budgetJpy)}超えている。費用の大きい部品: ${top}。部品を減らすか安い部品に替えて、上限内に収める`;
+}
 
 /** AIに見せる部品名（左右で品番が違う部品は dir も書く） */
 function stockName(stockKey: string): string {
@@ -165,8 +203,9 @@ export type ProposeResult = {
 
 function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
   const result = evaluatePlan(plan, input.board, maker);
-  if (input.stock?.mode !== "owned") return result;
-  const over = overStock(result.build.pieces, input.stock.counts);
+  const over = input.stock?.mode === "owned" ? overStock(result.build.pieces, input.stock.counts) : [];
+  const budget = overBudget(result.build.pieces, input);
+  if (budget) over.push(budget);
   if (!over.length) return result;
   const problems = [result.problems, ...over].filter(Boolean).join("\n");
   return { ...result, problems };
@@ -204,6 +243,13 @@ export async function proposeLayout(
     prompt += `\n\n## 使える部品（利用者の所有パーツ）\nこの本数を超えて使わないでください。全部使う必要はありません。端は車止めで終えてもかまいませんが、車止めも所有数の範囲で使います。\n${stockText(input.stock.counts)}`;
   } else if (input.stock?.mode === "expand") {
     prompt += `\n\n## 利用者の所有パーツ\n今あるレイアウトを広げる案です。これらをできるだけ活かし、足りない部品は追加で購入する前提で設計してください。description には何を買い足すと何ができるようになるかも書いてください。\n${stockText(input.stock.counts)}`;
+  }
+  if (input.stock?.mode === "free" && input.budgetJpy !== undefined && input.stock.counts.size) {
+    prompt += `\n\n## 利用者の所有パーツ（使っても費用に数えない）\n${stockText(input.stock.counts)}`;
+  }
+  if (input.budgetJpy !== undefined) {
+    const owned = input.stock?.counts.size ? "所有パーツの分は費用に数えません。" : "";
+    prompt += `\n\n## 予算\n追加で買う部品の合計（メーカー希望小売価格・税込）を${yenText(input.budgetJpy)}以内にしてください。${owned}部品は箱単位で買うため、実際の費用は下の1本あたりの価格より少し高くなることがあります。余裕を持たせてください。\n${priceText(maker)}`;
   }
 
   let best: { plan: LayoutPlan; result: ReturnType<typeof checkPlan>; score: number } | null = null;
