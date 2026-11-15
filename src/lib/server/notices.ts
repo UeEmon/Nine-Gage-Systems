@@ -6,7 +6,7 @@ import { AUDIENCES, type Audience, type StoreData, type StoredNotice, type Store
 /**
  * 新機能のお知らせ。
  * - リリースノート（src/data/releases.ts）はアプリと一緒にデプロイされ、自動で出る
- * - 管理者が画面から登録したお知らせは store.json に保存する
+ * - 管理者が画面から登録したお知らせはサーバーのデータ（store.ts）に保存する
  * 既読はユーザーごとに、お知らせのIDで持つ。ユーザー登録より前のお知らせは既読扱い。
  */
 

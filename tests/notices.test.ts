@@ -105,7 +105,7 @@ describe("お知らせ", () => {
     expect(user.readNoticeIds).toHaveLength(MAX_READ_IDS);
   });
 
-  it("store.json に保存され、以前の形式（notices なし）も読める", async () => {
+  it("保存され、以前の形式（notices なし）も読める", async () => {
     const e = { NINEGAGE_DATA_DIR: mkdtempSync(path.join(tmpdir(), "ng-")), NINEGAGE_ADMIN_USER: "owner", NINEGAGE_ADMIN_PASSWORD: "first-password-123" };
     expect((await loadStore(e)).notices).toEqual([]);
     const owner = (await loadStore(e)).users[0];

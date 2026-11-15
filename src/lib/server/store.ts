@@ -1,13 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PROVIDERS, type ProviderId } from "@/lib/llm/types";
+import { openDb, readDocument, writeDocument } from "./db";
 import { hashPassword } from "./password";
 import { openSecret, sealSecret } from "./secretBox";
 
 /**
  * サーバーに保存するデータ（ユーザー・AI設定・お知らせ）。
- * 件数が少ないので JSON ファイル1つに保存する。保存先は NINEGAGE_DATA_DIR（既定 ./data）。
+ * 件数が少ないので、全体を JSON にして SQLite の1行に保存する（db.ts）。保存先は NINEGAGE_DATA_DIR（既定 ./data）の store.sqlite。
  */
 
 /** admin=管理者、ai=プレミアムユーザー（サーバーのキー）、user=一般（自分のキー）。ログインなしは保存しない */
@@ -95,8 +95,8 @@ export type StoreData = {
 
 export type Env = Record<string, string | undefined>;
 
-export function dataFile(env: Env = process.env) {
-  return path.join(env.NINEGAGE_DATA_DIR || path.join(process.cwd(), "data"), "store.json");
+export function dataDir(env: Env = process.env) {
+  return env.NINEGAGE_DATA_DIR || path.join(process.cwd(), "data");
 }
 
 function str(v: unknown, max: number): string | undefined {
@@ -175,25 +175,18 @@ function normalize(raw: unknown, env: Env = process.env): StoreData {
   };
 }
 
-async function readRaw(file: string, env: Env): Promise<{ data: StoreData; plainKeys: boolean } | null> {
-  try {
-    const raw: unknown = JSON.parse(await readFile(file, "utf8"));
-    return { data: normalize(raw, env), plainKeys: hasPlainApiKey(raw) };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
+function readRaw(dir: string, env: Env): { data: StoreData; plainKeys: boolean } | null {
+  const text = readDocument(openDb(dir));
+  if (text === null) return null;
+  const raw: unknown = JSON.parse(text);
+  return { data: normalize(raw, env), plainKeys: hasPlainApiKey(raw) };
 }
 
-async function writeRaw(file: string, data: StoreData, env: Env) {
-  await mkdir(path.dirname(file), { recursive: true });
+function writeRaw(dir: string, data: StoreData, env: Env) {
   const byProvider = Object.fromEntries(
     Object.entries(data.ai.byProvider).map(([p, s]) => [p, s && { ...s, apiKey: s.apiKey ? sealSecret(s.apiKey, env) : undefined }]),
   );
-  const out = { ...data, ai: { ...data.ai, byProvider } };
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tmp, JSON.stringify(out, null, 2), { mode: 0o600 });
-  await rename(tmp, file);
+  writeDocument(openDb(dir), JSON.stringify({ ...data, ai: { ...data.ai, byProvider } }));
 }
 
 export function newUser(username: string, role: Role, passwordHash: string, selfRegistered = false): StoredUser {
@@ -220,14 +213,14 @@ let queue: Promise<unknown> = Promise.resolve();
 /** 読んで、変更して、変わっていれば保存する。fn が返した値を返す */
 export function updateStore<T>(fn: (data: StoreData) => T | Promise<T>, env: Env = process.env): Promise<T> {
   const run = queue.then(async () => {
-    const file = dataFile(env);
-    const stored = await readRaw(file, env);
+    const dir = dataDir(env);
+    const stored = readRaw(dir, env);
     const data = stored?.data ?? normalize(null, env);
     // 平文のキーが残っていれば、変更がなくても暗号化して書き直す
     const before = stored && !stored.plainKeys ? JSON.stringify(stored.data) : "";
     await bootstrap(data, env);
     const result = await fn(data);
-    if (JSON.stringify(data) !== before) await writeRaw(file, data, env);
+    if (JSON.stringify(data) !== before) writeRaw(dir, data, env);
     return result;
   });
   queue = run.catch(() => {});

@@ -149,12 +149,12 @@ npm run typecheck
 - ログインはユーザー名かメールアドレスでできます。
 - 同じ送信元・同じメールアドレスからの登録は1時間に5件まで。`NINEGAGE_SIGNUP=closed` で登録を止められます（管理者の追加だけになる）。
 - 「プレミアムユーザー」は、管理者が一般ユーザーの中から選びます（ユーザー管理の「AI利用を許可」かロールの変更）。管理者がユーザーを追加するときは「一般」か「管理者」だけを選べ、メールの確認が済んでいない人はプレミアムユーザーにできません。
-- 一般ユーザーのAPIキーは AES-256-GCM で暗号化して `store.json` に保存し、画面には末尾4文字しか出しません。鍵は `NINEGAGE_SECRET_KEY`（32文字以上の乱数を推奨）。未設定なら `NINEGAGE_DATA_DIR/secret.key`（権限600）を作って使います。あとから `NINEGAGE_SECRET_KEY` を設定しても、それまでのキーはファイルの鍵で読めます。鍵を失うと保存済みのキーは読めなくなり、各ユーザーに入れ直してもらう表示が出ます。
+- 一般ユーザーのAPIキーは AES-256-GCM で暗号化して保存し、画面には末尾4文字しか出しません。鍵は `NINEGAGE_SECRET_KEY`（32文字以上の乱数を推奨）。未設定なら `NINEGAGE_DATA_DIR/secret.key`（権限600）を作って使います。あとから `NINEGAGE_SECRET_KEY` を設定しても、それまでのキーはファイルの鍵で読めます。鍵を失うと保存済みのキーは読めなくなり、各ユーザーに入れ直してもらう表示が出ます。
 - 一般ユーザーのAIは接続先URLを指定できず（ローカルLLMも選べない）、サーバーの環境変数のキーや接続先も使いません。
 - 自分のキーで使った分は使用記録に `keySource: "own"` として残し、管理画面の「AIの使用量と料金」ではサーバーの料金と分けて「自分のAPIキーでの利用」に出します。
 - 以前の版の「一般」ユーザー（サーバーのAIを使えていた人）は、そのまま使えるよう「プレミアムユーザー」として読み込みます。
 - 最初の管理者は、ユーザーが1人もいないときだけ `NINEGAGE_ADMIN_USER` と `NINEGAGE_ADMIN_PASSWORD`（10文字以上）から作られます。
-- ユーザーとAI設定は `NINEGAGE_DATA_DIR`（既定 `./data`、Docker では `/data`）の `store.json` に保存します（権限600）。パスワードは scrypt のハッシュです。管理者が設定したAPIキーも、一般ユーザーのキーと同じ鍵で暗号化して保存します（以前の版で平文のまま保存したキーは、起動後に最初に読んだときに暗号化して書き直します）。
+- ユーザーとAI設定は `NINEGAGE_DATA_DIR`（既定 `./data`、Docker では `/data`）の `store.sqlite`（SQLite、権限600）に保存します。以前の版の `store.json` があれば、最初に起動したときに取り込み、`store.json.migrated` に名前を変えます（確かめたら消してかまいません）。パスワードは scrypt のハッシュです。管理者が設定したAPIキーも、一般ユーザーのキーと同じ鍵で暗号化して保存します（以前の版で平文のまま保存したキーは、起動後に最初に読んだときに暗号化して書き直します）。
 - ログイン状態は署名付きの Cookie（HttpOnly、SameSite=Lax、本番は Secure）で14日間です。パスワードの変更・再設定やロールの変更で、そのユーザーのほかのログインは切れます。
 - 管理者が1人もいなくなる変更（最後の管理者のロールを変える・削除する）と、自分自身の削除はできません。
 - ログインの失敗は、同じ送信元またはユーザー名で15分に10回までです。
@@ -170,7 +170,7 @@ npm run typecheck
 | 管理者のお知らせ | 「管理」画面の「お知らせ」で登録・編集・削除 | すぐ、または指定した公開日時から（予約） |
 
 - 対象は「全員」か「管理者だけ」。一般ユーザーには管理者向けのお知らせは見えません。
-- 既読はユーザーごとに `store.json` に保存します。ベルを開くか `/news` を開くと既読になります。そのユーザーが登録される前のお知らせは、最初から既読として扱います。
+- 既読はユーザーごとに保存します。ベルを開くか `/news` を開くと既読になります。そのユーザーが登録される前のお知らせは、最初から既読として扱います。
 - 画面は開いている間も5分ごと（とウィンドウに戻ったとき）に新着を確認します。
 - 新機能を追加するPRでは、リリースノートを1件足してください（`npm test` が id の重複や日時の書き方を検査します）。
 - API: `GET /api/notices`、`POST /api/notices/read`、管理者用 `GET/POST /api/admin/notices`、`PUT/DELETE /api/admin/notices/[id]`
@@ -203,7 +203,7 @@ npm run typecheck
 - 提案した案ごとに1件、`NINEGAGE_DATA_DIR/ai-usage.jsonl` に追記します（日時・ユーザー・機能（自由／所有パーツ／拡張案）・モデル・トークン・料金）。再起動しても残ります。
 - 料金は記録したときの単価で計算して保存します。単価は `src/lib/llm/pricing.ts`（Claude の公表価格、2026年11月時点）。キャッシュ書込は入力単価の1.25倍（5分）・2倍（1時間）、読込は各モデルの読込単価です。
 - Claude 以外のモデルや価格の変更は `AI_PRICING_JSON` で上書き・追加できます（例 `{"gpt-5":{"input":1.25,"output":10,"cacheRead":0.125}}`、単位は米ドル／100万トークン）。単価が分からないモデルは料金に入れず、管理画面に表示します。
-- 円換算のレートは管理画面で設定します（既定 1ドル=150円、`store.json` に保存）。
+- 円換算のレートは管理画面で設定します（既定 1ドル=150円、サーバーに保存）。
 - API: `GET /api/admin/ai-usage?period=this-month|last-month|30d|all`、`PUT`（`{"usdJpy":150}`）、`DELETE`（保存済みの提案結果を消す。使用記録は消さない）
 
 ## デプロイ
@@ -215,6 +215,17 @@ docker build -t nine-gage .
 docker run -p 3000:3000 -v nine-gage-data:/data --env-file .env.local nine-gage
 ```
 
-`GET /api/health` は `{"ok":true}` を返し、イメージの `HEALTHCHECK` と外部の死活確認に使います。公開中の構成（Oracle Cloud の VM、Caddy、ネットワークの分離、ステージング）は [UeEmon/oracle-cloud-deploy](https://github.com/UeEmon/oracle-cloud-deploy) にあります。
+`GET /api/health` は `{"ok":true}` を返し、イメージの `HEALTHCHECK` と外部の死活確認に使います。リポジトリの変数 `NINEGAGE_HEALTH_URL` を設定すると、`.github/workflows/uptime.yml` が15分ごとに外から確かめ、応答がなければ GitHub から所有者にメールが届きます。
+
+### バックアップと復元
+
+```bash
+# 書き出し（実行中のコンテナから。一貫した写しを AES-256-GCM で暗号化して標準出力へ）
+docker compose exec -T nine-gage node scripts/backup.mjs > ninegage.ngbak
+# 復元（同じ NINEGAGE_BACKUP_KEY で。中身を検査してから新しいファイルに書く）
+NINEGAGE_BACKUP_KEY=... node scripts/restore-backup.mjs ninegage.ngbak store.sqlite
+```
+
+鍵は `NINEGAGE_BACKUP_KEY`（32文字以上）。バックアップの中のAPIキーは別の鍵 `NINEGAGE_SECRET_KEY` で暗号化されているので、復元先でも同じ `NINEGAGE_SECRET_KEY` が要ります。どちらの鍵もサーバーの外（所有者の手元）に控えておきます。公開中の構成（Oracle Cloud の VM、Caddy、ネットワークの分離、ステージング）は [UeEmon/oracle-cloud-deploy](https://github.com/UeEmon/oracle-cloud-deploy) にあります。
 
 AI提案は1回に1〜3分かかることがあるため、リバースプロキシのタイムアウトは300秒程度にしてください。

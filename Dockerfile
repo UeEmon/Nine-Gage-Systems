@@ -16,6 +16,8 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NINEGAGE_DATA_DIR=/data NEXT_TELEMETRY_DISABLED=1
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
+# バックアップの書き出しと復元（docker compose exec nine-gage node scripts/backup.mjs）
+COPY scripts ./scripts
 # ユーザーとAI設定の保存先。ボリュームをつなぐ（node ユーザーが書ける）
 RUN mkdir -p /data .next/cache && chown node:node /data .next/cache
 VOLUME /data
@@ -25,4 +27,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1
 # 最初の管理者（NINEGAGE_ADMIN_USER / NINEGAGE_ADMIN_PASSWORD）とAIのキーは実行時に環境変数で渡す
-CMD ["node", "server.js"]
+# node:sqlite は Node 22 では試験的機能の警告を出すので、その警告だけ止める
+CMD ["node", "--disable-warning=ExperimentalWarning", "server.js"]

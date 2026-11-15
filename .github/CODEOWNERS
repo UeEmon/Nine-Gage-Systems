@@ -9,3 +9,4 @@
 /src/lib/server/         @UeEmon
 /src/app/api/            @UeEmon
 /src/lib/llm/            @UeEmon
+/scripts/                @UeEmon
