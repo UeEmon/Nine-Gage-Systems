@@ -3,6 +3,7 @@ import { computeElevation, placePiers, samplesWithZ, STEP_TOLERANCE_MM, type Ele
 import { getPart, localJoints, normDeg, type Joint, type Maker, type PartDef } from "./parts";
 import { routeSamples, routeSvg } from "./shapes";
 import type { Accessory } from "./accessories";
+import type { OperationPlan } from "./operation/model";
 
 export type Piece = {
   uid: string;
@@ -30,6 +31,8 @@ export type Layout = {
   pieces: Piece[];
   /** 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）。古い保存データにはない */
   accessories?: Accessory[];
+  /** 運行計画（ダイヤ）。古い保存データにはない */
+  operation?: OperationPlan;
 };
 
 export type WorldJoint = Joint & { pieceUid: string; index: number };

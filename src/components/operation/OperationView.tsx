@@ -1,0 +1,423 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import type { Elevation } from "@/lib/elevation";
+import type { Layout } from "@/lib/geometry";
+import {
+  computeSchedule,
+  detectStations,
+  EMPTY_OPERATION,
+  formatTime,
+  kindLabel,
+  LIMITS,
+  newTrain,
+  newTrainId,
+  normalizeOperation,
+  parseTime,
+  TRAIN_KINDS,
+  type OperationPlan,
+  type Train,
+  type TrainKind,
+  type TrainStop,
+} from "@/lib/operation";
+import { Diagram } from "./Diagram";
+
+type Props = {
+  layout: Layout;
+  elevation?: Elevation;
+  onChange: (plan: OperationPlan) => void;
+  onClose: () => void;
+};
+
+/** 運行計画（ダイヤ）を立てる画面。駅はホームの配置から自動で見つける */
+export function OperationView({ layout, elevation, onChange, onClose }: Props) {
+  const plan = useMemo(() => normalizeOperation(layout.operation) ?? EMPTY_OPERATION, [layout.operation]);
+  const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
+  const stations = useMemo(() => detectStations(layout.pieces, accessories, elevation), [layout.pieces, accessories, elevation]);
+  const result = useMemo(() => computeSchedule(layout.pieces, stations, plan), [layout.pieces, stations, plan]);
+  const [selectedId, setSelectedId] = useState<string | null>(plan.trains[0]?.id ?? null);
+  const selected = plan.trains.find((t) => t.id === selectedId) ?? null;
+  const selectedSchedule = result.trains.find((s) => s.trainId === selectedId);
+
+  const stationName = (id: string) => plan.stationNames[id] || stations.find((s) => s.id === id)?.defaultName || "（なくなった駅）";
+  const trainName = (id: string) => plan.trains.find((t) => t.id === id)?.name ?? "列車";
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const setTrains = (trains: Train[]) => onChange({ ...plan, trains });
+  const updateTrain = (id: string, patch: Partial<Train>) => setTrains(plan.trains.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  const updateStop = (train: Train, i: number, patch: Partial<TrainStop>) =>
+    updateTrain(train.id, { stops: train.stops.map((s, k) => (k === i ? { ...s, ...patch } : s)) });
+
+  const addTrain = () => {
+    const t = newTrain(plan.trains.length, stations.map((s) => s.id));
+    setTrains([...plan.trains, t]);
+    setSelectedId(t.id);
+  };
+  const copyTrain = (src: Train) => {
+    const t: Train = { ...src, id: newTrainId(), name: `${src.name}（続行）`, departSec: src.departSec + 60, stops: src.stops.map((s) => ({ ...s })) };
+    setTrains([...plan.trains, t]);
+    setSelectedId(t.id);
+  };
+  const removeTrain = (id: string) => {
+    const rest = plan.trains.filter((t) => t.id !== id);
+    setTrains(rest);
+    if (selectedId === id) setSelectedId(rest[0]?.id ?? null);
+  };
+
+  return (
+    <div className="op" role="dialog" aria-label="運行計画">
+      <header className="op-head">
+        <h2>運行計画（ダイヤ）</h2>
+        <span className="muted">
+          駅 {stations.length} ・ 列車 {plan.trains.length} 本
+        </span>
+        <button onClick={onClose}>閉じる</button>
+      </header>
+
+      <div className="op-body">
+        <aside className="op-side">
+          <section>
+            <h3>駅</h3>
+            {stations.length === 0 ? (
+              <p className="muted">
+                駅がありません。線路の横にホーム（相対式・島式）を置くと、そこが駅になります。島式ホームは両側が番線になります。
+              </p>
+            ) : (
+              <ul className="op-stations">
+                {stations.map((s) => (
+                  <li key={s.id}>
+                    <input
+                      value={plan.stationNames[s.id] ?? ""}
+                      placeholder={s.defaultName}
+                      maxLength={40}
+                      onChange={(e) => onChange({ ...plan, stationNames: { ...plan.stationNames, [s.id]: e.target.value } })}
+                      aria-label={`${s.defaultName}の名前`}
+                    />
+                    <span className="muted">{s.tracks.length}線</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section>
+            <h3>列車</h3>
+            <ul className="op-trains">
+              {plan.trains.map((t) => {
+                const sch = result.trains.find((s) => s.trainId === t.id);
+                const bad = (sch?.errors.length ?? 0) > 0;
+                return (
+                  <li key={t.id}>
+                    <button className={t.id === selectedId ? "on" : ""} onClick={() => setSelectedId(t.id)}>
+                      <span className="op-swatch" style={{ background: t.color }} />
+                      {t.name}
+                      <span className="muted"> {kindLabel(t.kind)} {formatTime(t.departSec)}発</span>
+                      {bad && <span className="error"> ⚠</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <button className="primary" onClick={addTrain} disabled={stations.length === 0}>
+              ＋ 列車を追加
+            </button>
+          </section>
+
+          {selected && (
+            <TrainEditor
+              key={selected.id}
+              train={selected}
+              stations={stations.map((s) => ({ id: s.id, name: stationName(s.id), tracks: s.tracks.length }))}
+              onChange={(patch) => updateTrain(selected.id, patch)}
+              onStop={(i, patch) => updateStop(selected, i, patch)}
+              onCopy={() => copyTrain(selected)}
+              onRemove={() => removeTrain(selected.id)}
+            />
+          )}
+        </aside>
+
+        <main className="op-main">
+          {plan.trains.length === 0 ? (
+            <p className="muted op-empty">
+              列車を追加すると、ここにダイヤグラム（横が時刻、縦が駅）と時刻表が出ます。列車どうしが同じ線路を同時に使う所があれば知らせます。
+            </p>
+          ) : (
+            <>
+              <Diagram
+                stations={stations}
+                stationName={stationName}
+                trains={plan.trains}
+                schedules={result.trains}
+                conflicts={result.conflicts}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
+              <section className="op-check">
+                {result.conflicts.length === 0 ? (
+                  <p className="ok-text">✓ 列車どうしが同じ線路を同時に使う所はありません</p>
+                ) : (
+                  <ul>
+                    {result.conflicts.slice(0, 30).map((c, i) => (
+                      <li key={i} className="warn-text">
+                        ⚠ {formatTime(c.time)}ごろ、{trainName(c.trainA)} と {trainName(c.trainB)} が {c.location} を同時に使います
+                      </li>
+                    ))}
+                    {result.conflicts.length > 30 && <li className="muted">ほか {result.conflicts.length - 30} 件</li>}
+                  </ul>
+                )}
+              </section>
+              {selected && selectedSchedule && (
+                <section className="op-timetable">
+                  <h3>
+                    <span className="op-swatch" style={{ background: selected.color }} />
+                    {selected.name}（{kindLabel(selected.kind)}・{selected.cars}両）の時刻表
+                  </h3>
+                  {selectedSchedule.errors.map((e) => (
+                    <p key={e} className="error">
+                      {e}
+                    </p>
+                  ))}
+                  {selectedSchedule.warnings.map((w) => (
+                    <p key={w} className="warn-text">
+                      {w}
+                    </p>
+                  ))}
+                  <table className="bom">
+                    <thead>
+                      <tr>
+                        {selected.laps > 1 && <th>周</th>}
+                        <th>駅</th>
+                        <th>番線</th>
+                        <th className="num">着</th>
+                        <th className="num">発</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedSchedule.events.map((e, i) => (
+                        <tr key={i}>
+                          {selected.laps > 1 && <td>{e.lap + 1}</td>}
+                          <td>{stationName(e.stationId)}</td>
+                          <td>{e.track}番線</td>
+                          <td className="num">{e.pass ? "レ" : e.arr === null ? "" : formatTime(e.arr)}</td>
+                          <td className="num">{e.pass ? `${formatTime(e.dep!)} 通過` : e.dep === null ? "（終着）" : formatTime(e.dep)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              )}
+              <p className="muted op-note">
+                時刻は運転を始めてからの経過時間です。各列車の最高速度（縮尺の km/h）で走ったときの模型の時間で、加減速は含めない目安です。
+                終着駅に着いた列車は、その番線にとどまるものとして扱います。
+              </p>
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+type StationOption = { id: string; name: string; tracks: number };
+
+function TrainEditor({
+  train,
+  stations,
+  onChange,
+  onStop,
+  onCopy,
+  onRemove,
+}: {
+  train: Train;
+  stations: StationOption[];
+  onChange: (patch: Partial<Train>) => void;
+  onStop: (i: number, patch: Partial<TrainStop>) => void;
+  onCopy: () => void;
+  onRemove: () => void;
+}) {
+  const num = (v: string, r: { min: number; max: number }, int = true) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return r.min;
+    return Math.min(r.max, Math.max(r.min, int ? Math.round(n) : n));
+  };
+  const moveStop = (i: number, d: number) => {
+    const s = train.stops.slice();
+    const j = i + d;
+    if (j < 0 || j >= s.length) return;
+    [s[i], s[j]] = [s[j], s[i]];
+    onChange({ stops: s });
+  };
+  const setKind = (kind: TrainKind) => {
+    const oldDefault = TRAIN_KINDS.find((k) => k.value === train.kind)?.color;
+    const color = train.color === oldDefault ? TRAIN_KINDS.find((k) => k.value === kind)!.color : train.color;
+    onChange({ kind, color });
+  };
+
+  return (
+    <section className="op-editor">
+      <h3>列車の設定</h3>
+      <div className="op-form">
+        <label>
+          列車名
+          <input value={train.name} maxLength={40} onChange={(e) => onChange({ name: e.target.value })} />
+        </label>
+        <label>
+          種別
+          <select value={train.kind} onChange={(e) => setKind(e.target.value as TrainKind)}>
+            {TRAIN_KINDS.map((k) => (
+              <option key={k.value} value={k.value}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          線の色
+          <input type="color" value={train.color} onChange={(e) => onChange({ color: e.target.value })} />
+        </label>
+        <label>
+          両数
+          <input type="number" min={LIMITS.cars.min} max={LIMITS.cars.max} value={train.cars} onChange={(e) => onChange({ cars: num(e.target.value, LIMITS.cars) })} />
+        </label>
+        <label>
+          最高速度(km/h)
+          <input
+            type="number"
+            min={LIMITS.speedKmh.min}
+            max={LIMITS.speedKmh.max}
+            step={5}
+            value={train.speedKmh}
+            onChange={(e) => onChange({ speedKmh: num(e.target.value, LIMITS.speedKmh) })}
+          />
+        </label>
+        <label>
+          始発駅を出る時刻
+          <TimeInput value={train.departSec} onChange={(departSec) => onChange({ departSec })} />
+        </label>
+        <label title="エンドレスのレイアウトで、停車駅の並びを何回くり返すか">
+          周回
+          <input type="number" min={LIMITS.laps.min} max={LIMITS.laps.max} value={train.laps} onChange={(e) => onChange({ laps: num(e.target.value, LIMITS.laps) })} />
+        </label>
+      </div>
+
+      <h4>停車駅</h4>
+      <div className="op-stops-wrap">
+      <table className="op-stops">
+        <thead>
+          <tr>
+            <th>駅</th>
+            <th>番線</th>
+            <th title="停車時間（秒）。始発駅は発車前に止まっている時間">停車秒</th>
+            <th>通過</th>
+            <th title="この駅で向きを変えて次の駅へ">折返</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {train.stops.map((s, i) => {
+            const st = stations.find((x) => x.id === s.stationId);
+            return (
+              <tr key={i}>
+                <td>
+                  <select value={s.stationId} onChange={(e) => onStop(i, { stationId: e.target.value, track: null })}>
+                    {!st && <option value={s.stationId}>（なくなった駅）</option>}
+                    {stations.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <select value={s.track ?? ""} onChange={(e) => onStop(i, { track: e.target.value ? Number(e.target.value) : null })}>
+                    <option value="">自動</option>
+                    {Array.from({ length: st?.tracks ?? 0 }, (_, k) => (
+                      <option key={k} value={k + 1}>
+                        {k + 1}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min={0}
+                    max={LIMITS.dwellSec.max}
+                    value={s.dwellSec}
+                    disabled={s.pass}
+                    onChange={(e) => onStop(i, { dwellSec: num(e.target.value, LIMITS.dwellSec) })}
+                  />
+                </td>
+                <td>
+                  <input type="checkbox" checked={s.pass} disabled={i === 0} onChange={(e) => onStop(i, { pass: e.target.checked, ...(e.target.checked ? { turnback: false } : {}) })} />
+                </td>
+                <td>
+                  <input type="checkbox" checked={!!s.turnback} disabled={s.pass} onChange={(e) => onStop(i, { turnback: e.target.checked })} />
+                </td>
+                <td className="op-stop-actions">
+                  <button className="mini" onClick={() => moveStop(i, -1)} disabled={i === 0} aria-label="上へ">
+                    ↑
+                  </button>
+                  <button className="mini" onClick={() => moveStop(i, 1)} disabled={i === train.stops.length - 1} aria-label="下へ">
+                    ↓
+                  </button>
+                  <button className="mini danger" onClick={() => onChange({ stops: train.stops.filter((_, k) => k !== i) })} aria-label="消す">
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      </div>
+      <button
+        onClick={() => onChange({ stops: [...train.stops, { stationId: stations[0]?.id ?? "", track: null, pass: false, dwellSec: 20 }] })}
+        disabled={stations.length === 0}
+      >
+        ＋ 駅を足す
+      </button>
+      <div className="op-editor-actions">
+        <button onClick={onCopy} title="同じ停車駅で1分あとに出る列車を足す">
+          続行の列車を足す
+        </button>
+        <button className="danger" onClick={onRemove}>
+          この列車を消す
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** "m:ss" で入れる時刻。入力の途中は文字のまま持ち、読めたときだけ反映する */
+function TimeInput({ value, onChange }: { value: number; onChange: (sec: number) => void }) {
+  const [text, setText] = useState(formatTime(value));
+  const [focused, setFocused] = useState(false);
+  const shown = focused ? text : formatTime(value);
+  const bad = parseTime(shown) === null;
+  return (
+    <input
+      value={shown}
+      inputMode="numeric"
+      placeholder="0:00"
+      className={bad ? "bad" : undefined}
+      onFocus={() => {
+        setText(formatTime(value));
+        setFocused(true);
+      }}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => {
+        setText(e.target.value);
+        const sec = parseTime(e.target.value);
+        if (sec !== null) onChange(Math.min(LIMITS.departSec.max, sec));
+      }}
+    />
+  );
+}
