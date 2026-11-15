@@ -98,7 +98,7 @@ export function DriveView({ layout, startUid, onClose }: Props) {
     scene.add(sun);
 
     const piers = placePiers(layout.pieces, graph.elevation);
-    const world = buildScene(graph, layout.pieces, piers, layout.board);
+    const world = buildScene(graph, layout.pieces, piers, layout.board, layout.accessories ?? []);
     scene.add(world.group);
     const train = buildTrain(CARS);
     scene.add(train.group);

@@ -8,6 +8,7 @@ import { PIER_MIN_MM, type Pier } from "./elevation";
 import type { Board, Piece } from "./geometry";
 import { makeSegment, N_CAR, type DriveGraph, type DrivePoint } from "./drive";
 import { getPart } from "./parts";
+import { accessoryCorners, getAccessory, hasAccessory, type Accessory } from "./accessories";
 
 /** ボードの面の高さ（地上の線路のレール面からの深さ） */
 export const BOARD_Y = -6;
@@ -125,7 +126,7 @@ function grassTexture(): THREE.Texture {
 }
 
 /** レイアウト全体の情景（ボード・線路・橋脚・木と建物） */
-export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], board: Board): Built {
+export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], board: Board, accessories: Accessory[] = []): Built {
   const group = new THREE.Group();
   const disposables: { dispose: () => void }[] = [];
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => {
@@ -283,10 +284,19 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
     m.position.set(pier.x, BOARD_Y + h / 2, pier.y);
   }
 
-  // 木と建物（線路から離れた所に）
+  // 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）
+  const placed = accessories.filter((a) => hasAccessory(a.itemId));
+  buildAccessories(placed, { add, mat, group, disposables });
+
+  // 木と建物（線路と置いたパーツから離れた所に）
   const rand = seeded(pieces.length * 7919 + Math.round(board.width + board.height));
+  const accBoxes = placed.map((a) => {
+    const cs = accessoryCorners(a, getAccessory(a.itemId));
+    return { x0: Math.min(...cs.map((c) => c.x)), x1: Math.max(...cs.map((c) => c.x)), y0: Math.min(...cs.map((c) => c.y)), y1: Math.max(...cs.map((c) => c.y)) };
+  });
   const farFromTrack = (x: number, y: number, r: number) =>
-    allPoints.every((p) => Math.abs(p.x - x) > r || Math.abs(p.y - y) > r || Math.hypot(p.x - x, p.y - y) > r);
+    allPoints.every((p) => Math.abs(p.x - x) > r || Math.abs(p.y - y) > r || Math.hypot(p.x - x, p.y - y) > r) &&
+    accBoxes.every((b) => x < b.x0 - r || x > b.x1 + r || y < b.y0 - r || y > b.y1 + r);
   const trunkMat = mat(0x6b4a2e);
   const leafMats = [mat(0x3f6b34), mat(0x4f7d3a), mat(0x355c2d)];
   const houseMats = [mat(0xe8e2d4), mat(0xd9c7a8), mat(0xbfc8cf), mat(0xe2d0c4)];
@@ -380,4 +390,117 @@ export function buildTrain(cars: number, color = 0x2f6fb5): { cars: THREE.Group[
       for (const m of Object.values(mats)) m.dispose();
     },
   };
+}
+
+type SceneKit = {
+  add: (g: THREE.BufferGeometry, m: THREE.Material) => THREE.Mesh;
+  mat: (color: number, extra?: THREE.MeshStandardMaterialParameters) => THREE.Material;
+  group: THREE.Group;
+  disposables: { dispose: () => void }[];
+};
+
+/**
+ * 線路以外のパーツの3Dの形。ローカル座標は中心が原点・線路の方向が +X、右が +Z（真上から見てレイアウトの図と同じ）。
+ * 高さ（Y）は置いた所の線路のレール面が0
+ */
+function buildAccessories(accessories: Accessory[], kit: SceneKit) {
+  const { add, mat } = kit;
+  const m = {
+    concrete: mat(0xd8d4c8),
+    edge: mat(0xe7c23a),
+    roof: mat(0x6f7f90),
+    post: mat(0x9aa0a6),
+    road: mat(0x4f5256),
+    gateY: mat(0xf2c230),
+    black: mat(0x1d1d1d),
+    red: mat(0xe3372d, { emissive: 0x801010 }),
+    green: mat(0x39d16b, { emissive: 0x0f6a2a }),
+    yellow: mat(0xf3c33a),
+    wall: mat(0xe9e3d6),
+    station: mat(0xefe6d2),
+    stationRoof: mat(0x7a3b2e),
+    glass: mat(0x5d7a94, { roughness: 0.3, metalness: 0.2 }),
+  };
+  for (const a of accessories) {
+    const def = getAccessory(a.itemId);
+    const holder = new THREE.Group();
+    holder.position.set(a.x, a.z ?? 0, a.y);
+    holder.rotation.y = (-a.rot * Math.PI) / 180;
+    kit.group.add(holder);
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number, material: THREE.Material) => {
+      const mesh = add(new THREE.BoxGeometry(w, h, d), material);
+      kit.group.remove(mesh);
+      mesh.position.set(x, y, z);
+      holder.add(mesh);
+      return mesh;
+    };
+    const L = def.length;
+    const W = def.width;
+    // 進行方向の左は -Z
+    const sgn = a.side === "R" ? 1 : -1;
+    const base = (a.z ?? 0) >= PIER_MIN_MM ? -3 : BOARD_Y - (a.z ?? 0);
+    switch (def.kind) {
+      case "crossing": {
+        // 道路（線路と直角）と遮断機・警報機
+        box(28, 1, W, 0, -0.6, 0, m.road);
+        for (const s of [-1, 1]) {
+          const px = s * 18;
+          const pz = s * (W / 2 - 4);
+          box(1.6, 14, 1.6, px, 7, pz, m.post);
+          box(5, 2.2, 1.2, px, 14, pz, m.black);
+          box(1.2, 1.4, 1.4, px - 1.4, 14, pz + 0.8, m.red);
+          box(1.2, 1.4, 1.4, px + 1.4, 14, pz + 0.8, m.red);
+          // 遮断かん（上がった状態）
+          const bar = box(0.8, 22, 0.8, px + s * -1.5, 18, pz, m.gateY);
+          bar.rotation.z = s * 0.2;
+        }
+        break;
+      }
+      case "signal": {
+        // 灯は向かってくる列車の側（-X）に向ける
+        const z = sgn * 13;
+        box(1.4, def.height, 1.4, 0, def.height / 2, z, m.post);
+        box(3.2, 9, 3.2, 0, def.height - 3, z, m.black);
+        box(0.6, 1.8, 1.8, -1.8, def.height - 0.5, z, m.green);
+        box(0.6, 1.8, 1.8, -1.8, def.height - 3, z, m.yellow);
+        box(0.6, 1.8, 1.8, -1.8, def.height - 5.5, z, m.red);
+        break;
+      }
+      case "platform":
+      case "island": {
+        const h = def.height;
+        box(L, h - base, W, 0, (h + base) / 2, 0, m.concrete);
+        // 線路側の縁の黄色い線
+        const edges = def.kind === "island" ? [-1, 1] : [a.side === "R" ? -1 : 1];
+        for (const e of edges) box(L - 4, 0.3, 1.6, 0, h + 0.15, e * (W / 2 - 1.5), m.edge);
+        if (def.roof) {
+          const rl = Math.min(L, 280);
+          for (let x = -rl / 2 + 20; x <= rl / 2 - 20; x += 40) box(1.4, 22, 1.4, x, h + 11, 0, m.post);
+          box(rl, 1.2, W - 2, 0, h + 22.6, 0, m.roof);
+        }
+        break;
+      }
+      case "bridgeStation": {
+        // 線路の上空の駅舎と、ホームへの柱
+        const top = def.height;
+        box(L, 18, W, 0, top + 9, 0, m.wall);
+        box(L + 2, 1.5, W + 2, 0, top + 18.7, 0, m.roof);
+        box(L + 0.4, 5, W - 10, 0, top + 10, 0, m.glass);
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(4, top - base, 4, sx * (L / 2 - 4), (top + base) / 2, sz * (W / 2 - 4), m.post);
+        break;
+      }
+      default: {
+        const station = def.kind === "station";
+        const h = def.height;
+        box(L, h - base, W, 0, (h + base) / 2, 0, station ? m.station : m.wall);
+        box(L - 10, 6, W + 0.4, 0, h * 0.55, 0, m.glass);
+        const roof = add(new THREE.ConeGeometry(Math.hypot(L, W) / 2, 10, 4), station ? m.stationRoof : m.roof);
+        kit.group.remove(roof);
+        roof.position.set(0, h + 5, 0);
+        roof.rotation.y = Math.PI / 4;
+        roof.scale.set(L / Math.hypot(L, W) * Math.SQRT2, 1, W / Math.hypot(L, W) * Math.SQRT2);
+        holder.add(roof);
+      }
+    }
+  }
 }

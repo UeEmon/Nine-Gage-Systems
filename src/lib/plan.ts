@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { analyze, placeAt, worldJoints, type Analysis, type Board, type Piece } from "./geometry";
+import { analyze, findConnections, placeAt, worldJoints, type Analysis, type Board, type Piece } from "./geometry";
 import { getPart, hasPart, partIdsFor, partKey, type Maker } from "./parts";
+import { accessoryIdsFor, getAccessory, hasAccessory, placeOnPiece, type Accessory } from "./accessories";
+import { computeElevation } from "./elevation";
 
 /**
  * AIが出力する「線路の並び」。座標ではなく部品の順番で表し、
@@ -26,7 +28,16 @@ function planPieceSchema(partIds: [string, ...string[]] | null) {
   });
 }
 
-function buildPlanSchema(partIds: [string, ...string[]] | null) {
+function planAccessorySchema(ids: [string, ...string[]] | null) {
+  return z.object({
+    item: (ids ? z.enum(ids) : z.string()).describe("線路以外のパーツのID（踏切・信号機・ホーム・駅舎・建物）"),
+    segment: z.number().int().describe("置く線路の区間番号（0始まり）"),
+    piece: z.number().int().describe("その区間内の部品番号（0始まり）。その部品の中央に置く"),
+    side: z.enum(["L", "R"]).describe("進行方向に向かって線路のどちら側か（ホーム・駅舎・建物）。踏切・信号機・橋上駅舎はL"),
+  });
+}
+
+function buildPlanSchema(partIds: [string, ...string[]] | null, accIds: [string, ...string[]] | null = null) {
   const PlanSegmentSchema = z.object({
   from: z
     .object({
@@ -48,6 +59,10 @@ function buildPlanSchema(partIds: [string, ...string[]] | null) {
     heading: z.number().describe("進行方向(度)。0=右(+x), 90=下(+y), -90=上, 180=左"),
   }),
   segments: z.array(PlanSegmentSchema),
+  accessories: z
+    .array(planAccessorySchema(accIds))
+    .default([])
+    .describe("線路以外のパーツ。要望に駅・踏切などがなければ空の配列"),
   });
 }
 
@@ -61,7 +76,7 @@ const schemaCache = new Map<Maker, ReturnType<typeof buildPlanSchema>>();
 export function planSchemaFor(maker: Maker) {
   let s = schemaCache.get(maker);
   if (!s) {
-    s = buildPlanSchema(partIdsFor(maker));
+    s = buildPlanSchema(partIdsFor(maker), accessoryIdsFor(maker));
     schemaCache.set(maker, s);
   }
   return s;
@@ -69,6 +84,7 @@ export function planSchemaFor(maker: Maker) {
 
 export type BuildResult = {
   pieces: Piece[];
+  accessories: Accessory[];
   /** 区間ごとの部品uid（AIへのフィードバック用） */
   index: string[][];
   errors: string[];
@@ -142,7 +158,37 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
     });
   });
 
-  return { pieces, index, errors };
+  // 線路以外のパーツは、指定した部品の中央に置く
+  const accessories: Accessory[] = [];
+  const planAcc = plan.accessories ?? [];
+  if (planAcc.length) {
+    const elevation = computeElevation(pieces, findConnections(pieces).connections);
+    planAcc.forEach((pa, i) => {
+      const key = partKey(maker, pa.item);
+      if (!hasAccessory(key)) {
+        errors.push(`パーツ${i}: 未知のパーツ ${pa.item}`);
+        return;
+      }
+      const uid = index[pa.segment]?.[pa.piece];
+      const host = uid ? byUid.get(uid) : undefined;
+      if (!host) {
+        errors.push(`パーツ${i}(${pa.item}): 区間${pa.segment}の部品${pa.piece} がありません`);
+        return;
+      }
+      const def = getAccessory(key);
+      const part = getPart(host.partId);
+      if (def.mount === "onTrack" && (part.category === "turnout" || part.category === "crossing" || part.bumper)) {
+        errors.push(`パーツ${i}(${pa.item}): ${def.label}はポイント・交差・車止めの上には置けない。直線の上に置く`);
+        return;
+      }
+      if (def.replaces && part.id !== def.replaces) {
+        errors.push(`パーツ${i}(${pa.item}): ${def.label}は${def.replaces}の代わりに置く部品なので、${def.replaces}の上に置く`);
+      }
+      accessories.push(placeOnPiece(def, host, elevation, pa.side, `acc${i}`));
+    });
+  }
+
+  return { pieces, accessories, index, errors };
 }
 
 /** AIに返すフィードバック文（問題がなければ null） */

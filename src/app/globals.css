@@ -433,3 +433,29 @@ button.link-button { border: none; background: none; padding: 0 0 0 4px; color: 
 .usage-settings { margin-top: 12px; align-items: center; }
 .usage-settings label.inline { display: flex; flex-direction: row; align-items: center; gap: 4px; font-size: 13px; color: inherit; }
 .usage-settings input { width: 90px; }
+
+/* ---- 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物） ---- */
+.acc { cursor: move; }
+.acc rect, .acc line, .acc circle { vector-effect: non-scaling-stroke; }
+.acc .acc-hit { fill: transparent; stroke: none; }
+.acc .acc-plate { fill: #a9a59b; opacity: 0.55; }
+.acc .acc-road { fill: #55585c; }
+.acc .acc-gate { stroke: #f2c230; stroke-width: 2.5; stroke-dasharray: 3 3; vector-effect: none; }
+.acc .acc-lamp { fill: #e0352b; }
+.acc .acc-outline { fill: none; stroke: #e7c74a; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.acc .acc-mast { stroke: #3a3a3a; stroke-width: 1.6; vector-effect: none; }
+.acc .acc-head { fill: #1e1e1e; }
+.acc .acc-g { fill: #39d16b; }
+.acc .acc-y { fill: #f3c33a; }
+.acc .acc-r { fill: #e3372d; }
+.acc .acc-platform { fill: #d9d4c7; stroke: #8f897b; stroke-width: 1; }
+.acc .acc-roof { fill: #7d8d9e; opacity: 0.55; }
+.acc .acc-edge { stroke: #e3b81f; stroke-width: 1.6; vector-effect: none; }
+.acc .acc-bridge { fill: #c8d3df; fill-opacity: 0.72; stroke: #5d7290; stroke-width: 1.2; }
+.acc .acc-ridge { stroke: #5d6772; stroke-width: 1; }
+.acc .acc-building { fill: #e6dccb; stroke: #8d7c62; stroke-width: 1; }
+.acc .acc-building.station { fill: #efe4cf; stroke: #9a6b3f; }
+.acc.is-selected .acc-hit { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.acc.is-dim { opacity: 0.25; }
+.part-icon .acc { cursor: inherit; }
+.chips.accs { margin-top: 4px; }

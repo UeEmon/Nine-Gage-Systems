@@ -3,14 +3,15 @@ import { isPierKey, PIER_MIN_MM, pierStockKey } from "./elevation";
 import { getPart, MAKER_INFO, partKey, type Maker } from "./parts";
 import { PRODUCTS, stockKeyName, stockKeyOf, stockLabel, type ProductRecord } from "./productDb";
 import type { CatalogProduct } from "../data/trackCatalog";
+import { accessoryOfStockKey, accessoryStockKey, getAccessory, hasAccessory, isAccessoryKey, type Accessory } from "./accessories";
 
 export type BomRow = {
   key: string;
   partId: string;
   maker: string;
   label: string;
-  /** "track"=線路・鉄橋、"pier"=橋脚 */
-  kind: "track" | "pier";
+  /** "track"=線路・鉄橋、"pier"=橋脚、"accessory"=踏切・信号機・ホーム・駅舎・建物 */
+  kind: "track" | "pier" | "accessory";
   count: number;
   /** 代表の品番（カタログの最初の製品） */
   product: CatalogProduct;
@@ -25,11 +26,20 @@ export type BomRow = {
  * 配置した線路で使う部品の本数（在庫キーごと）。
  * 高さのある線路は高架用の品番で数え、TOMIXの鉄橋は別売りのレールも足し、橋脚も高さごとに数える。
  */
-export function usageOf(pieces: Piece[]): Map<string, number> {
+export function usageOf(pieces: Piece[], accessories: Accessory[] = []): Map<string, number> {
   const usage = new Map<string, number>();
   const add = (k: string, n = 1) => usage.set(k, (usage.get(k) ?? 0) + n);
   const { elevation, piers } = elevationOf(pieces);
+  // 線路の入っているパーツ（KATOの踏切線路124mm、信号機付きの直線など）を置いた線路は数えない
+  const replaced = new Set<string>();
+  for (const a of accessories) {
+    if (!hasAccessory(a.itemId) || !a.host || replaced.has(a.host)) continue;
+    const def = getAccessory(a.itemId);
+    const host = pieces.find((p) => p.uid === a.host);
+    if (def.replaces && host && getPart(host.partId).key === partKey(def.maker, def.replaces)) replaced.add(host.uid);
+  }
   for (const piece of pieces) {
+    if (replaced.has(piece.uid)) continue;
     const part = getPart(piece.partId);
     const zs = elevation.joints.get(piece.uid) ?? [piece.z ?? 0];
     const elevated = Math.max(...zs) >= PIER_MIN_MM;
@@ -37,6 +47,7 @@ export function usageOf(pieces: Piece[]): Map<string, number> {
     for (const r of part.requires ?? []) add(partKey(part.maker, r.id), r.count);
   }
   for (const pier of piers) add(pierStockKey(pier));
+  for (const a of accessories) if (hasAccessory(a.itemId)) add(accessoryStockKey(getAccessory(a.itemId)));
   return usage;
 }
 
@@ -49,11 +60,12 @@ function productsFor(stockKey: string): { prod: ProductRecord; per: number }[] {
 }
 
 /** 配置した線路から、購入に必要な品番と数を集計する */
-export function billOfMaterials(pieces: Piece[]): BomRow[] {
+export function billOfMaterials(pieces: Piece[], accessories: Accessory[] = []): BomRow[] {
   const rows: BomRow[] = [];
-  for (const [key, count] of usageOf(pieces)) {
+  for (const [key, count] of usageOf(pieces, accessories)) {
     const options = productsFor(key);
     const pier = isPierKey(key);
+    const acc = isAccessoryKey(key) ? accessoryOfStockKey(key) : undefined;
     // 橋脚は単品で入っている品番（なければ勾配橋脚セット）を代表にする
     const main = pier ? (options.find((o) => o.prod.contents.length === 1) ?? options[0]) : options[0];
     if (!main) continue;
@@ -65,10 +77,10 @@ export function billOfMaterials(pieces: Piece[]): BomRow[] {
     });
     rows.push({
       key,
-      partId: pier ? key : getPart(stockLabel(key).partKey).id,
+      partId: pier ? key : acc ? acc.id : getPart(stockLabel(key).partKey).id,
       maker: MAKER_INFO[maker].label,
       label: stockKeyName(key),
-      kind: pier ? "pier" : "track",
+      kind: pier ? "pier" : acc ? "accessory" : "track",
       count,
       product: toProduct(main),
       packs: null,
@@ -78,5 +90,7 @@ export function billOfMaterials(pieces: Piece[]): BomRow[] {
   }
   return rows
     .map((r) => ({ ...r, packs: r.product.perPack ? Math.ceil(r.count / r.product.perPack) : null }))
-    .sort((a, b) => (a.kind === b.kind ? a.key.localeCompare(b.key) : a.kind === "track" ? -1 : 1));
+    .sort((a, b) => (a.kind === b.kind ? a.key.localeCompare(b.key) : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
 }
+
+const KIND_ORDER: Record<BomRow["kind"], number> = { track: 0, pier: 1, accessory: 2 };

@@ -150,7 +150,7 @@ export async function POST(req: Request) {
       const session = createSession(settings, isFirst ? { ...opts, onResponseStart: releaseRest } : opts);
       try {
         const result = await proposeLayout(input, session, settings.model);
-        const sf = shortfall(usageOf(result.pieces), counts);
+        const sf = shortfall(usageOf(result.pieces, result.accessories), counts);
         const overBudget = budgetJpy !== undefined && sf.totalCostJpy > budgetJpy;
         await record({ attempts: result.attempts, resultCached: false, ok: !overBudget, usage: result.usage });
         if (budgetJpy !== undefined && overBudget) {
