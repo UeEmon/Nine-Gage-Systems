@@ -1,0 +1,52 @@
+# 最終承認: すべての PR は、統括管理責任者（.github/features.json の supervisor）が
+# 最新のコミットを Approve していないと通らない。main のブランチ保護でこのチェック「最終承認」を必須にする。
+# 統括管理責任者が自分で出した PR は、出したことを承認とみなす（GitHub では自分の PR を Approve できないため）。
+name: Final approval
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: final-approval-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  final-approval:
+    name: 最終承認
+    runs-on: ubuntu-24.04
+    steps:
+      # 統括管理責任者は PR ではなく main 側の設定を見る（PR で書き換えて通せないように）
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          sparse-checkout: .github/features.json
+          sparse-checkout-cone-mode: false
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          supervisors=$(jq -r '.supervisor.owners[] | ltrimstr("@")' .github/features.json)
+          title=$(jq -r '.supervisor.title' .github/features.json)
+          if grep -qixF "$AUTHOR" <<<"$supervisors"; then
+            echo "$title（$AUTHOR）が出した PR なので承認済みとみなします"; exit 0
+          fi
+          reviews=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" --jq '.[]' | jq -s .)
+          for s in $supervisors; do
+            # その人の最後の Approve / 変更依頼 / 取り消し（コメントだけのレビューは見ない）
+            last=$(jq -c --arg s "$s" '[.[] | select((.user.login | ascii_downcase) == ($s | ascii_downcase)) | select(.state != "COMMENTED")] | last // empty' <<<"$reviews")
+            if [ -n "$last" ] && [ "$(jq -r .state <<<"$last")" = "APPROVED" ] && [ "$(jq -r .commit_id <<<"$last")" = "$HEAD_SHA" ]; then
+              echo "$title（$s）が最新のコミットを承認しました"; exit 0
+            fi
+          done
+          echo "::error::$title（$(echo $supervisors | sed 's/ /, @/g; s/^/@/')）の最終承認がまだです。最新のコミットを Approve してください。"
+          exit 1

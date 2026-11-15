@@ -135,7 +135,17 @@ npm run typecheck
 3. 承認されてマージすると、CI が `ghcr.io/ueemon/nine-gage-systems:main` を作り、数分でステージング（`https://nine-gage-staging.<ドメイン>`、パスワードは所有者から）に出ます。
 4. 本番に出すのは所有者がタグ `v1.2.3` を付けたときだけです（`:stable` が動き、本番が取り込む）。
 
-`.github/CODEOWNERS` に挙げたファイル（サーバー側のコード、API、依存、Dockerfile、CI）の変更には所有者の承認が要ります。依存とベースイメージの更新は Dependabot が週に一度PRを出します。
+### 機能ごとの担当
+
+ソースは機能（線路エディタ・線路カタログ・高架・パーツ・部品リスト・運転席視点・運行計画・AI提案・アカウント・管理画面・お知らせ・基盤）に分け、機能ごとに担当者を決めています。一覧と各機能のファイルは [docs/FEATURES.md](docs/FEATURES.md)。
+
+- 担当は `.github/features.json` の `owners` で決め、`npm run features` で `CODEOWNERS`・PRの自動ラベル・Issueテンプレート・機能一覧を作り直します。
+- PR には変更したファイルの機能の `feature:…` ラベルが自動で付き、その機能の担当者の承認が要ります。Issue はテンプレートで機能区分を選ぶと担当者が割り当てられます。
+- 機能の担当の承認とは別に、すべての PR は統括管理責任者（`.github/features.json` の `supervisor`）が最新のコミットを承認しないとマージできません（チェック「最終承認」）。
+- サーバー側のコード、API、依存、Dockerfile、CI は保護する場所として、機能の担当ではなく所有者の承認が要ります。
+- 新しいファイルがどの機能にも入っていないと `npm test` が失敗します。
+
+依存とベースイメージの更新は Dependabot が週に一度PRを出します。
 
 ## ログインとロール
 
