@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { hashPassword, passwordProblem, usernameProblem, verifyPassword } from "./password";
-import { ROLE_ORDER } from "@/lib/roles";
+import { ROLE_LABELS, ROLE_ORDER } from "@/lib/roles";
 import { publicUser, type PublicUser } from "./session";
 import { newUser, ROLES, type Env, type StoreData, type StoredUser } from "./store";
 
@@ -49,7 +49,7 @@ export const CreateUserSchema = z.object({
   role: z.enum(ROLES),
 });
 
-export const AI_FROM_GENERAL = "AI利用可能は一般ユーザーの中から選びます。一般で追加してから、ロールを「AI利用可能」に変えてください。";
+export const AI_FROM_GENERAL = `${ROLE_LABELS.ai}は一般ユーザーの中から選びます。一般で追加してから、ロールを「${ROLE_LABELS.ai}」に変えてください。`;
 
 export async function createUser(data: StoreData, input: z.infer<typeof CreateUserSchema>): Promise<UserRow> {
   if (input.role === "ai") throw new UserError(AI_FROM_GENERAL);
@@ -172,7 +172,7 @@ function find(data: StoreData, id: string) {
 export async function updateUser(data: StoreData, id: string, input: z.infer<typeof UpdateUserSchema>): Promise<UserRow> {
   const user = find(data, id);
   if (input.role === "ai" && input.role !== user.role && user.pendingVerify) {
-    throw new UserError("メールの確認が済んでいないユーザーは、AI利用可能にできません。");
+    throw new UserError(`メールの確認が済んでいないユーザーは、${ROLE_LABELS.ai}にできません。`);
   }
   if (input.role && input.role !== user.role) {
     if (user.role === "admin" && adminCount(data) <= 1) throw new UserError("管理者が1人もいなくなるため、変更できません。");

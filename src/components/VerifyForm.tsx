@@ -21,7 +21,7 @@ export function VerifyForm() {
     setState({ busy: true });
     try {
       await api("/api/auth/verify", "POST", { token });
-      window.location.replace("/account");
+      window.location.replace("/account?welcome=1");
     } catch (err) {
       setState({ busy: false, error: err instanceof Error ? err.message : String(err) });
     }

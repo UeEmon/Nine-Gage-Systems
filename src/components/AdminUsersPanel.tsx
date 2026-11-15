@@ -5,7 +5,7 @@ import { api, ROLE_HELP, ROLE_LABELS, ROLE_ORDER, type RoleId, type SessionUser 
 
 type Row = SessionUser & { createdAt: string; selfRegistered: boolean; ownKey: boolean; email: string | null; pending: boolean };
 
-/** 追加のときに選べるロール（AI利用可能は一般ユーザーの中から変える） */
+/** 追加のときに選べるロール（プレミアムユーザーは一般ユーザーの中から変える） */
 const NEW_ROLES: RoleId[] = ["user", "admin"];
 
 /** ユーザー管理（管理者だけ）: 追加・ロール変更・パスワード再設定・削除 */
@@ -100,7 +100,7 @@ export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
                       onClick={() =>
                         run(
                           () => api(`/api/admin/users/${u.id}`, "PATCH", { role: "ai" }),
-                          `${u.username} をAI利用可能にしました（サーバーのAIを使えます）。`,
+                          `${u.username} を${ROLE_LABELS.ai}にしました（サーバーのAIを使えます）。`,
                         )
                       }
                     >

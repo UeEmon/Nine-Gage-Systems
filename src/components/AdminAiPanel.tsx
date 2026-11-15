@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/roles";
+import { api, ROLE_LABELS } from "@/lib/roles";
 import { DEFAULT_LOCAL_BASE_URL, PROVIDER_LABELS, PROVIDERS, type ProviderId } from "@/lib/llm/types";
 
 type ProviderView = {
@@ -95,7 +95,7 @@ export function AdminAiPanel() {
     <section className="card form">
       <h2>AI設定（全員のAI提案に使われます）</h2>
       <p className="hint">
-        いま使っているAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。管理者と「AI利用可能」のユーザーのAI提案にこの設定を使います（「一般」のユーザーは自分のAPIキー）。ほかのユーザーにはキーやURLは見えません。
+        いま使っているAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。管理者と{ROLE_LABELS.ai}のAI提案にこの設定を使います（「一般」のユーザーは自分のAPIキー）。ほかのユーザーにはキーやURLは見えません。
       </p>
       <label>
         プロバイダ

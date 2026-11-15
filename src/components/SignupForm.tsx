@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { api } from "@/lib/roles";
+import { api, ROLE_LABELS } from "@/lib/roles";
 
 /** 自分でユーザー登録する（ロールは一般。AIは自分のAPIキーで使う） */
 export function SignupForm() {
@@ -77,7 +77,7 @@ export function SignupForm() {
         {state.busy ? "登録中…" : "登録する"}
       </button>
       <p className="hint">
-        登録すると「一般」ユーザーになり、自分のAPIキー（Claude・OpenAI・Gemini）を設定してAI提案を使えます。サーバーのAIを使えるようにするかどうかは、管理者が一般ユーザーの中から選びます（「AI利用可能」）。
+        登録すると「一般」ユーザーになり、自分のAPIキー（Claude・OpenAI・Gemini）を設定してAI提案を使えます。サーバーのAIを使えるようにするかどうかは、管理者が一般ユーザーの中から選びます（「{ROLE_LABELS.ai}」）。
       </p>
       <p className="hint">
         <Link href="/login">ログイン</Link> ／ <Link href="/">ログインせずに使う</Link>

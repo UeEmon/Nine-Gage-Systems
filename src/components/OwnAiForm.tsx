@@ -15,6 +15,13 @@ type View = {
   unreadable: boolean;
 };
 
+/** キーを作るページ（各社の公式） */
+const KEY_PAGE: Record<Provider, { label: string; url: string }> = {
+  anthropic: { label: "Claude Console の API Keys", url: "https://console.anthropic.com/settings/keys" },
+  openai: { label: "OpenAI Platform の API keys", url: "https://platform.openai.com/api-keys" },
+  gemini: { label: "Google AI Studio の API キー", url: "https://aistudio.google.com/apikey" },
+};
+
 const KEY_HINT: Record<Provider, string> = {
   anthropic: "sk-ant-…（Claude Console の API Keys で作れます）",
   openai: "sk-…（OpenAI Platform の API keys で作れます）",
@@ -66,6 +73,18 @@ export function OwnAiForm() {
       <p className="hint">
         一般ユーザーは、自分で用意したAPIキーでAI提案を使えます。料金はキーの持ち主（あなた）のアカウントに請求されます。キーはサーバーに暗号化して保存し、画面には末尾4文字だけを表示します。
       </p>
+      {!view.savedKey && (
+        <ol className="hint steps">
+          <li>使うAIを選びます（迷ったら Claude）。</li>
+          <li>
+            <a href={KEY_PAGE[provider].url} target="_blank" rel="noreferrer">
+              {KEY_PAGE[provider].label}
+            </a>
+            でAPIキーを作ります（各社のアカウントと支払いの登録が要ります）。
+          </li>
+          <li>作ったキーを下に貼り付けて「保存する」を押します。</li>
+        </ol>
+      )}
       <label>
         AI
         <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
@@ -94,7 +113,11 @@ export function OwnAiForm() {
       {!sameProvider && view.savedKey && <p className="hint">AIを変えると、保存済みのキー（{view.savedKey}）は消えます。</p>}
       {view.unreadable && <p className="warn-text">保存したキーを読めなくなりました。もう一度入力してください。</p>}
       {state.error && <p className="error">{state.error}</p>}
-      {state.done && <p className="ok-text">{state.done}</p>}
+      {state.done && (
+        <p className="ok-text">
+          {state.done} <a href="/">エディタでAI提案を使う</a>
+        </p>
+      )}
       <div className="row">
         <button className="primary" disabled={state.busy}>
           {state.busy ? "保存中…" : "保存する"}
