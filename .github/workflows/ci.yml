@@ -62,7 +62,8 @@ jobs:
           tags: nine-gage:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: aquasecurity/trivy-action@0.28.0
+      # タグが付け替えられた前例があるので、コミットで固定する（v0.35.0）
+      - uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           image-ref: nine-gage:scan
           severity: CRITICAL
