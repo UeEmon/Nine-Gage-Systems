@@ -116,7 +116,8 @@ const isInventory = (v: unknown): v is Inventory =>
   !!v && typeof v === "object" && Object.values(v as object).every((n) => typeof n === "number");
 const isPatterns = (v: unknown): v is SavedPattern[] => Array.isArray(v);
 
-export function Editor({ user }: { user: SessionUser }) {
+/** user が null ならログインなし（AI提案は使えない。保存はこのブラウザとファイルだけ） */
+export function Editor({ user }: { user: SessionUser | null }) {
   const [layout, setLayout] = useState<Layout>(emptyLayout);
   const [selection, setSelection] = useState<Selection>(null);
   const [mirrorNext, setMirrorNext] = useState(false);
@@ -1068,6 +1069,8 @@ export function Editor({ user }: { user: SessionUser }) {
       <aside className="panel right">
         <section className="ai">
           <h2>AIにレイアウトを提案してもらう</h2>
+          {user ? (
+            <>
           <AiStatus user={user} />
           <div className="row">
             <div className="seg">
@@ -1185,6 +1188,15 @@ export function Editor({ user }: { user: SessionUser }) {
                 </li>
               ))}
             </ol>
+          )}
+            </>
+          ) : (
+            <div className="guest-ai">
+              <p>AI提案はログインした人が使えます。ログインしなくても、線路の配置・部品リスト・運転席の映像・ブラウザへの保存とファイルの書き出しはそのまま使えます。</p>
+              <p>
+                <a href="/signup">ユーザー登録</a>すると、自分のAPIキーを設定してAI提案を使えます。登録済みの方は<a href="/login">ログイン</a>してください。
+              </p>
+            </div>
           )}
           {layout.description && <p className="desc">{layout.description}</p>}
         </section>

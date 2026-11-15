@@ -102,7 +102,7 @@ export function AdminAiUsagePanel() {
     <section className="card">
       <h2>AIの使用量と料金</h2>
       <p className="hint">
-        AI提案で使ったトークンと料金です。料金は記録したときのモデルの公表単価（{view?.pricesAsOf ?? "—"}時点、税抜）で計算し、円は下のレートで換算します。実際の請求額とは少しずれることがあります。
+        AI提案で使ったトークンと料金です。上の合計・グラフ・内訳はサーバーのAPIキー（管理者の設定）で使った分だけで、一般ユーザーが自分のAPIキーで使った分は下の「自分のAPIキーでの利用」に分けて出します。料金は記録したときのモデルの公表単価（{view?.pricesAsOf ?? "—"}時点、税抜）で計算し、円は下のレートで換算します。実際の請求額とは少しずれることがあります。
       </p>
       <div className="row wrap">
         {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
@@ -142,6 +142,21 @@ export function AdminAiUsagePanel() {
           <h3>モデル別（{PERIOD_LABELS[period]}）</h3>
           {table("モデル", view.byModel)}
 
+          <h3>自分のAPIキーでの利用（{PERIOD_LABELS[period]}）</h3>
+          <p className="hint">
+            一般ユーザーが自分で設定したAPIキーで使った分です。料金は各ユーザーに請求され、サーバーの料金には入りません（参考の金額）。
+          </p>
+          {view.ownKey.byUser.length > 0 ? (
+            <>
+              <p className="hint">
+                合計 {num(view.ownKey.totals.proposals)}案 ／ {num(tokens(view.ownKey.totals.usage))}トークン ／ 参考 {yen(view.ownKey.totals.costUsd)}
+              </p>
+              {table("ユーザー", view.ownKey.byUser)}
+            </>
+          ) : (
+            <p className="hint">この期間はありません。</p>
+          )}
+
           {view.recent.length > 0 && (
             <details>
               <summary>最近の記録（{view.recent.length}件）</summary>
@@ -167,6 +182,7 @@ export function AdminAiUsagePanel() {
                         <td>{r.username}</td>
                         <td>
                           {r.feature} / {r.model}
+                          {r.keySource === "own" ? "（自分のキー）" : ""}
                           {r.resultCached ? "（結果を再利用）" : r.ok ? "" : "（失敗）"}
                         </td>
                         <td className="num">{r.costUsd === null ? "—" : yen(r.costUsd)}</td>

@@ -29,6 +29,8 @@ export type UsageRecord = {
   model: string;
   maker: string;
   feature: Feature;
+  /** どちらのAPIキーで呼んだか。server=サーバー（管理者が設定）、own=利用者が自分で設定。古い記録にはない（=server） */
+  keySource?: "server" | "own";
   /** AIを呼んだ回数（検査で出し直した分を含む） */
   attempts: number;
   /** 保存済みの結果を返し、AIを呼ばなかった */
@@ -141,8 +143,16 @@ function groupBy(records: UsageRecord[], key: (r: UsageRecord) => string) {
 
 const byCost = (a: Totals, b: Totals) => b.costUsd - a.costUsd || b.proposals - a.proposals;
 
-/** 管理画面に出す集計 */
-export function usageView(records: UsageRecord[], period: Period, now: Date = new Date()) {
+export const isOwnKey = (r: UsageRecord) => r.keySource === "own";
+
+/**
+ * 管理画面に出す集計。
+ * 合計・日別・月別・内訳はサーバーのキーで使った分だけ（サーバーが払う料金）。
+ * 利用者が自分のキーで使った分は ownKey に別に集計する。
+ */
+export function usageView(all: UsageRecord[], period: Period, now: Date = new Date()) {
+  const records = all.filter((r) => !isOwnKey(r));
+  const own = all.filter((r) => isOwnKey(r) && inPeriod(r, period, now));
   const inP = records.filter((r) => inPeriod(r, period, now));
   const daily = groupBy(records, (r) => jstDay(r.at));
   const monthly = groupBy(records, (r) => jstDay(r.at).slice(0, 7));
@@ -154,7 +164,7 @@ export function usageView(records: UsageRecord[], period: Period, now: Date = ne
 
   return {
     period,
-    since: records[0]?.at ?? null,
+    since: all[0]?.at ?? null,
     totals: summarize(inP),
     overview: Object.fromEntries(PERIODS.map((p) => [p, summarize(records.filter((r) => inPeriod(r, p, now)))])) as Record<
       Period,
@@ -171,7 +181,13 @@ export function usageView(records: UsageRecord[], period: Period, now: Date = ne
     byModel: [...groupBy(inP, (r) => `${r.provider} / ${r.model}`).entries()]
       .map(([id, rs]) => ({ id, label: id, ...summarize(rs) }))
       .sort(byCost),
-    recent: records.slice(-30).reverse(),
+    recent: all.slice(-30).reverse(),
+    ownKey: {
+      totals: summarize(own),
+      byUser: [...groupBy(own, (r) => r.userId).entries()]
+        .map(([id, rs]) => ({ id, label: rs[rs.length - 1].username, ...summarize(rs) }))
+        .sort(byCost),
+    },
   };
 }
 
@@ -249,7 +265,7 @@ export function logUsage(r: UsageRecord) {
   const u = r.usage;
   const rate = cacheHitRate(u);
   console.info(
-    `[ai-usage] ${r.provider}/${r.model} user=${r.username} feature=${r.feature} ${r.resultCached ? "result-cache-hit" : `calls=${r.attempts}`} ok=${r.ok} ` +
+    `[ai-usage] ${r.provider}/${r.model} user=${r.username} feature=${r.feature} key=${r.keySource ?? "server"} ${r.resultCached ? "result-cache-hit" : `calls=${r.attempts}`} ok=${r.ok} ` +
       `in=${u.inputTokens} cache_read=${u.cacheReadTokens} cache_write=${u.cacheWriteTokens} out=${u.outputTokens}` +
       (rate === null ? "" : ` hit=${(rate * 100).toFixed(0)}%`) +
       (r.costUsd === null ? "" : ` cost=$${r.costUsd.toFixed(4)}`),

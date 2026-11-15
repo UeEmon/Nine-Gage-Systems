@@ -88,3 +88,22 @@ export function recordLoginFailure(keys: string[], now = Date.now()) {
 export function clearLoginFailures(keys: string[]) {
   for (const k of keys) failures.delete(k);
 }
+
+/** ユーザー登録の連続作成を止める（同じ送信元から1時間に5件まで） */
+const signups = new Map<string, { count: number; until: number }>();
+const SIGNUP_WINDOW_MS = 60 * 60 * 1000;
+export const MAX_SIGNUPS = 5;
+
+export function signupBlocked(key: string, now = Date.now()): boolean {
+  const s = signups.get(key);
+  return !!s && s.until > now && s.count >= MAX_SIGNUPS;
+}
+
+export function recordSignup(key: string, now = Date.now()) {
+  const s = signups.get(key);
+  if (!s || s.until <= now) signups.set(key, { count: 1, until: now + SIGNUP_WINDOW_MS });
+  else s.count += 1;
+  if (signups.size > 10000) {
+    for (const [k, v] of signups) if (v.until <= now) signups.delete(k);
+  }
+}
