@@ -1,5 +1,8 @@
-/** 画面とサーバーの両方で使うロールの定義 */
-export const ROLE_LABELS = { admin: "管理者", ai: "AI利用可能", user: "一般" } as const;
+/**
+ * 画面とサーバーの両方で使うロールの定義。
+ * 表示名はここだけで決める（名称を変えるときはここを変える。保存するIDの admin / ai / user は変えない）
+ */
+export const ROLE_LABELS = { admin: "管理者", ai: "プレミアムユーザー", user: "一般" } as const;
 export type RoleId = keyof typeof ROLE_LABELS;
 export type SessionUser = { id: string; username: string; role: RoleId };
 

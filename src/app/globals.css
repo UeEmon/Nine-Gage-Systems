@@ -465,3 +465,11 @@ button.link-button { border: none; background: none; padding: 0 0 0 4px; color: 
 .acc.is-dim { opacity: 0.25; }
 .part-icon .acc { cursor: inherit; }
 .chips.accs { margin-top: 4px; }
+.small-text { font-size: 11px; margin-top: 2px; }
+.own-key-cta { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.own-key-cta p { margin: 0; font-size: 12px; }
+a.button { display: inline-block; padding: 6px 12px; border-radius: 6px; text-decoration: none; border: 1px solid var(--border); }
+a.button.primary, .ai-status a.button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.card.welcome { border-color: var(--accent); }
+.steps { margin: 0; padding-left: 20px; }
+.steps a, .ok-text a { color: var(--accent); }

@@ -32,7 +32,7 @@ export function userFromToken(token: string | undefined, data: StoreData, now = 
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
   if (!(Number(exp) * 1000 > now)) return null;
   const user = data.users.find((u) => u.id === id);
-  if (!user || String(user.sessionVersion) !== version) return null;
+  if (!user || String(user.sessionVersion) !== version || user.pendingVerify) return null;
   return user;
 }
 

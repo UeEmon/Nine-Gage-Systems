@@ -69,7 +69,7 @@ const HINTS: Record<"free" | "owned" | "expand", string[]> = {
 
 /**
  * ログインした人だけ使える（ログインなしは使えない）。
- * 管理者・AI利用可能ユーザーは管理者が設定したAI、一般ユーザーは自分で設定したAPIキーを使う。
+ * 管理者・プレミアムユーザーは管理者が設定したAI、一般ユーザーは自分で設定したAPIキーを使う。
  * 画面からキーやURLは送れない。
  */
 export async function POST(req: Request) {

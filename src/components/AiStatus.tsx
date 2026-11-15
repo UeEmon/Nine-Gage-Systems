@@ -9,7 +9,7 @@ type Info = { provider: ProviderId; model: string; ready: boolean; source: "serv
 
 /**
  * 使うAIの表示。
- * 管理者・AI利用可能ユーザーは管理者が設定したAI、一般ユーザーは自分で設定したAPIキー（「アカウント」画面）
+ * 管理者・プレミアムユーザーは管理者が設定したAI、一般ユーザーは自分で設定したAPIキー（「アカウント」画面）
  */
 export function AiStatus({ user }: { user: SessionUser }) {
   const [info, setInfo] = useState<Info | null>(null);
@@ -31,11 +31,17 @@ export function AiStatus({ user }: { user: SessionUser }) {
           <Link href={own ? "/account" : "/admin"}>設定</Link>
         </>
       )}
-      {!info.ready && (
+      {!info.ready && own && (
+        <div className="own-key-cta">
+          <p>AI提案を使うには、自分のAPIキー（Claude・OpenAI・Gemini）を登録してください。料金はキーの持ち主に請求されます。</p>
+          <Link className="button primary" href="/account">
+            APIキーを登録する
+          </Link>
+        </div>
+      )}
+      {!info.ready && !own && (
         <p className="warn-text">
-          {own
-            ? "AIを使うには、「設定」から自分のAPIキーを入力してください。"
-            : user.role === "admin"
+          {user.role === "admin"
               ? "APIキーが未設定です。「設定」から入力してください。"
               : "AIがまだ設定されていません。管理者に連絡してください。"}
         </p>

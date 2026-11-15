@@ -9,7 +9,7 @@ import { hashPassword } from "./password";
  * 件数が少ないので JSON ファイル1つに保存する。保存先は NINEGAGE_DATA_DIR（既定 ./data）。
  */
 
-/** admin=管理者、ai=AI利用可能（サーバーのキー）、user=一般（自分のキー）。ログインなしは保存しない */
+/** admin=管理者、ai=プレミアムユーザー（サーバーのキー）、user=一般（自分のキー）。ログインなしは保存しない */
 export const ROLES = ["admin", "ai", "user"] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -38,6 +38,10 @@ export type StoredUser = {
   selfRegistered?: boolean;
   /** 一般ユーザーが自分で設定したAI */
   ownAi?: StoredOwnAi;
+  /** メールアドレス（小文字）。自分で登録した人は必ず持つ */
+  email?: string;
+  /** メールの確認待ち（確認が済むと消す）。あるあいだはログインできない */
+  pendingVerify?: { tokenHash: string; expiresAt: string };
 };
 
 export const AUDIENCES = ["all", "admin"] as const;
@@ -74,7 +78,7 @@ export const DEFAULT_USD_JPY = 150;
 /**
  * 保存形式の版。
  * 1: ロールは admin/user（user はサーバーのAIを使えた）
- * 2: ロールは admin/ai/user。版1の user は ai（AI利用可能）に読み替える
+ * 2: ロールは admin/ai/user。版1の user は ai（プレミアムユーザー）に読み替える
  */
 export const STORE_VERSION = 2;
 
@@ -109,10 +113,13 @@ function normalizeUsers(raw: unknown, version: unknown): StoredUser[] {
   const out: StoredUser[] = [];
   for (const u of raw as Partial<StoredUser>[]) {
     if (!u || typeof u.id !== "string" || typeof u.username !== "string" || typeof u.passwordHash !== "string") continue;
-    // 版1の「一般」はサーバーのAIを使えていたので、そのまま使えるよう「AI利用可能」にする
+    // 版1の「一般」はサーバーのAIを使えていたので、そのまま使えるよう「プレミアムユーザー」にする
     const role = old && (u.role as string) === "user" ? "ai" : u.role;
     if (!ROLES.includes(role as Role)) continue;
     const user = { ...u, role } as StoredUser;
+    if (typeof user.email !== "string" || user.email.length > 254) delete user.email;
+    const pv = u.pendingVerify;
+    if (!pv || typeof pv.tokenHash !== "string" || typeof pv.expiresAt !== "string") delete user.pendingVerify;
     const ownAi = ownAiOf(u.ownAi);
     if (ownAi) user.ownAi = ownAi;
     else delete user.ownAi;

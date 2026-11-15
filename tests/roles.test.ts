@@ -9,7 +9,16 @@ import { usageView, type UsageRecord } from "../src/lib/server/aiUsage";
 import { aiStatusFor, applyOwnAi, ownAiView, OwnAiPatchSchema, ownSettings, settingsForUser } from "../src/lib/server/ownAi";
 import { openSecret, sealSecret } from "../src/lib/server/secretBox";
 import { loadStore, updateStore } from "../src/lib/server/store";
-import { createUser, listUsers, signupUser, updateUser } from "../src/lib/server/users";
+import { createSessionToken, userFromToken } from "../src/lib/server/session";
+import { createUser, listUsers, purgeExpiredSignups, signupMail, signupUser, updateUser, verifyEmail } from "../src/lib/server/users";
+import type { StoreData } from "../src/lib/server/store";
+
+/** 登録してメールの確認まで済ませる */
+async function signupVerified(data: StoreData, username: string, e: Record<string, string>) {
+  const r = await signupUser(data, { username, email: `${username}@example.com`, password: `${username}-pass-12` }, e);
+  if (r.kind !== "created") throw new Error("not created");
+  return verifyEmail(data, r.token);
+}
 
 function env(extra: Record<string, string> = {}) {
   return { NINEGAGE_DATA_DIR: mkdtempSync(path.join(tmpdir(), "ng-roles-")), ...extra };
@@ -41,7 +50,7 @@ describe("ロール", () => {
     const data = await loadStore(e);
     expect(data.users.map((u) => u.role)).toEqual(["admin", "ai"]);
     // 保存し直した後は版2として読み、一般はそのまま一般
-    await updateStore((d) => signupUser(d, { username: "newbie", password: "newbie-pass-1" }, e), e);
+    await updateStore((d) => signupVerified(d, "newbie", e), e);
     const raw = JSON.parse(readFileSync(path.join(e.NINEGAGE_DATA_DIR, "store.json"), "utf8"));
     expect(raw.version).toBe(2);
     const again = await loadStore(e);
@@ -52,9 +61,22 @@ describe("ロール", () => {
     ]);
   });
 
+  it("AI利用可能は追加では作れず、一般ユーザーから変える。確認待ちの人は変えられない", async () => {
+    const e = env(ADMIN);
+    const data = await loadStore(e);
+    await expect(createUser(data, { username: "zed", password: "password-12345", role: "ai" })).rejects.toThrow(/一般ユーザーの中から/);
+    const amy = await createUser(data, { username: "amy", password: "password-12345", role: "user" });
+    await updateUser(data, amy.id, { role: "ai" });
+    const r = await signupUser(data, { username: "rider", email: "r@example.com", password: "rider-pass-12" }, e);
+    if (r.kind !== "created") throw new Error();
+    await expect(updateUser(data, r.user.id, { role: "ai" })).rejects.toThrow(/確認/);
+    expect(listUsers(data).find((u) => u.username === "rider")).toMatchObject({ pending: true, email: "r@example.com" });
+  });
+
   it("一覧は管理者・AI利用可能・一般の順", async () => {
     const data = await loadStore(env(ADMIN));
-    await createUser(data, { username: "zed", password: "password-12345", role: "ai" });
+    const zed = await createUser(data, { username: "zed", password: "password-12345", role: "user" });
+    await updateUser(data, zed.id, { role: "ai" });
     await createUser(data, { username: "amy", password: "password-12345", role: "user" });
     expect(listUsers(data).map((u) => u.role)).toEqual(["admin", "ai", "user"]);
   });
@@ -64,20 +86,62 @@ describe("ユーザー登録", () => {
   it("自分で登録すると必ず一般になる。重複・短いパスワードは拒否", async () => {
     const e = env(ADMIN);
     const data = await loadStore(e);
-    const u = await signupUser(data, { username: "rider", password: "rider-pass-12" }, e);
-    expect(u).toMatchObject({ role: "user", selfRegistered: true });
-    await expect(signupUser(data, { username: "Rider", password: "rider-pass-12" }, e)).rejects.toThrow(/すでに/);
-    await expect(signupUser(data, { username: "other", password: "short" }, e)).rejects.toThrow(/10文字/);
+    const u = await signupVerified(data, "rider", e);
+    expect(u).toMatchObject({ role: "user", selfRegistered: true, email: "rider@example.com" });
+    await expect(signupUser(data, { username: "Rider", email: "x@example.com", password: "rider-pass-12" }, e)).rejects.toThrow(/すでに/);
+    await expect(signupUser(data, { username: "other", email: "o@example.com", password: "short" }, e)).rejects.toThrow(/10文字/);
+    await expect(signupUser(data, { username: "other", email: "not-mail", password: "other-pass-12" }, e)).rejects.toThrow(/メールアドレス/);
   });
 
   it("NINEGAGE_SIGNUP=closed なら登録できない。最初の管理者がいないときも登録できない", async () => {
     const e = env(ADMIN);
     const data = await loadStore(e);
-    await expect(signupUser(data, { username: "rider", password: "rider-pass-12" }, { ...e, NINEGAGE_SIGNUP: "closed" })).rejects.toThrow(
+    await expect(signupUser(data, { username: "rider", email: "r@example.com", password: "rider-pass-12" }, { ...e, NINEGAGE_SIGNUP: "closed" })).rejects.toThrow(
       /受け付けていません/,
     );
     const empty = await loadStore(env());
-    await expect(signupUser(empty, { username: "rider", password: "rider-pass-12" }, e)).rejects.toThrow(/最初の管理者/);
+    await expect(signupUser(empty, { username: "rider", email: "r@example.com", password: "rider-pass-12" }, e)).rejects.toThrow(/最初の管理者/);
+  });
+
+  it("メールのリンクを開くまではログインできず、開くとログインできる", async () => {
+    const e = env(ADMIN);
+    const data = await loadStore(e);
+    const r = await signupUser(data, { username: "rider", email: "Rider@Example.com", password: "rider-pass-12" }, e);
+    if (r.kind !== "created") throw new Error();
+    expect(r.user.email).toBe("rider@example.com");
+    expect(r.user.pendingVerify).toBeDefined();
+    expect(JSON.stringify(data)).not.toContain(r.token);
+    expect(userFromToken(createSessionToken(r.user, data.sessionSecret), data)).toBeNull();
+    expect(signupMail("https://ng.example", "rider", r.token).text).toContain(`https://ng.example/verify#${r.token}`);
+    expect(() => verifyEmail(data, "wrong-token-value")).toThrow(/無効/);
+    const u = verifyEmail(data, r.token);
+    expect(u.pendingVerify).toBeUndefined();
+    expect(userFromToken(createSessionToken(u, data.sessionSecret), data)?.id).toBe(u.id);
+    expect(() => verifyEmail(data, r.token)).toThrow(/無効/);
+  });
+
+  it("確認リンクは24時間で切れ、切れた登録は消えてユーザー名が空く", async () => {
+    const e = env(ADMIN);
+    const data = await loadStore(e);
+    const t0 = Date.now();
+    const r = await signupUser(data, { username: "rider", email: "r@example.com", password: "rider-pass-12" }, e, t0);
+    if (r.kind !== "created") throw new Error();
+    expect(() => verifyEmail(data, r.token, t0 + 25 * 3600_000)).toThrow(/期限/);
+    purgeExpiredSignups(data, t0 + 25 * 3600_000);
+    expect(data.users.some((u) => u.username === "rider")).toBe(false);
+  });
+
+  it("確認待ちのメールアドレスで登録し直すと前の登録は消え、確認済みのアドレスなら登録済みとして扱う", async () => {
+    const e = env(ADMIN);
+    const data = await loadStore(e);
+    await signupUser(data, { username: "first", email: "r@example.com", password: "rider-pass-12" }, e);
+    const again = await signupUser(data, { username: "second", email: "r@example.com", password: "rider-pass-12" }, e);
+    expect(data.users.map((u) => u.username)).toEqual(["owner", "second"]);
+    if (again.kind !== "created") throw new Error();
+    verifyEmail(data, again.token);
+    const third = await signupUser(data, { username: "third", email: "R@example.com", password: "rider-pass-12" }, e);
+    expect(third).toEqual({ kind: "already", username: "second" });
+    expect(data.users).toHaveLength(2);
   });
 
   it("同じ送信元からの登録は1時間に5件まで", () => {
@@ -118,8 +182,9 @@ describe("自分のAPIキー", () => {
   async function setup() {
     const e = env(ADMIN);
     const data = await loadStore(e);
-    const general = await signupUser(data, { username: "rider", password: "rider-pass-12" }, e);
-    await createUser(data, { username: "trusted", password: "trusted-pass-1", role: "ai" });
+    const general = await signupVerified(data, "rider", e);
+    const t = await createUser(data, { username: "trusted", password: "trusted-pass-1", role: "user" });
+    await updateUser(data, t.id, { role: "ai" });
     const trusted = data.users.find((u) => u.username === "trusted")!;
     applyAiPatch(data.ai, { provider: "anthropic", byProvider: { anthropic: { apiKey: "server-key-0000" } } });
     return { e, data, general, trusted };
