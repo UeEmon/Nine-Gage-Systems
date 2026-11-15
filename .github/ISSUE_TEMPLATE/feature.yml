@@ -1,0 +1,37 @@
+# このファイルは .github/features.json から `npm run features` で作っています。直接編集しないでください。
+name: 機能の追加・改善
+description: 新しい機能や、今ある機能の改善の提案
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: feature
+    attributes:
+      label: 機能区分
+      description: 選んだ機能のラベルが付き、その機能の担当者が自動で割り当てられます。
+      options:
+        - "線路エディタ（feature:editor）"
+        - "線路カタログ・品番DB（feature:catalog）"
+        - "高架・立体交差（feature:elevation）"
+        - "線路以外のパーツ（feature:accessories）"
+        - "部品リスト・所有パーツ（feature:bom）"
+        - "運転席視点（3D）（feature:drive）"
+        - "運行計画（feature:operation）"
+        - "AIレイアウト提案（feature:ai）"
+        - "アカウント・ログイン・ロール（feature:auth）"
+        - "管理画面（feature:admin）"
+        - "お知らせ・リリースノート（feature:notices）"
+        - "基盤・運用（feature:platform）"
+        - "わからない・複数にまたがる"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: やりたいこと
+      description: 利用者として何ができるようになるとよいか
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: 補足（画面のイメージ・参考など）
