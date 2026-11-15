@@ -98,7 +98,7 @@ export function LibraryPanel({ layout, patterns, setPatterns, currentId, setCurr
         <button onClick={() => downloadJson(layout.title || "layout", toPatternFile([{ id: currentId ?? newPatternId(), name: layout.title || "パターン", savedAt: new Date().toISOString(), layout }]))}>
           今の配置をファイルに出力
         </button>
-        <button disabled={!patterns.length} onClick={() => downloadJson("nine-gage-patterns", toPatternFile(patterns))}>
+        <button disabled={!patterns.length} onClick={() => downloadJson("senrolab-patterns", toPatternFile(patterns))}>
           全パターンを出力
         </button>
         <label className="button">

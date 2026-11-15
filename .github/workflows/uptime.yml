@@ -1,4 +1,4 @@
-# 公開中の Nine-Gage が応答しているかを15分ごとに外から確かめる。落ちていればこのワークフローが失敗し、
+# 公開中の SenroLab が応答しているかを15分ごとに外から確かめる。落ちていればこのワークフローが失敗し、
 # GitHub から所有者にメールが届く。URL はリポジトリの変数 NINEGAGE_HEALTH_URL（例 https://nine-gage.example.com/api/health）。
 # 変数がなければ何もしない。60日間コミットがないと GitHub が定期実行を止めるので、そのときは Actions の画面で再開する。
 name: Uptime
@@ -23,5 +23,5 @@ jobs:
             body=$(curl -fsS --max-time 15 "$URL") && [ "$body" = '{"ok":true}' ] && { echo "up: $URL"; exit 0; }
             sleep 30
           done
-          echo "::error::Nine-Gage が応答しません: $URL"
+          echo "::error::SenroLab が応答しません: $URL"
           exit 1

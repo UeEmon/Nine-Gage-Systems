@@ -1,4 +1,6 @@
-# Nine-Gage-Systems
+# SenroLab（センロラボ）
+
+旧称 Nine-Gage。リポジトリ名や環境変数（`NINEGAGE_*`）は互換のため旧名のまま。
 
 AIと一緒にNゲージ鉄道模型の線路レイアウトを設計するWebアプリです。
 

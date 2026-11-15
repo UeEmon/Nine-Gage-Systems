@@ -18,7 +18,7 @@ if (existsSync(output)) {
 const all = readFileSync(input);
 const magic = Buffer.from("NGBAK1\n");
 if (!all.subarray(0, magic.length).equals(magic)) {
-  console.error("Nine-Gage のバックアップではありません。");
+  console.error("SenroLab（旧 Nine-Gage）のバックアップではありません。");
   process.exit(1);
 }
 const iv = all.subarray(magic.length, magic.length + 12);
