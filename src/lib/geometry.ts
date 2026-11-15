@@ -2,6 +2,7 @@ import { PIER_SYSTEMS } from "../data/piers";
 import { computeElevation, placePiers, samplesWithZ, STEP_TOLERANCE_MM, type Elevation, type Pier } from "./elevation";
 import { getPart, localJoints, normDeg, type Joint, type Maker, type PartDef } from "./parts";
 import { routeSamples, routeSvg } from "./shapes";
+import type { Accessory } from "./accessories";
 
 export type Piece = {
   uid: string;
@@ -27,6 +28,8 @@ export type Layout = {
   description: string;
   board: Board;
   pieces: Piece[];
+  /** 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）。古い保存データにはない */
+  accessories?: Accessory[];
 };
 
 export type WorldJoint = Joint & { pieceUid: string; index: number };

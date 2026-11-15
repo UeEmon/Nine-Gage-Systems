@@ -9,6 +9,15 @@ import { getPart } from "./parts";
 import { shortfall, stockKeyName, stockKeyOf, stockLabel, unitPriceOf } from "./productDb";
 import { isPierKey } from "./elevation";
 import { PIER_SYSTEMS } from "../data/piers";
+import { accessoriesFor, isAccessoryKey, type Accessory } from "./accessories";
+import type { AccessoryMount } from "../data/accessories";
+
+const MOUNT_PROMPT: Record<AccessoryMount, string> = {
+  onTrack: "線路の上",
+  beside: "線路の横",
+  over: "線路をまたぐ",
+  free: "線路から離して置く",
+};
 
 const MAX_ATTEMPTS = 4;
 
@@ -148,7 +157,24 @@ ${guide.tips}
 ## 例（ボード1400×800mm）
 ${JSON.stringify(guide.example)}
 ${guide.overpass ? `\n## 立体交差の例（ボード1600×800mm）\n${JSON.stringify(guide.overpass)}\n` : ""}
+${accessoryGuide(maker)}
+
 description には、どんな運転ができるか（周回、待避、行き違い、入換など）と工夫した点を日本語で2〜4文で書いてください。`;
+}
+
+/** 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）の一覧と置き方 */
+function accessoryGuide(maker: Maker): string {
+  const list = accessoriesFor(maker)
+    .map((a) => `- ${a.id}: ${a.name}（${a.code}）。${a.description}。長さ${a.length}mm×幅${a.width}mm・${MOUNT_PROMPT[a.mount]}`)
+    .join("\n");
+  return `## 線路以外のパーツ（accessories）
+要望に駅・ホーム・踏切・信号機・建物などがあれば、accessories に置きます。なければ空の配列にします。
+- 各パーツ: item=パーツID, segment と piece=置く線路の部品（その部品の中央に置く）, side=進行方向に向かって線路の左(L)か右(R)か。
+- ホームは長さ（下の一覧）以上の直線が続く所に置きます。ホームのある区間は曲線やポイントを避けます。部品の中央に置くので、長いホームは直線の並びのまんなかの部品を指定します。
+- 島式ホームは、平行な2本の線路の間に置きます。2本の線路の中心の間隔を「島式ホームの幅＋約22mm」にし、内側の線路の部品を指定して side を外側の線路のある側にします。
+- 対向式ホームは線路の外側（周回の外側）に置きます。駅舎・建物はホームや線路から離れた外側に置きます。
+- 踏切・信号機は直線の上に置きます。「〜の代わり」と書いてあるパーツは、その部品IDの直線を置いた所に指定します。
+${list}`;
 }
 
 export function exampleFor(maker: Maker): LayoutPlan {
@@ -197,13 +223,13 @@ function priceText(maker: Maker): string {
 }
 
 /** 予算の検査に使う、追加購入の合計金額 */
-function extraCost(pieces: Parameters<typeof usageOf>[0], input: ProposeInput): ReturnType<typeof shortfall> {
-  return shortfall(usageOf(pieces), input.stock?.counts ?? new Map());
+function extraCost(pieces: Parameters<typeof usageOf>[0], accessories: Accessory[], input: ProposeInput): ReturnType<typeof shortfall> {
+  return shortfall(usageOf(pieces, accessories), input.stock?.counts ?? new Map());
 }
 
-function overBudget(pieces: Parameters<typeof usageOf>[0], input: ProposeInput): string | null {
+function overBudget(pieces: Parameters<typeof usageOf>[0], accessories: Accessory[], input: ProposeInput): string | null {
   if (input.budgetJpy === undefined) return null;
-  const sf = extraCost(pieces, input);
+  const sf = extraCost(pieces, accessories, input);
   if (sf.totalCostJpy <= input.budgetJpy) return null;
   const top = sf.rows
     .filter((r) => r.costJpy)
@@ -216,7 +242,7 @@ function overBudget(pieces: Parameters<typeof usageOf>[0], input: ProposeInput):
 
 /** AIに見せる部品名（左右で品番が違う部品は dir も書く） */
 function stockName(stockKey: string): string {
-  if (isPierKey(stockKey)) return stockKeyName(stockKey);
+  if (isPierKey(stockKey) || isAccessoryKey(stockKey)) return stockKeyName(stockKey);
   const { partKey, right, elevated } = stockLabel(stockKey);
   const part = getPart(partKey);
   if (elevated) return `${part.id}（高架用。height>0 で置いたとき）`;
@@ -230,9 +256,9 @@ function stockText(counts: Map<string, number>): string {
 }
 
 /** 所有数を超えて使っている部品（mode="owned" のときの検査） */
-export function overStock(pieces: Parameters<typeof usageOf>[0], counts: Map<string, number>): string[] {
+export function overStock(pieces: Parameters<typeof usageOf>[0], counts: Map<string, number>, accessories: Accessory[] = []): string[] {
   const out: string[] = [];
-  for (const [k, used] of usageOf(pieces)) {
+  for (const [k, used] of usageOf(pieces, accessories)) {
     const have = counts.get(k) ?? 0;
     if (used > have) out.push(`部品不足: ${stockName(k)} を${used}本使っているが、所有は${have}本。所有している部品だけで組み直す`);
   }
@@ -242,6 +268,7 @@ export function overStock(pieces: Parameters<typeof usageOf>[0], counts: Map<str
 export type ProposeResult = {
   plan: LayoutPlan;
   pieces: ReturnType<typeof evaluatePlan>["build"]["pieces"];
+  accessories: Accessory[];
   attempts: number;
   remainingProblems: string | null;
   model: string;
@@ -251,8 +278,8 @@ export type ProposeResult = {
 
 function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
   const result = evaluatePlan(plan, input.board, maker);
-  const over = input.stock?.mode === "owned" ? overStock(result.build.pieces, input.stock.counts) : [];
-  const budget = overBudget(result.build.pieces, input);
+  const over = input.stock?.mode === "owned" ? overStock(result.build.pieces, input.stock.counts, result.build.accessories) : [];
+  const budget = overBudget(result.build.pieces, result.build.accessories, input);
   if (budget) over.push(budget);
   if (!over.length) return result;
   const problems = [result.problems, ...over].filter(Boolean).join("\n");
@@ -361,6 +388,7 @@ export async function proposeLayout(
   return {
     plan: best.plan,
     pieces: best.result.build.pieces,
+    accessories: best.result.build.accessories,
     attempts,
     remainingProblems: best.result.problems,
     model,

@@ -6,6 +6,8 @@ import { PRICES, PRICES_FETCHED_AT } from "../data/prices";
 import { heightText, PIER_SYSTEMS } from "../data/piers";
 import { isPierKey, parsePierKey, pierStockKey } from "./elevation";
 import { BED_INFO, MAKERS, MAKER_INFO, PARTS, type Maker, type PartDef } from "./parts";
+import { accessoriesFor, accessoryOfStockKey, accessoryStockKey, isAccessoryKey } from "./accessories";
+import { ACCESSORY_KIND_LABELS } from "../data/accessories";
 import type { Move } from "./shapes";
 
 export type GeometryStatus = "official" | "confirmed" | "estimated";
@@ -25,8 +27,8 @@ export type ProductContent = {
   count: number;
 };
 
-/** 品番の分類。線路の分類に「高架線路」と「橋脚」を加えたもの */
-export type ProductCategory = PartCategory | "elevated" | "pier";
+/** 品番の分類。線路の分類に「高架線路」「橋脚」と、線路以外のパーツ（踏切・信号機／駅・建物）を加えたもの */
+export type ProductCategory = PartCategory | "elevated" | "pier" | "lineside" | "structure";
 
 export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
   straight: "直線",
@@ -38,6 +40,8 @@ export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
   bridge: "鉄橋",
   pier: "橋脚",
   bumper: "車止め",
+  lineside: "踏切・信号機",
+  structure: "駅・ホーム・建物",
 };
 
 export type ProductRecord = {
@@ -83,6 +87,7 @@ export function stockLabel(stockKey: string): { partKey: string; right: boolean;
 export function stockKeyName(stockKey: string): string {
   const pier = parsePierKey(stockKey);
   if (pier) return `${pier.double ? "複線" : "単線"}橋脚 高さ${heightText(pier.height)}mm`;
+  if (isAccessoryKey(stockKey)) return accessoryOfStockKey(stockKey)?.name ?? stockKey;
   const { partKey, right, elevated } = stockLabel(stockKey);
   const part = PARTS.find((p) => p.key === partKey);
   if (!part) return stockKey;
@@ -173,6 +178,28 @@ function build(): ProductRecord[] {
         geometryStatus: pier.note?.includes("推定") ? "estimated" : "confirmed",
         geometryNote: pier.note ?? null,
         sources: [PIER_SOURCES[maker]],
+      });
+    }
+    // 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）
+    for (const a of accessoriesFor(maker)) {
+      const key = `${maker}:${a.code}`;
+      if (byCode.has(key)) continue;
+      const stockKey = accessoryStockKey(a);
+      const estimated = a.geometryNote?.includes("推定") ?? false;
+      byCode.set(key, {
+        maker,
+        code: a.code,
+        name: a.name,
+        category: a.kind === "crossing" || a.kind === "signal" ? "lineside" : "structure",
+        perPack: 1,
+        contents: [{ partKey: a.key, partId: a.id, stockKey, count: 1 }],
+        priceJpy: a.priceJpy,
+        bed: null,
+        spec: `${ACCESSORY_KIND_LABELS[a.kind]} ${a.length}×${a.width}mm${a.replaces ? `（${a.replaces}の代わりに置く線路付き）` : ""}`,
+        side: null,
+        geometryStatus: estimated ? "estimated" : "official",
+        geometryNote: a.geometryNote ?? null,
+        sources: a.sources,
       });
     }
   }
@@ -292,7 +319,7 @@ export function shortfall(usage: Map<string, number>, stock: Map<string, number>
     const bonus = fromSets.get(stockKey) ?? 0;
     const missing = Math.max(0, used - owned - bonus);
     const { partKey, right } = stockLabel(stockKey);
-    const partId = isPierKey(stockKey) ? stockKeyName(stockKey) : (PARTS.find((p) => p.key === partKey)?.id ?? partKey);
+    const partId = isPierKey(stockKey) || isAccessoryKey(stockKey) ? stockKeyName(stockKey) : (PARTS.find((p) => p.key === partKey)?.id ?? partKey);
     let buy: ProductRecord | null = null;
     let packs = 0;
     let cost: number | null = 0;
@@ -355,7 +382,7 @@ export function productsCsv(): string {
         p.side === "L" ? "左" : p.side === "R" ? "右" : "",
         p.perPack,
         p.contents
-          .map((c) => `${isPierKey(c.stockKey) ? stockKeyName(c.stockKey) : c.partId}${c.stockKey.endsWith(":R") ? "(右)" : c.stockKey.endsWith(":V") ? "(高架)" : ""}×${c.count}`)
+          .map((c) => `${isPierKey(c.stockKey) || isAccessoryKey(c.stockKey) ? stockKeyName(c.stockKey) : c.partId}${c.stockKey.endsWith(":R") ? "(右)" : c.stockKey.endsWith(":V") ? "(高架)" : ""}×${c.count}`)
           .join(" "),
         p.spec,
         p.bed ? BED_INFO[p.bed].label : "",

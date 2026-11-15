@@ -2,6 +2,7 @@
 
 import type { Layout } from "./geometry";
 import { hasPart } from "./parts";
+import { hasAccessory } from "./accessories";
 
 export type SavedPattern = {
   id: string;
@@ -47,7 +48,19 @@ function validLayout(l: unknown): l is Layout {
         typeof p.x === "number" &&
         typeof p.y === "number" &&
         typeof p.rot === "number",
-    )
+    ) &&
+    (x.accessories === undefined ||
+      (Array.isArray(x.accessories) &&
+        x.accessories.every(
+          (a) =>
+            a &&
+            typeof a.uid === "string" &&
+            typeof a.itemId === "string" &&
+            hasAccessory(a.itemId) &&
+            typeof a.x === "number" &&
+            typeof a.y === "number" &&
+            typeof a.rot === "number",
+        )))
   );
 }
 

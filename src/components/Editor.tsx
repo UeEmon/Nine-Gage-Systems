@@ -30,6 +30,19 @@ import { PartIcon } from "./PartIcon";
 import { PartDetail } from "./PartDetail";
 import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
+import { AccessoryIcon, AccessoryShape } from "./AccessoryShape";
+import {
+  accessoriesFor,
+  getAccessory,
+  KIND_ORDER,
+  MOUNT_HELP,
+  newAccessoryUid,
+  placeOnPiece,
+  snapAccessory,
+  snapsToTrack,
+  type Accessory,
+} from "@/lib/accessories";
+import { ACCESSORY_KIND_LABELS, type AccessoryKind } from "@/data/accessories";
 import { useLocalState } from "./useLocalState";
 
 // three.js はブラウザでだけ読み込む
@@ -54,13 +67,18 @@ const emptyLayout = (): Layout => ({
   pieces: [],
 });
 
-type Selection = { kind: "joint"; uid: string; index: number } | { kind: "piece"; uid: string } | null;
+type Selection =
+  | { kind: "joint"; uid: string; index: number }
+  | { kind: "piece"; uid: string }
+  | { kind: "acc"; uid: string }
+  | null;
 
 type ProposedPattern =
   | {
       ok: true;
       plan: { title: string; description: string };
       pieces: Piece[];
+      accessories?: Accessory[];
       attempts: number;
       remainingProblems: string | null;
       model: string;
@@ -104,6 +122,8 @@ export function Editor({ user }: { user: SessionUser }) {
   const [mirrorNext, setMirrorNext] = useState(false);
   const [attachJoint, setAttachJoint] = useState(0);
   const [category, setCategory] = useState<PartCategory>("straight");
+  /** 線路以外のパーツのパレットの分類 */
+  const [accKind, setAccKind] = useState<AccessoryKind>("platform");
   /** パレットの道床の絞り込み（"all" はすべて） */
   const [bedFilter, setBedFilter] = useState<BedType | "all">("all");
   /** 仕様を表示している部品のキー */
@@ -130,6 +150,7 @@ export function Editor({ user }: { user: SessionUser }) {
   const drag = useRef<
     | { kind: "piece"; uid: string; dx: number; dy: number; moved: boolean }
     | { kind: "pan"; sx: number; sy: number; vx: number; vy: number }
+    | { kind: "acc"; uid: string; dx: number; dy: number }
     | null
   >(null);
 
@@ -161,10 +182,11 @@ export function Editor({ user }: { user: SessionUser }) {
 
   const maker: Maker = layout.maker ?? "kato";
   const analysis = useMemo(() => analyze(layout), [layout]);
-  const bom = useMemo(() => billOfMaterials(layout.pieces), [layout.pieces]);
+  const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
+  const bom = useMemo(() => billOfMaterials(layout.pieces, accessories), [layout.pieces, accessories]);
   const stock = useMemo(() => stockFromInventory(inventory, maker), [inventory, maker]);
   const hasStock = stock.size > 0;
-  const need = useMemo(() => shortfall(usageOf(layout.pieces), stock), [layout.pieces, stock]);
+  const need = useMemo(() => shortfall(usageOf(layout.pieces, accessories), stock), [layout.pieces, accessories, stock]);
   const needByKey = useMemo(() => new Map(need.rows.map((r) => [r.stockKey, r])), [need]);
   // 橋脚は勾配橋脚セットなどまとめ買いになるので、何も持っていない前提の買い方で箱数と費用を出す
   const pierBuy = useMemo(() => {
@@ -172,7 +194,7 @@ export function Editor({ user }: { user: SessionUser }) {
     return { rows: new Map(sf.rows.map((r) => [r.stockKey, r])), total: sf.totalCostJpy };
   }, [layout.pieces]);
   const trackTotal = bom
-    .filter((r) => r.kind === "track")
+    .filter((r) => r.kind !== "pier")
     .reduce((s, r) => s + (r.priceJpy != null && r.packs != null ? r.priceJpy * r.packs : 0), 0);
   const otherMakerPieces = layout.pieces.filter((p) => getPart(p.partId).maker !== maker).length;
   const openSet = useMemo(
@@ -232,6 +254,27 @@ export function Editor({ user }: { user: SessionUser }) {
   const pierWarn = useMemo(() => new Set([...analysis.pierMisfits, ...analysis.pierHits.map((h) => h.pier)]), [analysis]);
 
   const setPieces = (fn: (pieces: Piece[]) => Piece[]) => setLayout((l) => ({ ...l, pieces: fn(l.pieces) }));
+  const setAccessories = (fn: (as: Accessory[]) => Accessory[]) =>
+    setLayout((l) => ({ ...l, accessories: fn(l.accessories ?? []) }));
+  const accTotal = bom.filter((r) => r.kind === "accessory").reduce((s, r) => s + (r.priceJpy ?? 0) * r.count, 0);
+
+  // ---- 線路以外のパーツの追加 ----
+  const addAccessory = (key: string) => {
+    const def = getAccessory(key);
+    const uid = newAccessoryUid();
+    const host = selection && selection.kind !== "acc" ? layout.pieces.find((q) => q.uid === selection.uid) : undefined;
+    let acc: Accessory;
+    if (host) {
+      acc = placeOnPiece(def, host, analysis.elevation, "L", uid);
+    } else {
+      const b = layout.board;
+      const center = { x: b.width / 2, y: b.height / 2 };
+      const snapped = snapsToTrack(def.mount) ? snapAccessory(def, center, layout.pieces, analysis.elevation) : null;
+      acc = snapped ? { uid, itemId: key, ...snapped } : { uid, itemId: key, x: center.x, y: center.y, rot: 0 };
+    }
+    setAccessories((as) => [...as, acc]);
+    setSelection({ kind: "acc", uid });
+  };
 
   // ---- 部品の追加 ----
   const addPart = (partId: string) => {
@@ -267,17 +310,38 @@ export function Editor({ user }: { user: SessionUser }) {
   };
 
   // ---- 選択中の部品の操作 ----
-  const selectedUid = selection?.uid ?? null;
+  const selectedUid = selection && selection.kind !== "acc" ? selection.uid : null;
+  const selectedAccUid = selection?.kind === "acc" ? selection.uid : null;
+  const selectedAcc = selectedAccUid ? accessories.find((a) => a.uid === selectedAccUid) : undefined;
+  const updateSelectedAcc = (fn: (a: Accessory) => Accessory) => {
+    if (!selectedAccUid) return;
+    setAccessories((as) => as.map((a) => (a.uid === selectedAccUid ? fn(a) : a)));
+  };
+  /** 選択中のパーツを線路の反対側へ（ホーム・信号機の柱） */
+  const flipAccSide = () =>
+    updateSelectedAcc((a) => {
+      const def = getAccessory(a.itemId);
+      const side = a.side === "R" ? "L" : "R";
+      const host = a.host ? layout.pieces.find((p) => p.uid === a.host) : undefined;
+      if (!host || !snapsToTrack(def.mount)) return { ...a, side };
+      const s = snapAccessory(def, a, [host], analysis.elevation, { side, only: host.uid, rot: a.rot });
+      return s ? { ...a, ...s } : { ...a, side };
+    });
   const updateSelected = (fn: (p: Piece) => Piece) => {
     if (!selectedUid) return;
     setPieces((ps) => ps.map((p) => (p.uid === selectedUid ? fn(p) : p)));
   };
   const deleteSelected = () => {
+    if (selectedAccUid) {
+      setAccessories((as) => as.filter((a) => a.uid !== selectedAccUid));
+      setSelection(null);
+      return;
+    }
     if (!selectedUid) return;
     setPieces((ps) => ps.filter((p) => p.uid !== selectedUid));
     setSelection(null);
   };
-  const flipSelected = () => updateSelected((p) => ({ ...p, mirror: !p.mirror }));
+  const flipSelected = () => (selectedAccUid ? flipAccSide() : updateSelected((p) => ({ ...p, mirror: !p.mirror })));
   /** 選択中の部品を、同じ形で道床の違う部品に取り替える（位置・向き・高さはそのまま） */
   const changeBed = (partKey: string) => updateSelected((p) => ({ ...p, partId: partKey }));
 
@@ -318,7 +382,10 @@ export function Editor({ user }: { user: SessionUser }) {
       }),
     );
   };
-  const rotateSelected = (d: number) => updateSelected((p) => ({ ...p, rot: normDeg(p.rot + d) }));
+  const rotateSelected = (d: number) =>
+    selectedAccUid
+      ? updateSelectedAcc((a) => ({ ...a, rot: normDeg(a.rot + d) }))
+      : updateSelected((p) => ({ ...p, rot: normDeg(p.rot + d) }));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -351,6 +418,14 @@ export function Editor({ user }: { user: SessionUser }) {
     setSelection({ kind: "piece", uid: piece.uid });
   };
 
+  const onAccPointerDown = (acc: Accessory) => (e: React.PointerEvent<SVGGElement>) => {
+    e.stopPropagation();
+    const p = toSvg(e);
+    drag.current = { kind: "acc", uid: acc.uid, dx: p.x - acc.x, dy: p.y - acc.y };
+    svgRef.current?.setPointerCapture(e.pointerId);
+    setSelection({ kind: "acc", uid: acc.uid });
+  };
+
   const onBgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
     svgRef.current?.setPointerCapture(e.pointerId);
@@ -366,6 +441,23 @@ export function Editor({ user }: { user: SessionUser }) {
       return;
     }
     const p = toSvg(e);
+    if (d.kind === "acc") {
+      // 線路に吸着するパーツは近くの線路に合わせる（離すと自由に動く）
+      const at = { x: p.x - d.dx, y: p.y - d.dy };
+      setAccessories((as) =>
+        as.map((a) => {
+          if (a.uid !== d.uid) return a;
+          const def = getAccessory(a.itemId);
+          const s = snapsToTrack(def.mount) ? snapAccessory(def, at, layout.pieces, analysis.elevation, { rot: a.rot }) : null;
+          if (s) return { ...a, ...s };
+          const { host: _h, z: _z, ...rest } = a;
+          void _h;
+          void _z;
+          return { ...rest, ...at };
+        }),
+      );
+      return;
+    }
     d.moved = true;
     setPieces((ps) => ps.map((q) => (q.uid === d.uid ? { ...q, x: p.x - d.dx, y: p.y - d.dy } : q)));
   };
@@ -378,7 +470,7 @@ export function Editor({ user }: { user: SessionUser }) {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 3) setSelection(null);
       return;
     }
-    if (!d.moved) return;
+    if (d.kind === "acc" || !d.moved) return;
     // 近くの空き端に吸着させる
     setPieces((ps) => {
       const piece = ps.find((q) => q.uid === d.uid);
@@ -411,7 +503,7 @@ export function Editor({ user }: { user: SessionUser }) {
   // ---- AI ----
   const showPattern = (p: ProposedPattern, index: number) => {
     if (!p.ok) return;
-    setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces }));
+    setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces, accessories: p.accessories ?? [] }));
     setSelection(null);
     setCurrentId(null);
     setAi((a) => (a.status === "done" ? { ...a, shown: index } : a));
@@ -446,7 +538,7 @@ export function Editor({ user }: { user: SessionUser }) {
       if (first >= 0) {
         const p = patterns[first];
         if (p.ok) {
-          setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces }));
+          setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces, accessories: p.accessories ?? [] }));
           setSelection(null);
           setCurrentId(null);
         }
@@ -463,7 +555,7 @@ export function Editor({ user }: { user: SessionUser }) {
       id,
       name: p.plan.title,
       savedAt: new Date().toISOString(),
-      layout: { title: p.plan.title, description: p.plan.description, maker, board: layout.board, pieces: p.pieces },
+      layout: { title: p.plan.title, description: p.plan.description, maker, board: layout.board, pieces: p.pieces, accessories: p.accessories ?? [] },
     };
     setLibrary((ps) => [saved, ...ps]);
   };
@@ -633,8 +725,72 @@ export function Editor({ user }: { user: SessionUser }) {
         </section>
 
         <section>
+          <h2>線路以外のパーツ</h2>
+          <p className="hint">
+            {selection && selection.kind !== "acc"
+              ? "選択中の線路のまんなかに置きます"
+              : "線路を選んでから押すとその線路に置きます。ドラッグすると近くの線路に吸着します"}
+          </p>
+          <div className="chips cats accs">
+            {KIND_ORDER.filter((k) => accessoriesFor(maker).some((a) => a.kind === k)).map((k) => (
+              <button key={k} className={`chip${accKind === k ? " on" : ""}`} onClick={() => setAccKind(k)}>
+                {ACCESSORY_KIND_LABELS[k]}
+              </button>
+            ))}
+          </div>
+          <div className="palette">
+            {accessoriesFor(maker)
+              .filter((a) => a.kind === accKind)
+              .map((a) => (
+                <div key={a.key} className="part-wrap">
+                  <button
+                    className="part"
+                    onClick={() => addAccessory(a.key)}
+                    title={[`${a.code} ${a.name}（${yen(a.priceJpy)}）`, a.description, MOUNT_HELP[a.mount], a.geometryNote].filter(Boolean).join("\n")}
+                  >
+                    <AccessoryIcon itemKey={a.key} />
+                    <span>{a.label}</span>
+                  </button>
+                </div>
+              ))}
+          </div>
+        </section>
+
+        <section>
           <h2>選択中の部品</h2>
-          {selectedPiece ? (
+          {selectedAcc ? (
+            (() => {
+              const def = getAccessory(selectedAcc.itemId);
+              const host = selectedAcc.host ? layout.pieces.find((p) => p.uid === selectedAcc.host) : undefined;
+              const replaced = def.replaces && host && getPart(host.partId).id === def.replaces;
+              return (
+                <>
+                  <p className="hint">
+                    {def.code} {def.name}（{yen(def.priceJpy)}）
+                    <br />
+                    {def.description}
+                    {def.geometryNote && <><br />{def.geometryNote}</>}
+                  </p>
+                  <div className="row wrap">
+                    <button onClick={() => rotateSelected(-15)}>⟲ 15°</button>
+                    <button onClick={() => rotateSelected(15)}>⟳ 15°</button>
+                    {(def.mount === "beside" || def.kind === "signal") && <button onClick={flipAccSide}>線路の反対側へ</button>}
+                    <button className="danger" onClick={deleteSelected}>
+                      削除
+                    </button>
+                  </div>
+                  <p className="hint">
+                    {host ? `線路（${getPart(host.partId).name}）に吸着しています` : snapsToTrack(def.mount) ? "線路の近くにドラッグすると吸着します" : MOUNT_HELP[def.mount]}
+                    {selectedAcc.z ? `・高さ ${heightText(Math.round(selectedAcc.z))}mm` : ""}
+                    {def.replaces &&
+                      (replaced
+                        ? `。製品に入っている線路を使うので、部品リストではこの${def.replaces}を数えません`
+                        : `。${def.replaces}の上に置くと、部品リストでその線路を数えません`)}
+                  </p>
+                </>
+              );
+            })()
+          ) : selectedPiece ? (
             <>
               <p className="hint">
                 {getPart(selectedPiece.partId).name}
@@ -724,7 +880,7 @@ export function Editor({ user }: { user: SessionUser }) {
               <p className="hint">{heightInfo(selectedPiece.uid)}</p>
             </>
           ) : (
-            <p className="hint">線路をクリックすると選択できます</p>
+            <p className="hint">線路やパーツをクリックすると選択できます</p>
           )}
         </section>
 
@@ -744,13 +900,13 @@ export function Editor({ user }: { user: SessionUser }) {
             <button
               className="danger"
               onClick={() => {
-                if (confirm("すべての線路を消しますか？")) {
-                  setPieces(() => []);
+                if (confirm("すべての線路とパーツを消しますか？")) {
+                  setLayout((l) => ({ ...l, pieces: [], accessories: [] }));
                   setSelection(null);
                 }
               }}
             >
-              線路を全消去
+              線路とパーツを全消去
             </button>
           </div>
         </section>
@@ -822,6 +978,19 @@ export function Editor({ user }: { user: SessionUser }) {
                 </text>
               );
             })}
+          {accessories.map((a) => {
+            const visible = !a.host || isVisible(a.host);
+            if (!visible && hideOthers) return null;
+            return (
+              <AccessoryShape
+                key={a.uid}
+                acc={a}
+                selected={a.uid === selectedAccUid}
+                dim={!visible}
+                onPointerDown={visible ? onAccPointerDown(a) : undefined}
+              />
+            );
+          })}
           {layout.pieces.filter((p) => isVisible(p.uid)).flatMap((p) =>
             worldJoints(p)
               .filter((j) => openSet.has(`${j.pieceUid}:${j.index}`))
@@ -1059,7 +1228,7 @@ export function Editor({ user }: { user: SessionUser }) {
 
         <section>
           <h2>部品リスト</h2>
-          {layout.pieces.length === 0 ? (
+          {layout.pieces.length === 0 && accessories.length === 0 ? (
             <p className="hint">まだ線路がありません</p>
           ) : (
             <>
@@ -1080,7 +1249,7 @@ export function Editor({ user }: { user: SessionUser }) {
                     return (
                       <tr
                         key={r.key}
-                        className={r.kind === "pier" ? "pier-row" : undefined}
+                        className={r.kind === "pier" ? "pier-row" : r.kind === "accessory" ? "acc-row" : undefined}
                         title={r.alternatives.length ? `ほかの品番: ${r.alternatives.map((a) => `${a.code} ${a.name}`).join(" / ")}` : undefined}
                       >
                         <td className="code">{pier ? (pier.buy?.code ?? "—") : r.product.code}</td>
@@ -1114,7 +1283,8 @@ export function Editor({ user }: { user: SessionUser }) {
               </table>
               <p className="hint">
                 すべて新しく買う場合: {yen(trackTotal + pierBuy.total)}
-                {pierBuy.total > 0 && `（うち橋脚 ${yen(pierBuy.total)}）`}
+                {(pierBuy.total > 0 || accTotal > 0) &&
+                  `（うち${[pierBuy.total > 0 ? `橋脚 ${yen(pierBuy.total)}` : "", accTotal > 0 ? `線路以外のパーツ ${yen(accTotal)}` : ""].filter(Boolean).join("・")}）`}
                 {hasStock && (
                   <>
                     <br />
@@ -1126,6 +1296,7 @@ export function Editor({ user }: { user: SessionUser }) {
               <p className="hint">
                 合計 {layout.pieces.length} 本 / 線路延長 約{(analysis.totalLengthMm / 1000).toFixed(2)}m。箱と価格は代表品番の入数・メーカー希望小売価格（税込）で計算。不足の追加費用は1本あたりが安い品番で計算。
                 高さのある線路は高架用の品番（高架線路・高架橋付レール）で数え、橋脚は高さごとに数えています。
+                踏切・信号機などで線路の入っている製品は、その線路の上に置くと線路の本数から差し引いています。
               </p>
               <p className="hint">
                 品番の出典:{" "}
