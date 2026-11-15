@@ -136,9 +136,9 @@ export function verifyEmail(data: StoreData, token: string, now = Date.now()): S
 
 export function signupMail(base: string, username: string, token: string) {
   return {
-    subject: "【Nine-Gage】メールアドレスの確認",
+    subject: "【SenroLab】メールアドレスの確認",
     text:
-      `${username} さん\n\nNine-Gage レイアウトプランナーへのご登録ありがとうございます。\n` +
+      `${username} さん\n\nSenroLab（センロラボ）へのご登録ありがとうございます。\n` +
       `次のリンクを開いて「登録を完了する」を押すと、ログインできるようになります（${VERIFY_HOURS}時間有効）。\n\n` +
       `${base}/verify#${token}\n\n心当たりがない場合は、このメールを破棄してください。登録は完了しません。\n`,
   };
@@ -146,7 +146,7 @@ export function signupMail(base: string, username: string, token: string) {
 
 export function alreadyMail(base: string, username: string) {
   return {
-    subject: "【Nine-Gage】このメールアドレスは登録済みです",
+    subject: "【SenroLab】このメールアドレスは登録済みです",
     text:
       `このメールアドレスで新しいユーザー登録がありましたが、すでにユーザー名「${username}」で登録されています。\n` +
       `ログインはこちら: ${base}/login\n\n心当たりがない場合は、このメールを破棄してください。\n`,

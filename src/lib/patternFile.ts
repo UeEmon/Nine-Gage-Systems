@@ -90,7 +90,7 @@ export function parsePatternFile(text: string): SavedPattern[] {
     const layout = d as Layout;
     return [{ id: newPatternId(), name: layout.title || "パターン", savedAt: new Date().toISOString(), layout }];
   }
-  throw new Error("Nine-Gage のパターンファイルではありません");
+  throw new Error("SenroLab（旧 Nine-Gage）のパターンファイルではありません");
 }
 
 /** 取り込み時、同じ id があれば別の id にして両方残す */

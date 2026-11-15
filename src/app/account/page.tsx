@@ -5,6 +5,7 @@ import { PasswordForm } from "@/components/PasswordForm";
 import { UserMenu } from "@/components/UserMenu";
 import { ROLE_HELP, ROLE_LABELS } from "@/lib/roles";
 import { currentUser } from "@/lib/server/auth";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,10 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
     <div className="page-wrap">
       <header className="header">
         <h1>
-          <Link href="/">Nine-Gage レイアウトプランナー</Link> / アカウント
+          <Link href="/" aria-label="SenroLab のトップへ">
+            <BrandLogo />
+          </Link> 
+          / アカウント
         </h1>
         <UserMenu user={user} />
       </header>

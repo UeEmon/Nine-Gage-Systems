@@ -8,7 +8,7 @@ export async function GET(req: Request) {
     return new Response("﻿" + productsCsv(), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": 'attachment; filename="nine-gage-track-database.csv"',
+        "Content-Disposition": 'attachment; filename="senrolab-track-database.csv"',
       },
     });
   }

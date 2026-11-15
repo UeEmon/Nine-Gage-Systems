@@ -44,6 +44,7 @@ import {
 } from "@/lib/accessories";
 import { ACCESSORY_KIND_LABELS, type AccessoryKind } from "@/data/accessories";
 import { useLocalState } from "./useLocalState";
+import { BrandLogo } from "@/components/BrandLogo";
 
 // three.js はブラウザでだけ読み込む
 const DriveView = dynamic(() => import("./DriveView").then((m) => m.DriveView), { ssr: false });
@@ -568,7 +569,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
   return (
     <div className="app">
       <header className="header">
-        <h1>Nine-Gage レイアウトプランナー</h1>
+        <h1>
+          <BrandLogo />
+        </h1>
         <input
           className="title-input"
           value={layout.title}
