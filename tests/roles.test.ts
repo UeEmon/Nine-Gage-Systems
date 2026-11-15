@@ -7,6 +7,7 @@ import { applyAiPatch } from "../src/lib/server/aiSettings";
 import { recordSignup, signupBlocked } from "../src/lib/server/auth";
 import { usageView, type UsageRecord } from "../src/lib/server/aiUsage";
 import { aiStatusFor, applyOwnAi, ownAiView, OwnAiPatchSchema, ownSettings, settingsForUser } from "../src/lib/server/ownAi";
+import { storedText } from "../src/lib/server/db";
 import { openSecret, sealSecret } from "../src/lib/server/secretBox";
 import { loadStore, updateStore } from "../src/lib/server/store";
 import { createSessionToken, userFromToken } from "../src/lib/server/session";
@@ -51,7 +52,7 @@ describe("ロール", () => {
     expect(data.users.map((u) => u.role)).toEqual(["admin", "ai"]);
     // 保存し直した後は版2として読み、一般はそのまま一般
     await updateStore((d) => signupVerified(d, "newbie", e), e);
-    const raw = JSON.parse(readFileSync(path.join(e.NINEGAGE_DATA_DIR, "store.json"), "utf8"));
+    const raw = JSON.parse(storedText(e.NINEGAGE_DATA_DIR)!);
     expect(raw.version).toBe(2);
     const again = await loadStore(e);
     expect(again.users.map((u) => [u.username, u.role])).toEqual([

@@ -7,7 +7,7 @@ import type { Env } from "./store";
  * 利用者のAPIキーを暗号化して保存する（AES-256-GCM）。
  *
  * 鍵は NINEGAGE_SECRET_KEY（推奨。32文字以上の乱数）。なければ NINEGAGE_DATA_DIR/secret.key を作って使う
- * （store.json とは別のファイル、権限600）。保存形式は "v1.<iv>.<tag>.<暗号文>"（base64url）。
+ * （データ本体とは別のファイル、権限600）。保存形式は "v1.<iv>.<tag>.<暗号文>"（base64url）。
  */
 
 const PREFIX = "v1";

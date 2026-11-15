@@ -6,6 +6,7 @@ import { adminAiView, AiPatchSchema, applyAiPatch, publicAiView, settingsForUse 
 import { loginBlocked, recordLoginFailure, sameOrigin } from "../src/lib/server/auth";
 import { hashPassword, verifyPassword } from "../src/lib/server/password";
 import { createSessionToken, userFromToken } from "../src/lib/server/session";
+import { storedText } from "../src/lib/server/db";
 import { loadStore, updateStore, type StoreData } from "../src/lib/server/store";
 import { changeOwnPassword, createUser, deleteUser, updateUser, UserError } from "../src/lib/server/users";
 
@@ -30,9 +31,9 @@ describe("保存と最初の管理者", () => {
     const data = await loadStore(e);
     expect(data.users).toHaveLength(1);
     expect(data.users[0]).toMatchObject({ username: "owner", role: "admin" });
-    const file = path.join(e.NINEGAGE_DATA_DIR, "store.json");
+    const file = path.join(e.NINEGAGE_DATA_DIR, "store.sqlite");
     expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(readFileSync(file, "utf8")).not.toContain(ADMIN.NINEGAGE_ADMIN_PASSWORD);
+    expect(storedText(e.NINEGAGE_DATA_DIR)).not.toContain(ADMIN.NINEGAGE_ADMIN_PASSWORD);
   });
 
   it("ユーザーがいれば環境変数のパスワードを変えても上書きしない", async () => {
