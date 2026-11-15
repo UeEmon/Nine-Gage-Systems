@@ -1082,6 +1082,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
         <OperationView
           layout={layout}
           elevation={analysis.elevation}
+          canUseAi={!!user}
           onChange={(operation) => setLayout((l) => ({ ...l, operation }))}
           onClose={() => setShowOperation(false)}
         />

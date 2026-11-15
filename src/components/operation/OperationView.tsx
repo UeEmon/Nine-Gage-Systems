@@ -25,12 +25,14 @@ import { Diagram } from "./Diagram";
 type Props = {
   layout: Layout;
   elevation?: Elevation;
+  /** ログインしていて、AI提案を使える */
+  canUseAi: boolean;
   onChange: (plan: OperationPlan) => void;
   onClose: () => void;
 };
 
 /** 運行計画（ダイヤ）を立てる画面。駅はホームの配置から自動で見つける */
-export function OperationView({ layout, elevation, onChange, onClose }: Props) {
+export function OperationView({ layout, elevation, canUseAi, onChange, onClose }: Props) {
   const plan = useMemo(() => normalizeOperation(layout.operation) ?? EMPTY_OPERATION, [layout.operation]);
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
   const stations = useMemo(() => detectStations(layout.pieces, accessories, elevation), [layout.pieces, accessories, elevation]);
@@ -38,6 +40,35 @@ export function OperationView({ layout, elevation, onChange, onClose }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(plan.trains[0]?.id ?? null);
   const selected = plan.trains.find((t) => t.id === selectedId) ?? null;
   const selectedSchedule = result.trains.find((s) => s.trainId === selectedId);
+
+  const [aiRequest, setAiRequest] = useState("");
+  const [ai, setAi] = useState<AiState>({ status: "idle" });
+
+  const proposeWithAi = async () => {
+    const before = plan;
+    setAi({ status: "loading" });
+    try {
+      const res = await fetch("/api/operation/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          maker: layout.maker ?? "kato",
+          pieces: layout.pieces,
+          accessories,
+          stationNames: plan.stationNames,
+          request: aiRequest,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const next = normalizeOperation(data.plan) ?? EMPTY_OPERATION;
+      onChange({ ...next, stationNames: plan.stationNames });
+      setSelectedId(next.trains[0]?.id ?? null);
+      setAi({ status: "done", summary: data.summary ?? "", remaining: data.remainingProblems ?? null, before });
+    } catch (err) {
+      setAi({ status: "error", message: err instanceof Error ? err.message : String(err) });
+    }
+  };
 
   const stationName = (id: string) => plan.stationNames[id] || stations.find((s) => s.id === id)?.defaultName || "（なくなった駅）";
   const trainName = (id: string) => plan.trains.find((t) => t.id === id)?.name ?? "列車";
@@ -104,6 +135,47 @@ export function OperationView({ layout, elevation, onChange, onClose }: Props) {
                   </li>
                 ))}
               </ul>
+            )}
+          </section>
+
+          <section className="op-ai">
+            <h3>AIに運行計画を提案してもらう</h3>
+            {!canUseAi ? (
+              <p className="muted">ログインすると、このレイアウトに合わせた運行計画をAIに作ってもらえます。</p>
+            ) : (
+              <>
+                <textarea
+                  rows={3}
+                  value={aiRequest}
+                  maxLength={2000}
+                  placeholder="例: 普通2本と特急1本。B駅で特急が普通を追い越す"
+                  onChange={(e) => setAiRequest(e.target.value)}
+                />
+                <button className="primary" onClick={proposeWithAi} disabled={stations.length === 0 || ai.status === "loading"}>
+                  {ai.status === "loading" ? "AIが考えています…" : plan.trains.length ? "AIに作り直してもらう（今の列車は置き換え）" : "AIに提案してもらう"}
+                </button>
+                {ai.status === "error" && <p className="error">{ai.message}</p>}
+                {ai.status === "done" && (
+                  <div className="op-ai-result">
+                    {ai.summary && <p>{ai.summary}</p>}
+                    {ai.remaining && (
+                      <details className="warn-text">
+                        <summary>直しきれなかった点があります</summary>
+                        <pre>{ai.remaining}</pre>
+                      </details>
+                    )}
+                    <button
+                      onClick={() => {
+                        onChange(ai.before);
+                        setSelectedId(ai.before.trains[0]?.id ?? null);
+                        setAi({ status: "idle" });
+                      }}
+                    >
+                      提案の前に戻す
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </section>
 
@@ -224,6 +296,12 @@ export function OperationView({ layout, elevation, onChange, onClose }: Props) {
     </div>
   );
 }
+
+type AiState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "done"; summary: string; remaining: string | null; before: OperationPlan };
 
 type StationOption = { id: string; name: string; tracks: number };
 

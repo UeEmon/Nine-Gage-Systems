@@ -531,3 +531,9 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
   .op-side { border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
   .op-main { overflow: visible; }
 }
+.op-ai textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.op-ai-result { margin-top: 8px; font-size: 13px; display: grid; gap: 6px; }
+.op-ai-result p { margin: 0; }
+.op-ai-result pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; }
+.op-ai-result button { justify-self: start; }
+.op-side p.muted { font-size: 13px; margin: 0; }

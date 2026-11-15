@@ -12,13 +12,14 @@ import { addUsage, emptyUsage, type ProviderId, type TokenUsage } from "@/lib/ll
 
 type Env = Record<string, string | undefined>;
 
-/** AIを使う機能（今はAI提案の3つのモード） */
-export const FEATURES = ["free", "owned", "expand"] as const;
+/** AIを使う機能（レイアウト提案の3つのモードと、運行計画の提案） */
+export const FEATURES = ["free", "owned", "expand", "operation"] as const;
 export type Feature = (typeof FEATURES)[number];
 export const FEATURE_LABELS: Record<Feature, string> = {
   free: "AI提案（自由に設計）",
   owned: "AI提案（所有パーツだけ）",
   expand: "AI提案（拡張案）",
+  operation: "AI提案（運行計画）",
 };
 
 export type UsageRecord = {
