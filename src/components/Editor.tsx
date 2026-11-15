@@ -30,6 +30,7 @@ import { PartIcon } from "./PartIcon";
 import { PartDetail } from "./PartDetail";
 import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
+import { OperationView } from "./operation/OperationView";
 import { AccessoryIcon, AccessoryShape } from "./AccessoryShape";
 import {
   accessoriesFor,
@@ -145,6 +146,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [hideOthers, setHideOthers] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showDrive, setShowDrive] = useState(false);
+  const [showOperation, setShowOperation] = useState(false);
   const [showPiers, setShowPiers] = useState(true);
   const [placeHeight, setPlaceHeight] = useState<PlaceHeight>("auto");
   const [applyToRun, setApplyToRun] = useState(true);
@@ -1050,6 +1052,14 @@ export function Editor({ user }: { user: SessionUser | null }) {
           >
             ▶ 運転席で走る
           </button>
+          <button
+            className={showOperation ? "on" : ""}
+            onClick={() => setShowOperation(true)}
+            disabled={layout.pieces.length === 0}
+            title="ホームを置いた駅に列車を走らせる計画（ダイヤ）を立て、時刻表とダイヤグラムを作ります"
+          >
+            運行計画
+          </button>
         </div>
         {showProfile && (
           <LevelProfile
@@ -1068,6 +1078,15 @@ export function Editor({ user }: { user: SessionUser | null }) {
         </div>
       </main>
       {showDrive && <DriveView layout={layout} startUid={selectedUid} onClose={() => setShowDrive(false)} />}
+      {showOperation && (
+        <OperationView
+          layout={layout}
+          elevation={analysis.elevation}
+          canUseAi={!!user}
+          onChange={(operation) => setLayout((l) => ({ ...l, operation }))}
+          onClose={() => setShowOperation(false)}
+        />
+      )}
 
       <aside className="panel right">
         <section className="ai">
