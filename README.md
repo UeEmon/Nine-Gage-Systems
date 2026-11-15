@@ -126,6 +126,15 @@ npm test                     # ジオメトリとAIループのテスト
 npm run typecheck
 ```
 
+### 共同開発の流れ
+
+1. ブランチで作業し、main へのPRを出します（main へは直接 push できません）。
+2. CI（`.github/workflows/ci.yml`）がテスト・型チェック・`npm audit`（本番の依存に high 以上がないこと）・イメージのビルドと脆弱性検査を行います。
+3. 承認されてマージすると、CI が `ghcr.io/ueemon/nine-gage-systems:main` を作り、数分でステージング（`https://nine-gage-staging.<ドメイン>`、パスワードは所有者から）に出ます。
+4. 本番に出すのは所有者がタグ `v1.2.3` を付けたときだけです（`:stable` が動き、本番が取り込む）。
+
+`.github/CODEOWNERS` に挙げたファイル（サーバー側のコード、API、依存、Dockerfile、CI）の変更には所有者の承認が要ります。依存とベースイメージの更新は Dependabot が週に一度PRを出します。
+
 ## ログインとロール
 
 | ロール | AI提案 | できること |
@@ -145,7 +154,7 @@ npm run typecheck
 - 自分のキーで使った分は使用記録に `keySource: "own"` として残し、管理画面の「AIの使用量と料金」ではサーバーの料金と分けて「自分のAPIキーでの利用」に出します。
 - 以前の版の「一般」ユーザー（サーバーのAIを使えていた人）は、そのまま使えるよう「プレミアムユーザー」として読み込みます。
 - 最初の管理者は、ユーザーが1人もいないときだけ `NINEGAGE_ADMIN_USER` と `NINEGAGE_ADMIN_PASSWORD`（10文字以上）から作られます。
-- ユーザーとAI設定は `NINEGAGE_DATA_DIR`（既定 `./data`、Docker では `/data`）の `store.json` に保存します（権限600）。パスワードは scrypt のハッシュです。管理者が設定したAPIキーは平文で入るので、このファイルの扱いに注意してください。
+- ユーザーとAI設定は `NINEGAGE_DATA_DIR`（既定 `./data`、Docker では `/data`）の `store.json` に保存します（権限600）。パスワードは scrypt のハッシュです。管理者が設定したAPIキーも、一般ユーザーのキーと同じ鍵で暗号化して保存します（以前の版で平文のまま保存したキーは、起動後に最初に読んだときに暗号化して書き直します）。
 - ログイン状態は署名付きの Cookie（HttpOnly、SameSite=Lax、本番は Secure）で14日間です。パスワードの変更・再設定やロールの変更で、そのユーザーのほかのログインは切れます。
 - 管理者が1人もいなくなる変更（最後の管理者のロールを変える・削除する）と、自分自身の削除はできません。
 - ログインの失敗は、同じ送信元またはユーザー名で15分に10回までです。
@@ -205,5 +214,7 @@ npm run typecheck
 docker build -t nine-gage .
 docker run -p 3000:3000 -v nine-gage-data:/data --env-file .env.local nine-gage
 ```
+
+`GET /api/health` は `{"ok":true}` を返し、イメージの `HEALTHCHECK` と外部の死活確認に使います。公開中の構成（Oracle Cloud の VM、Caddy、ネットワークの分離、ステージング）は [UeEmon/oracle-cloud-deploy](https://github.com/UeEmon/oracle-cloud-deploy) にあります。
 
 AI提案は1回に1〜3分かかることがあるため、リバースプロキシのタイムアウトは300秒程度にしてください。

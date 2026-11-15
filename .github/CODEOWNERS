@@ -1,0 +1,11 @@
+# ここに挙げたファイルの変更は、所有者の承認がないと main にマージできない
+# （main のブランチ保護で「Require review from Code Owners」を有効にする）
+/.github/                @UeEmon
+/Dockerfile              @UeEmon
+/.dockerignore           @UeEmon
+/package.json            @UeEmon
+/package-lock.json       @UeEmon
+/next.config.ts          @UeEmon
+/src/lib/server/         @UeEmon
+/src/app/api/            @UeEmon
+/src/lib/llm/            @UeEmon

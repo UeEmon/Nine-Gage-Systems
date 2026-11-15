@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PROVIDERS, type ProviderId } from "@/lib/llm/types";
 import { hashPassword } from "./password";
+import { openSecret, sealSecret } from "./secretBox";
 
 /**
  * サーバーに保存するデータ（ユーザー・AI設定・お知らせ）。
@@ -59,6 +60,7 @@ export type StoredNotice = {
   createdAt: string;
 };
 
+/** apiKey はメモリ上では平文。ファイルには secretBox.ts の形式で暗号化して書く */
 export type ProviderSettings = { model?: string; apiKey?: string; baseUrl?: string };
 
 /** 管理者が画面で設定するAI。空の項目は環境変数を使う */
@@ -128,14 +130,27 @@ function normalizeUsers(raw: unknown, version: unknown): StoredUser[] {
   return out;
 }
 
-function normalize(raw: unknown): StoreData {
+/** 保存した管理者のAPIキーを読む。暗号化済みなら復号し（鍵が違えば捨てる）、以前の平文はそのまま読む */
+function apiKeyOf(v: unknown, env: Env): string | undefined {
+  if (typeof v !== "string") return undefined;
+  if (v.startsWith("v1.")) return str(openSecret(v, env) ?? undefined, 500);
+  return str(v, 500);
+}
+
+/** 管理者のAPIキーが平文のまま保存されているか（以前の版のファイル） */
+function hasPlainApiKey(raw: unknown): boolean {
+  const byProvider = (raw as { ai?: { byProvider?: Record<string, { apiKey?: unknown } | undefined> } } | null)?.ai?.byProvider;
+  return Object.values(byProvider ?? {}).some((s) => typeof s?.apiKey === "string" && s.apiKey !== "" && !s.apiKey.startsWith("v1."));
+}
+
+function normalize(raw: unknown, env: Env = process.env): StoreData {
   const d = (raw ?? {}) as Partial<Omit<StoreData, "version">> & { version?: unknown };
   const ai = (d.ai ?? {}) as Partial<StoredAi>;
   const byProvider: StoredAi["byProvider"] = {};
   for (const p of PROVIDERS) {
     const s = (ai.byProvider as Record<string, ProviderSettings> | undefined)?.[p];
     if (s && typeof s === "object") {
-      byProvider[p] = { model: str(s.model, 200), apiKey: str(s.apiKey, 500), baseUrl: str(s.baseUrl, 500) };
+      byProvider[p] = { model: str(s.model, 200), apiKey: apiKeyOf(s.apiKey, env), baseUrl: str(s.baseUrl, 500) };
     }
   }
   const usdJpy = (d.aiCost as Partial<StoredAiCost> | undefined)?.usdJpy;
@@ -160,19 +175,24 @@ function normalize(raw: unknown): StoreData {
   };
 }
 
-async function readRaw(file: string): Promise<StoreData | null> {
+async function readRaw(file: string, env: Env): Promise<{ data: StoreData; plainKeys: boolean } | null> {
   try {
-    return normalize(JSON.parse(await readFile(file, "utf8")));
+    const raw: unknown = JSON.parse(await readFile(file, "utf8"));
+    return { data: normalize(raw, env), plainKeys: hasPlainApiKey(raw) };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
 }
 
-async function writeRaw(file: string, data: StoreData) {
+async function writeRaw(file: string, data: StoreData, env: Env) {
   await mkdir(path.dirname(file), { recursive: true });
+  const byProvider = Object.fromEntries(
+    Object.entries(data.ai.byProvider).map(([p, s]) => [p, s && { ...s, apiKey: s.apiKey ? sealSecret(s.apiKey, env) : undefined }]),
+  );
+  const out = { ...data, ai: { ...data.ai, byProvider } };
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  await writeFile(tmp, JSON.stringify(out, null, 2), { mode: 0o600 });
   await rename(tmp, file);
 }
 
@@ -201,12 +221,13 @@ let queue: Promise<unknown> = Promise.resolve();
 export function updateStore<T>(fn: (data: StoreData) => T | Promise<T>, env: Env = process.env): Promise<T> {
   const run = queue.then(async () => {
     const file = dataFile(env);
-    const stored = await readRaw(file);
-    const data = stored ?? normalize(null);
-    const before = stored ? JSON.stringify(stored) : "";
+    const stored = await readRaw(file, env);
+    const data = stored?.data ?? normalize(null, env);
+    // 平文のキーが残っていれば、変更がなくても暗号化して書き直す
+    const before = stored && !stored.plainKeys ? JSON.stringify(stored.data) : "";
     await bootstrap(data, env);
     const result = await fn(data);
-    if (JSON.stringify(data) !== before) await writeRaw(file, data);
+    if (JSON.stringify(data) !== before) await writeRaw(file, data, env);
     return result;
   });
   queue = run.catch(() => {});

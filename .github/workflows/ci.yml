@@ -1,0 +1,85 @@
+# テスト・型チェック・依存の監査を PR ごとに行い、main とタグ v* ではイメージを ghcr.io に置く。
+#   main への push   → ghcr.io/ueemon/nine-gage-systems:main と :main-<コミット>（ステージングが使う）
+#   タグ v1.2.3 の push → :1.2.3 と :stable（本番が使う）
+# VM ではビルドしない。本番に出すのは所有者がタグを付けたときだけ。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # 本番に入る依存に high 以上の脆弱性があれば止める
+      - run: npm audit --omit=dev --audit-level=high
+
+  image:
+    needs: test
+    # VM は Oracle Cloud の A1（aarch64）なので arm64 で作る
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/ueemon/nine-gage-systems
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=main,enable={{is_default_branch}}
+            type=sha,prefix=main-,format=short,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      # まず手元に作って脆弱性を調べる（修正版のある CRITICAL があれば止める）
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: nine-gage:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: nine-gage:scan
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
