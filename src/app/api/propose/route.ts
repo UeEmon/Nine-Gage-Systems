@@ -5,8 +5,8 @@ import { createSession, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
 import { emptyUsage } from "@/lib/llm/types";
 import { logUsage, priced, usageLog, type NewUsage } from "@/lib/server/aiUsage";
 import { cacheKey, proposeCache } from "@/lib/server/proposeCache";
-import { settingsForUse } from "@/lib/server/aiSettings";
 import { requireUser } from "@/lib/server/auth";
+import { settingsForUser, type KeySource } from "@/lib/server/ownAi";
 import { MAKERS } from "@/lib/parts";
 import { shortfall, stockFromInventory } from "@/lib/productDb";
 
@@ -67,7 +67,11 @@ const HINTS: Record<"free" | "owned" | "expand", string[]> = {
   ],
 };
 
-/** ログインした人なら誰でも使える。AIは管理者が設定したもの（画面からキーやURLは送れない） */
+/**
+ * ログインした人だけ使える（ログインなしは使えない）。
+ * 管理者・AI利用可能ユーザーは管理者が設定したAI、一般ユーザーは自分で設定したAPIキーを使う。
+ * 画面からキーやURLは送れない。
+ */
 export async function POST(req: Request) {
   const g = await requireUser(req);
   if (!g.ok) return g.response;
@@ -84,8 +88,9 @@ export async function POST(req: Request) {
   }
 
   let settings: ResolvedAiSettings;
+  let keySource: KeySource;
   try {
-    settings = settingsForUse(g.data.ai);
+    ({ settings, keySource } = settingsForUser(g.data, g.user));
   } catch (err) {
     const e = toLlmError(err, undefined);
     return Response.json({ error: e.message }, { status: e.status });
@@ -100,7 +105,7 @@ export async function POST(req: Request) {
   const keyFor = (hint: string | undefined) =>
     cacheKey({
       user: g.user.id,
-      ai: { provider: settings.provider, model: settings.model, baseUrl: settings.baseUrl },
+      ai: { provider: settings.provider, model: settings.model, baseUrl: settings.baseUrl, keySource },
       prompt: opts.system,
       board,
       request: request.trim(),
@@ -132,6 +137,7 @@ export async function POST(req: Request) {
       model: settings.model,
       maker,
       feature: mode,
+      keySource,
       ...r,
     });
     logUsage(rec);
@@ -191,5 +197,5 @@ export async function POST(req: Request) {
     const e = toLlmError(err, settings);
     return Response.json({ error: e.message }, { status: e.status });
   }
-  return Response.json({ provider: settings.provider, mode, budgetJpy: budgetJpy ?? null, patterns: results });
+  return Response.json({ provider: settings.provider, keySource, mode, budgetJpy: budgetJpy ?? null, patterns: results });
 }

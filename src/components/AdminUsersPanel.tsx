@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, ROLE_LABELS, type RoleId, type SessionUser } from "@/lib/roles";
+import { api, ROLE_HELP, ROLE_LABELS, ROLE_ORDER, type RoleId, type SessionUser } from "@/lib/roles";
 
-type Row = SessionUser & { createdAt: string };
+type Row = SessionUser & { createdAt: string; selfRegistered: boolean; ownKey: boolean };
 
 /** ユーザー管理（管理者だけ）: 追加・ロール変更・パスワード再設定・削除 */
 export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
   const [users, setUsers] = useState<Row[] | null>(null);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  const [form, setForm] = useState({ username: "", password: "", role: "user" as RoleId });
+  const [form, setForm] = useState({ username: "", password: "", role: "ai" as RoleId });
   const [resetFor, setResetFor] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState("");
 
@@ -44,7 +44,7 @@ export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (await run(() => api("/api/admin/users", "POST", form), `${form.username} を追加しました。`)) {
-      setForm({ username: "", password: "", role: "user" });
+      setForm({ username: "", password: "", role: "ai" });
     }
   };
 
@@ -69,6 +69,8 @@ export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
                 <td>
                   {u.username}
                   {u.id === currentUserId && <span className="muted">（自分）</span>}
+                  {u.selfRegistered && <span className="muted">（自分で登録）</span>}
+                  {u.role === "user" && u.ownKey && <span className="muted">（自分のキー設定済み）</span>}
                 </td>
                 <td>
                   <select
@@ -80,7 +82,7 @@ export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
                       )
                     }
                   >
-                    {(Object.keys(ROLE_LABELS) as RoleId[]).map((r) => (
+                    {ROLE_ORDER.map((r) => (
                       <option key={r} value={r}>
                         {ROLE_LABELS[r]}
                       </option>
@@ -166,7 +168,7 @@ export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
             required
           />
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as RoleId })}>
-            {(Object.keys(ROLE_LABELS) as RoleId[]).map((r) => (
+            {ROLE_ORDER.map((r) => (
               <option key={r} value={r}>
                 {ROLE_LABELS[r]}
               </option>
@@ -175,7 +177,7 @@ export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
           <button>追加</button>
         </div>
         <p className="hint">
-          管理者はAI設定とユーザー管理ができます。一般はレイアウトの作成とAI提案だけです。初期パスワードは本人に伝え、ログイン後に「パスワード変更」で変えてもらってください。
+          {ROLE_ORDER.map((r) => `${ROLE_LABELS[r]}: ${ROLE_HELP[r]}`).join("。")}。ログインなしでもレイアウトの作成はできます（AI提案なし）。自分で登録した人は一般になります。初期パスワードは本人に伝え、ログイン後に「パスワード変更」で変えてもらってください。
         </p>
       </form>
     </section>

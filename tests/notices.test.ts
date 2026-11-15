@@ -30,7 +30,7 @@ const releases: Release[] = [
 function store(): StoreData {
   const admin = { ...newUser("owner", "admin", "x"), createdAt: new Date(T0).toISOString() };
   const user = { ...newUser("alice", "user", "x"), createdAt: new Date(T0).toISOString() };
-  return { version: 1, sessionSecret: "s".repeat(64), users: [admin, user], ai: { byProvider: {} }, notices: [], aiCost: { usdJpy: 150 } };
+  return { version: 2, sessionSecret: "s".repeat(64), users: [admin, user], ai: { byProvider: {} }, notices: [], aiCost: { usdJpy: 150 } };
 }
 
 describe("お知らせ", () => {

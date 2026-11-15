@@ -9,8 +9,20 @@ import { hashPassword } from "./password";
  * 件数が少ないので JSON ファイル1つに保存する。保存先は NINEGAGE_DATA_DIR（既定 ./data）。
  */
 
-export const ROLES = ["admin", "user"] as const;
+/** admin=管理者、ai=AI利用可能（サーバーのキー）、user=一般（自分のキー）。ログインなしは保存しない */
+export const ROLES = ["admin", "ai", "user"] as const;
 export type Role = (typeof ROLES)[number];
+
+/** 一般ユーザーが自分で設定するAI（接続先URLは指定できない） */
+export const OWN_AI_PROVIDERS = ["anthropic", "openai", "gemini"] as const;
+export type OwnAiProvider = (typeof OWN_AI_PROVIDERS)[number];
+
+export type StoredOwnAi = {
+  provider: OwnAiProvider;
+  model?: string;
+  /** 暗号化したAPIキー（secretBox.ts の形式）。平文では保存しない */
+  apiKeyEnc?: string;
+};
 
 export type StoredUser = {
   id: string;
@@ -22,6 +34,10 @@ export type StoredUser = {
   createdAt: string;
   /** 既読にしたお知らせのID（新しい順に最大 MAX_READ_IDS 件） */
   readNoticeIds?: string[];
+  /** 自分で登録したか（管理者が追加したなら false/なし） */
+  selfRegistered?: boolean;
+  /** 一般ユーザーが自分で設定したAI */
+  ownAi?: StoredOwnAi;
 };
 
 export const AUDIENCES = ["all", "admin"] as const;
@@ -55,8 +71,15 @@ export type StoredAiCost = {
 
 export const DEFAULT_USD_JPY = 150;
 
+/**
+ * 保存形式の版。
+ * 1: ロールは admin/user（user はサーバーのAIを使えた）
+ * 2: ロールは admin/ai/user。版1の user は ai（AI利用可能）に読み替える
+ */
+export const STORE_VERSION = 2;
+
 export type StoreData = {
-  version: 1;
+  version: typeof STORE_VERSION;
   sessionSecret: string;
   users: StoredUser[];
   ai: StoredAi;
@@ -74,8 +97,32 @@ function str(v: unknown, max: number): string | undefined {
   return typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined;
 }
 
+function ownAiOf(v: unknown): StoredOwnAi | undefined {
+  const o = v as Partial<StoredOwnAi> | undefined;
+  if (!o || typeof o !== "object" || !OWN_AI_PROVIDERS.includes(o.provider as OwnAiProvider)) return undefined;
+  return { provider: o.provider as OwnAiProvider, model: str(o.model, 200), apiKeyEnc: str(o.apiKeyEnc, 2000) };
+}
+
+function normalizeUsers(raw: unknown, version: unknown): StoredUser[] {
+  if (!Array.isArray(raw)) return [];
+  const old = version !== STORE_VERSION;
+  const out: StoredUser[] = [];
+  for (const u of raw as Partial<StoredUser>[]) {
+    if (!u || typeof u.id !== "string" || typeof u.username !== "string" || typeof u.passwordHash !== "string") continue;
+    // 版1の「一般」はサーバーのAIを使えていたので、そのまま使えるよう「AI利用可能」にする
+    const role = old && (u.role as string) === "user" ? "ai" : u.role;
+    if (!ROLES.includes(role as Role)) continue;
+    const user = { ...u, role } as StoredUser;
+    const ownAi = ownAiOf(u.ownAi);
+    if (ownAi) user.ownAi = ownAi;
+    else delete user.ownAi;
+    out.push(user);
+  }
+  return out;
+}
+
 function normalize(raw: unknown): StoreData {
-  const d = (raw ?? {}) as Partial<StoreData>;
+  const d = (raw ?? {}) as Partial<Omit<StoreData, "version">> & { version?: unknown };
   const ai = (d.ai ?? {}) as Partial<StoredAi>;
   const byProvider: StoredAi["byProvider"] = {};
   for (const p of PROVIDERS) {
@@ -86,15 +133,10 @@ function normalize(raw: unknown): StoreData {
   }
   const usdJpy = (d.aiCost as Partial<StoredAiCost> | undefined)?.usdJpy;
   return {
-    version: 1,
+    version: STORE_VERSION,
     sessionSecret:
       typeof d.sessionSecret === "string" && d.sessionSecret.length >= 32 ? d.sessionSecret : randomBytes(32).toString("hex"),
-    users: Array.isArray(d.users)
-      ? d.users.filter(
-          (u): u is StoredUser =>
-            !!u && typeof u.id === "string" && typeof u.username === "string" && typeof u.passwordHash === "string" && ROLES.includes(u.role),
-        )
-      : [],
+    users: normalizeUsers(d.users, raw ? d.version : STORE_VERSION),
     ai: { provider: ai.provider && PROVIDERS.includes(ai.provider) ? ai.provider : undefined, byProvider },
     notices: Array.isArray(d.notices)
       ? d.notices.filter(
@@ -127,8 +169,10 @@ async function writeRaw(file: string, data: StoreData) {
   await rename(tmp, file);
 }
 
-export function newUser(username: string, role: Role, passwordHash: string): StoredUser {
-  return { id: randomUUID(), username, role, passwordHash, sessionVersion: 1, createdAt: new Date().toISOString() };
+export function newUser(username: string, role: Role, passwordHash: string, selfRegistered = false): StoredUser {
+  const u: StoredUser = { id: randomUUID(), username, role, passwordHash, sessionVersion: 1, createdAt: new Date().toISOString() };
+  if (selfRegistered) u.selfRegistered = true;
+  return u;
 }
 
 /**

@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { hashPassword, passwordProblem, usernameProblem, verifyPassword } from "./password";
+import { ROLE_ORDER } from "@/lib/roles";
 import { publicUser, type PublicUser } from "./session";
-import { newUser, ROLES, type StoreData } from "./store";
+import { newUser, ROLES, type Env, type StoreData, type StoredUser } from "./store";
 
 /** ユーザー管理の失敗（画面に出す日本語メッセージとHTTPステータス） */
 export class UserError extends Error {
@@ -13,12 +14,22 @@ export class UserError extends Error {
   }
 }
 
-export type UserRow = PublicUser & { createdAt: string };
+export type UserRow = PublicUser & {
+  createdAt: string;
+  /** 自分で登録した */
+  selfRegistered: boolean;
+  /** 自分のAPIキーを設定している（キーそのものは返さない） */
+  ownKey: boolean;
+};
+
+function row(u: StoredUser): UserRow {
+  return { ...publicUser(u), createdAt: u.createdAt, selfRegistered: !!u.selfRegistered, ownKey: !!u.ownAi?.apiKeyEnc };
+}
 
 export function listUsers(data: StoreData): UserRow[] {
   return data.users
-    .map((u) => ({ ...publicUser(u), createdAt: u.createdAt }))
-    .sort((a, b) => (a.role === b.role ? a.username.localeCompare(b.username) : a.role === "admin" ? -1 : 1));
+    .map(row)
+    .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.username.localeCompare(b.username));
 }
 
 export const CreateUserSchema = z.object({
@@ -34,7 +45,27 @@ export async function createUser(data: StoreData, input: z.infer<typeof CreateUs
   if (data.users.some((u) => u.username.toLowerCase() === lower)) throw new UserError("そのユーザー名はすでに使われています。", 409);
   const user = newUser(input.username, input.role, await hashPassword(input.password));
   data.users.push(user);
-  return { ...publicUser(user), createdAt: user.createdAt };
+  return row(user);
+}
+
+/** 自分でのユーザー登録を受け付けるか（NINEGAGE_SIGNUP=closed で止める。既定は受け付ける） */
+export function signupOpen(env: Env = process.env): boolean {
+  return env.NINEGAGE_SIGNUP !== "closed";
+}
+
+export const SignupSchema = z.object({ username: z.string().trim().max(100), password: z.string().max(200) });
+
+/** 自分でのユーザー登録。ロールは必ず「一般」（AIは自分のAPIキーで使う） */
+export async function signupUser(data: StoreData, input: z.infer<typeof SignupSchema>, env: Env = process.env): Promise<StoredUser> {
+  if (!signupOpen(env)) throw new UserError("このサーバーではユーザー登録を受け付けていません。管理者に依頼してください。", 403);
+  if (data.users.length === 0) throw new UserError("サーバーの準備がまだです（最初の管理者がいません）。", 503);
+  const problem = usernameProblem(input.username) ?? passwordProblem(input.password);
+  if (problem) throw new UserError(problem);
+  const lower = input.username.toLowerCase();
+  if (data.users.some((u) => u.username.toLowerCase() === lower)) throw new UserError("そのユーザー名はすでに使われています。", 409);
+  const user = newUser(input.username, "user", await hashPassword(input.password), true);
+  data.users.push(user);
+  return user;
 }
 
 export const UpdateUserSchema = z.object({
@@ -66,7 +97,7 @@ export async function updateUser(data: StoreData, id: string, input: z.infer<typ
     user.passwordHash = await hashPassword(input.password);
     user.sessionVersion += 1;
   }
-  return { ...publicUser(user), createdAt: user.createdAt };
+  return row(user);
 }
 
 export function deleteUser(data: StoreData, id: string, actingUserId: string) {

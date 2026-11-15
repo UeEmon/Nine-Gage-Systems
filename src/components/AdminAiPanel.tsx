@@ -95,7 +95,7 @@ export function AdminAiPanel() {
     <section className="card form">
       <h2>AI設定（全員のAI提案に使われます）</h2>
       <p className="hint">
-        いま使っているAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。一般ユーザーにはキーやURLは見えません。
+        いま使っているAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。管理者と「AI利用可能」のユーザーのAI提案にこの設定を使います（「一般」のユーザーは自分のAPIキー）。ほかのユーザーにはキーやURLは見えません。
       </p>
       <label>
         プロバイダ
