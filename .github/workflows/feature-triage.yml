@@ -1,0 +1,52 @@
+# 機能ごとの担当を自動で割り当てる。
+#   PR    … 変更したファイルに合わせて feature:… のラベルを付ける（.github/labeler.yml。レビュー依頼は CODEOWNERS）
+#   Issue … テンプレートで選んだ機能区分のラベルを付け、その機能の担当者を割り当てる（.github/features.json）
+name: Feature triage
+
+on:
+  # ラベルを付けるだけで PR のコードは動かさない。設定は main のものを使う
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issues:
+    types: [opened]
+
+jobs:
+  pr:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          sync-labels: false
+
+  issue:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/features.json
+          sparse-checkout-cone-mode: false
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          BODY: ${{ github.event.issue.body }}
+          HAS_ASSIGNEE: ${{ github.event.issue.assignees[0] != null }}
+        run: |
+          id=$(printf '%s' "$BODY" | grep -oE 'feature:[a-z][a-z0-9-]*' | head -n1 | cut -d: -f2 || true)
+          if [ -z "$id" ] || ! jq -e --arg id "$id" 'any(.features[]; .id == $id)' .github/features.json >/dev/null; then
+            echo "機能区分の指定なし"; exit 0
+          fi
+          gh issue edit "$NUMBER" --add-label "feature:$id"
+          # チーム（@org/team）は Issue に割り当てられないので、個人の担当だけ割り当てる
+          owners=$(jq -r --arg id "$id" '.features[] | select(.id == $id) | .owners[] | select(contains("/") | not) | ltrimstr("@")' .github/features.json | paste -sd, -)
+          if [ "$HAS_ASSIGNEE" != "true" ] && [ -n "$owners" ]; then
+            gh issue edit "$NUMBER" --add-assignee "$owners"
+          fi

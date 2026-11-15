@@ -1,12 +1,156 @@
-# ここに挙げたファイルの変更は、所有者の承認がないと main にマージできない
-# （main のブランチ保護で「Require review from Code Owners」を有効にする）
-/.github/                @UeEmon
-/Dockerfile              @UeEmon
-/.dockerignore           @UeEmon
-/package.json            @UeEmon
-/package-lock.json       @UeEmon
-/next.config.ts          @UeEmon
-/src/lib/server/         @UeEmon
-/src/app/api/            @UeEmon
-/src/lib/llm/            @UeEmon
-/scripts/                @UeEmon
+# このファイルは .github/features.json から `npm run features` で作っています。直接編集しないでください。
+# 機能ごとの担当。PR で変更したファイルの担当の承認がないと main にマージできない
+# （main のブランチ保護で「Require review from Code Owners」を有効にしている）。
+# あとに書いた行ほど優先される。
+
+# ── 線路エディタ（feature:editor）
+/src/app/page.tsx @UeEmon
+/src/components/Editor.tsx @UeEmon
+/src/components/TrackPiece.tsx @UeEmon
+/src/components/PartIcon.tsx @UeEmon
+/src/components/PartDetail.tsx @UeEmon
+/src/components/LibraryPanel.tsx @UeEmon
+/src/components/useLocalState.ts @UeEmon
+/src/lib/geometry.ts @UeEmon
+/src/lib/shapes.ts @UeEmon
+/src/lib/patternFile.ts @UeEmon
+/tests/geometry.test.ts @UeEmon
+
+# ── 線路カタログ・品番DB（feature:catalog）
+/src/data/trackCatalog.ts @UeEmon
+/src/data/prices.ts @UeEmon
+/src/lib/parts.ts @UeEmon
+/src/lib/productDb.ts @UeEmon
+/src/app/api/products/ @UeEmon
+/tests/catalog.test.ts @UeEmon
+/tests/beds.test.ts @UeEmon
+/tests/productDb.test.ts @UeEmon
+
+# ── 高架・立体交差（feature:elevation）
+/src/lib/elevation.ts @UeEmon
+/src/data/piers.ts @UeEmon
+/src/components/LevelProfile.tsx @UeEmon
+/tests/elevation.test.ts @UeEmon
+
+# ── 線路以外のパーツ（feature:accessories）
+/src/data/accessories.ts @UeEmon
+/src/lib/accessories.ts @UeEmon
+/src/components/AccessoryShape.tsx @UeEmon
+/tests/accessories.test.ts @UeEmon
+
+# ── 部品リスト・所有パーツ（feature:bom）
+/src/lib/bom.ts @UeEmon
+/src/components/InventoryPanel.tsx @UeEmon
+
+# ── 運転席視点（3D）（feature:drive）
+/src/lib/drive.ts @UeEmon
+/src/lib/driveScene.ts @UeEmon
+/src/components/DriveView.tsx @UeEmon
+/tests/drive.test.ts @UeEmon
+
+# ── 運行計画（feature:operation）
+/src/lib/operation/ @UeEmon
+/src/components/operation/ @UeEmon
+/src/app/api/operation/ @UeEmon
+/tests/operation*.test.ts @UeEmon
+
+# ── AIレイアウト提案（feature:ai）
+/src/lib/ai.ts @UeEmon
+/src/lib/plan.ts @UeEmon
+/src/lib/llm/ @UeEmon
+/src/lib/server/aiSettings.ts @UeEmon
+/src/lib/server/aiUsage.ts @UeEmon
+/src/lib/server/ownAi.ts @UeEmon
+/src/lib/server/proposeCache.ts @UeEmon
+/src/app/api/propose/ @UeEmon
+/src/app/api/models/ @UeEmon
+/src/app/api/ai-config/ @UeEmon
+/src/app/api/account/ai/ @UeEmon
+/src/app/api/admin/ai/ @UeEmon
+/src/app/api/admin/ai-usage/ @UeEmon
+/src/components/AiStatus.tsx @UeEmon
+/src/components/OwnAiForm.tsx @UeEmon
+/src/components/AdminAiPanel.tsx @UeEmon
+/src/components/AdminAiUsagePanel.tsx @UeEmon
+/tests/ai.test.ts @UeEmon
+/tests/anthropicStream.test.ts @UeEmon
+/tests/cache.test.ts @UeEmon
+
+# ── アカウント・ログイン・ロール（feature:auth）
+/src/lib/roles.ts @UeEmon
+/src/lib/server/auth.ts @UeEmon
+/src/lib/server/session.ts @UeEmon
+/src/lib/server/password.ts @UeEmon
+/src/lib/server/users.ts @UeEmon
+/src/lib/server/mailer.ts @UeEmon
+/src/app/api/auth/ @UeEmon
+/src/app/login/ @UeEmon
+/src/app/signup/ @UeEmon
+/src/app/verify/ @UeEmon
+/src/app/account/ @UeEmon
+/src/components/LoginForm.tsx @UeEmon
+/src/components/SignupForm.tsx @UeEmon
+/src/components/VerifyForm.tsx @UeEmon
+/src/components/PasswordForm.tsx @UeEmon
+/src/components/UserMenu.tsx @UeEmon
+/tests/auth.test.ts @UeEmon
+/tests/roles.test.ts @UeEmon
+
+# ── 管理画面（feature:admin）
+/src/app/admin/ @UeEmon
+/src/app/api/admin/users/ @UeEmon
+/src/components/AdminUsersPanel.tsx @UeEmon
+
+# ── お知らせ・リリースノート（feature:notices）
+/src/data/releases.ts @UeEmon
+/src/lib/server/notices.ts @UeEmon
+/src/app/news/ @UeEmon
+/src/app/api/notices/ @UeEmon
+/src/app/api/admin/notices/ @UeEmon
+/src/components/NoticeBell.tsx @UeEmon
+/src/components/NoticeList.tsx @UeEmon
+/src/components/AdminNoticesPanel.tsx @UeEmon
+/tests/notices.test.ts @UeEmon
+
+# ── 基盤・運用（feature:platform）
+/src/lib/server/db.ts @UeEmon
+/src/lib/server/store.ts @UeEmon
+/src/lib/server/secretBox.ts @UeEmon
+/src/app/api/health/ @UeEmon
+/src/app/layout.tsx @UeEmon
+/src/app/globals.css @UeEmon
+/src/app/favicon.ico @UeEmon
+/src/app/icon.svg @UeEmon
+/src/app/apple-icon.png @UeEmon
+/src/components/BrandLogo.tsx @UeEmon
+/scripts/ @UeEmon
+/tests/backup.test.ts @UeEmon
+/tests/storeSecrets.test.ts @UeEmon
+/tests/features.test.ts @UeEmon
+/tests/fixtures.ts @UeEmon
+/.github/ @UeEmon
+/docs/ @UeEmon
+/Dockerfile @UeEmon
+/.dockerignore @UeEmon
+/.env.example @UeEmon
+/.gitignore @UeEmon
+/package.json @UeEmon
+/package-lock.json @UeEmon
+/next.config.ts @UeEmon
+/tsconfig.json @UeEmon
+/vitest.config.ts @UeEmon
+/README.md @UeEmon
+/CLAUDE.md @UeEmon
+
+# ── 保護する場所（機能の担当より優先）
+# セキュリティや本番に関わる場所。CODEOWNERS の最後に置くので機能の担当より優先され、ここに挙げた所有者の承認がないと main にマージできない。
+/.github/ @UeEmon
+/Dockerfile @UeEmon
+/.dockerignore @UeEmon
+/package.json @UeEmon
+/package-lock.json @UeEmon
+/next.config.ts @UeEmon
+/src/lib/server/ @UeEmon
+/src/app/api/ @UeEmon
+/src/lib/llm/ @UeEmon
+/scripts/ @UeEmon

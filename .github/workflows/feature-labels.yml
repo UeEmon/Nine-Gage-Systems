@@ -1,0 +1,28 @@
+# 機能マップ（.github/features.json）の機能ごとに feature:… のラベルを作る・色と説明を合わせる。
+name: Feature labels
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/features.json"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          jq -c '.features[]' .github/features.json | while read -r f; do
+            gh label create "feature:$(jq -r .id <<<"$f")" \
+              --color "$(jq -r .color <<<"$f")" \
+              --description "$(jq -r '.name + "：" + .description' <<<"$f" | cut -c1-100)" \
+              --force
+          done

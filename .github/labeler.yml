@@ -1,0 +1,154 @@
+# このファイルは .github/features.json から `npm run features` で作っています。直接編集しないでください。
+# PR で変更したファイルに合わせて、機能のラベルを自動で付ける（.github/workflows/feature-triage.yml）
+
+"feature:editor":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/app/page.tsx"
+          - "src/components/Editor.tsx"
+          - "src/components/TrackPiece.tsx"
+          - "src/components/PartIcon.tsx"
+          - "src/components/PartDetail.tsx"
+          - "src/components/LibraryPanel.tsx"
+          - "src/components/useLocalState.ts"
+          - "src/lib/geometry.ts"
+          - "src/lib/shapes.ts"
+          - "src/lib/patternFile.ts"
+          - "tests/geometry.test.ts"
+"feature:catalog":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/data/trackCatalog.ts"
+          - "src/data/prices.ts"
+          - "src/lib/parts.ts"
+          - "src/lib/productDb.ts"
+          - "src/app/api/products/**"
+          - "tests/catalog.test.ts"
+          - "tests/beds.test.ts"
+          - "tests/productDb.test.ts"
+"feature:elevation":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/elevation.ts"
+          - "src/data/piers.ts"
+          - "src/components/LevelProfile.tsx"
+          - "tests/elevation.test.ts"
+"feature:accessories":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/data/accessories.ts"
+          - "src/lib/accessories.ts"
+          - "src/components/AccessoryShape.tsx"
+          - "tests/accessories.test.ts"
+"feature:bom":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/bom.ts"
+          - "src/components/InventoryPanel.tsx"
+"feature:drive":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/drive.ts"
+          - "src/lib/driveScene.ts"
+          - "src/components/DriveView.tsx"
+          - "tests/drive.test.ts"
+"feature:operation":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/operation/**"
+          - "src/components/operation/**"
+          - "src/app/api/operation/**"
+          - "tests/operation*.test.ts"
+"feature:ai":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/ai.ts"
+          - "src/lib/plan.ts"
+          - "src/lib/llm/**"
+          - "src/lib/server/aiSettings.ts"
+          - "src/lib/server/aiUsage.ts"
+          - "src/lib/server/ownAi.ts"
+          - "src/lib/server/proposeCache.ts"
+          - "src/app/api/propose/**"
+          - "src/app/api/models/**"
+          - "src/app/api/ai-config/**"
+          - "src/app/api/account/ai/**"
+          - "src/app/api/admin/ai/**"
+          - "src/app/api/admin/ai-usage/**"
+          - "src/components/AiStatus.tsx"
+          - "src/components/OwnAiForm.tsx"
+          - "src/components/AdminAiPanel.tsx"
+          - "src/components/AdminAiUsagePanel.tsx"
+          - "tests/ai.test.ts"
+          - "tests/anthropicStream.test.ts"
+          - "tests/cache.test.ts"
+"feature:auth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/roles.ts"
+          - "src/lib/server/auth.ts"
+          - "src/lib/server/session.ts"
+          - "src/lib/server/password.ts"
+          - "src/lib/server/users.ts"
+          - "src/lib/server/mailer.ts"
+          - "src/app/api/auth/**"
+          - "src/app/login/**"
+          - "src/app/signup/**"
+          - "src/app/verify/**"
+          - "src/app/account/**"
+          - "src/components/LoginForm.tsx"
+          - "src/components/SignupForm.tsx"
+          - "src/components/VerifyForm.tsx"
+          - "src/components/PasswordForm.tsx"
+          - "src/components/UserMenu.tsx"
+          - "tests/auth.test.ts"
+          - "tests/roles.test.ts"
+"feature:admin":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/app/admin/**"
+          - "src/app/api/admin/users/**"
+          - "src/components/AdminUsersPanel.tsx"
+"feature:notices":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/data/releases.ts"
+          - "src/lib/server/notices.ts"
+          - "src/app/news/**"
+          - "src/app/api/notices/**"
+          - "src/app/api/admin/notices/**"
+          - "src/components/NoticeBell.tsx"
+          - "src/components/NoticeList.tsx"
+          - "src/components/AdminNoticesPanel.tsx"
+          - "tests/notices.test.ts"
+"feature:platform":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/server/db.ts"
+          - "src/lib/server/store.ts"
+          - "src/lib/server/secretBox.ts"
+          - "src/app/api/health/**"
+          - "src/app/layout.tsx"
+          - "src/app/globals.css"
+          - "src/app/favicon.ico"
+          - "src/app/icon.svg"
+          - "src/app/apple-icon.png"
+          - "src/components/BrandLogo.tsx"
+          - "scripts/**"
+          - "tests/backup.test.ts"
+          - "tests/storeSecrets.test.ts"
+          - "tests/features.test.ts"
+          - "tests/fixtures.ts"
+          - ".github/**"
+          - "docs/**"
+          - "Dockerfile"
+          - ".dockerignore"
+          - ".env.example"
+          - ".gitignore"
+          - "package.json"
+          - "package-lock.json"
+          - "next.config.ts"
+          - "tsconfig.json"
+          - "vitest.config.ts"
+          - "README.md"
+          - "CLAUDE.md"

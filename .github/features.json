@@ -1,0 +1,244 @@
+{
+  "$comment": "機能マップ。担当者（owners）やパスを変えたら `npm run features` を実行して CODEOWNERS・ラベル・Issue テンプレート・docs/FEATURES.md を作り直す。パスは CODEOWNERS と同じ書き方（/ で始まる。末尾が / ならフォルダ全体。* はフォルダをまたがない任意の文字列）。",
+  "protected": {
+    "description": "セキュリティや本番に関わる場所。CODEOWNERS の最後に置くので機能の担当より優先され、ここに挙げた所有者の承認がないと main にマージできない。",
+    "owners": ["@UeEmon"],
+    "paths": [
+      "/.github/",
+      "/Dockerfile",
+      "/.dockerignore",
+      "/package.json",
+      "/package-lock.json",
+      "/next.config.ts",
+      "/src/lib/server/",
+      "/src/app/api/",
+      "/src/lib/llm/",
+      "/scripts/"
+    ]
+  },
+  "features": [
+    {
+      "id": "editor",
+      "name": "線路エディタ",
+      "color": "1f6feb",
+      "description": "キャンバス・線路のつなぎ方と吸着・ボード設定・パレット・パターンの保存と読み込み",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/app/page.tsx",
+        "/src/components/Editor.tsx",
+        "/src/components/TrackPiece.tsx",
+        "/src/components/PartIcon.tsx",
+        "/src/components/PartDetail.tsx",
+        "/src/components/LibraryPanel.tsx",
+        "/src/components/useLocalState.ts",
+        "/src/lib/geometry.ts",
+        "/src/lib/shapes.ts",
+        "/src/lib/patternFile.ts",
+        "/tests/geometry.test.ts"
+      ]
+    },
+    {
+      "id": "catalog",
+      "name": "線路カタログ・品番DB",
+      "color": "0e8a16",
+      "description": "KATO・TOMIX の線路の品番・寸法・道床・価格のデータと、品番データベース（/api/products）",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/data/trackCatalog.ts",
+        "/src/data/prices.ts",
+        "/src/lib/parts.ts",
+        "/src/lib/productDb.ts",
+        "/src/app/api/products/",
+        "/tests/catalog.test.ts",
+        "/tests/beds.test.ts",
+        "/tests/productDb.test.ts"
+      ]
+    },
+    {
+      "id": "elevation",
+      "name": "高架・立体交差",
+      "color": "5319e7",
+      "description": "線路の高さ・勾配・橋脚の選定と検査、断面図",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/elevation.ts",
+        "/src/data/piers.ts",
+        "/src/components/LevelProfile.tsx",
+        "/tests/elevation.test.ts"
+      ]
+    },
+    {
+      "id": "accessories",
+      "name": "線路以外のパーツ",
+      "color": "c5def5",
+      "description": "踏切・信号機・ホーム・駅舎・建物などのストラクチャーのデータと置き方",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/data/accessories.ts",
+        "/src/lib/accessories.ts",
+        "/src/components/AccessoryShape.tsx",
+        "/tests/accessories.test.ts"
+      ]
+    },
+    {
+      "id": "bom",
+      "name": "部品リスト・所有パーツ",
+      "color": "fbca04",
+      "description": "必要な品番・本数・箱数・費用の集計と、手持ちの所有パーツの登録",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/bom.ts",
+        "/src/components/InventoryPanel.tsx"
+      ]
+    },
+    {
+      "id": "drive",
+      "name": "運転席視点（3D）",
+      "color": "d93f0b",
+      "description": "レイアウトの上を走る3Dの運転席視点・後ろからの視点・録画",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/drive.ts",
+        "/src/lib/driveScene.ts",
+        "/src/components/DriveView.tsx",
+        "/tests/drive.test.ts"
+      ]
+    },
+    {
+      "id": "operation",
+      "name": "運行計画",
+      "color": "b60205",
+      "description": "作ったレイアウトで列車の運行計画（ダイヤ・運用）を立てる機能",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/operation/",
+        "/src/components/operation/",
+        "/src/app/api/operation/",
+        "/tests/operation*.test.ts"
+      ]
+    },
+    {
+      "id": "ai",
+      "name": "AIレイアウト提案",
+      "color": "006b75",
+      "description": "AIへの指示と検査・修正のループ、AIプロバイダの切り替え、自分のAPIキー、利用量と料金",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/ai.ts",
+        "/src/lib/plan.ts",
+        "/src/lib/llm/",
+        "/src/lib/server/aiSettings.ts",
+        "/src/lib/server/aiUsage.ts",
+        "/src/lib/server/ownAi.ts",
+        "/src/lib/server/proposeCache.ts",
+        "/src/app/api/propose/",
+        "/src/app/api/models/",
+        "/src/app/api/ai-config/",
+        "/src/app/api/account/ai/",
+        "/src/app/api/admin/ai/",
+        "/src/app/api/admin/ai-usage/",
+        "/src/components/AiStatus.tsx",
+        "/src/components/OwnAiForm.tsx",
+        "/src/components/AdminAiPanel.tsx",
+        "/src/components/AdminAiUsagePanel.tsx",
+        "/tests/ai.test.ts",
+        "/tests/anthropicStream.test.ts",
+        "/tests/cache.test.ts"
+      ]
+    },
+    {
+      "id": "auth",
+      "name": "アカウント・ログイン・ロール",
+      "color": "e99695",
+      "description": "ユーザー登録とメール確認、ログイン、パスワード、ロール（管理者・プレミアム・一般）",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/roles.ts",
+        "/src/lib/server/auth.ts",
+        "/src/lib/server/session.ts",
+        "/src/lib/server/password.ts",
+        "/src/lib/server/users.ts",
+        "/src/lib/server/mailer.ts",
+        "/src/app/api/auth/",
+        "/src/app/login/",
+        "/src/app/signup/",
+        "/src/app/verify/",
+        "/src/app/account/",
+        "/src/components/LoginForm.tsx",
+        "/src/components/SignupForm.tsx",
+        "/src/components/VerifyForm.tsx",
+        "/src/components/PasswordForm.tsx",
+        "/src/components/UserMenu.tsx",
+        "/tests/auth.test.ts",
+        "/tests/roles.test.ts"
+      ]
+    },
+    {
+      "id": "admin",
+      "name": "管理画面",
+      "color": "bfd4f2",
+      "description": "管理画面の枠とユーザー管理（AI設定・お知らせの管理画面はそれぞれの機能の担当）",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/app/admin/",
+        "/src/app/api/admin/users/",
+        "/src/components/AdminUsersPanel.tsx"
+      ]
+    },
+    {
+      "id": "notices",
+      "name": "お知らせ・リリースノート",
+      "color": "f9d0c4",
+      "description": "ベルの未読通知、更新履歴（/news）、管理者からのお知らせ、リリースノート",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/data/releases.ts",
+        "/src/lib/server/notices.ts",
+        "/src/app/news/",
+        "/src/app/api/notices/",
+        "/src/app/api/admin/notices/",
+        "/src/components/NoticeBell.tsx",
+        "/src/components/NoticeList.tsx",
+        "/src/components/AdminNoticesPanel.tsx",
+        "/tests/notices.test.ts"
+      ]
+    },
+    {
+      "id": "platform",
+      "name": "基盤・運用",
+      "color": "555555",
+      "description": "データの保存（SQLite）・暗号化・バックアップ・死活確認、画面の共通部分とブランド、ビルド・CI・デプロイ、文書",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/server/db.ts",
+        "/src/lib/server/store.ts",
+        "/src/lib/server/secretBox.ts",
+        "/src/app/api/health/",
+        "/src/app/layout.tsx",
+        "/src/app/globals.css",
+        "/src/app/favicon.ico",
+        "/src/app/icon.svg",
+        "/src/app/apple-icon.png",
+        "/src/components/BrandLogo.tsx",
+        "/scripts/",
+        "/tests/backup.test.ts",
+        "/tests/storeSecrets.test.ts",
+        "/tests/features.test.ts",
+        "/tests/fixtures.ts",
+        "/.github/",
+        "/docs/",
+        "/Dockerfile",
+        "/.dockerignore",
+        "/.env.example",
+        "/.gitignore",
+        "/package.json",
+        "/package-lock.json",
+        "/next.config.ts",
+        "/tsconfig.json",
+        "/vitest.config.ts",
+        "/README.md",
+        "/CLAUDE.md"
+      ]
+    }
+  ]
+}
