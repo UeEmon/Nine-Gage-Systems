@@ -38,6 +38,10 @@ export type StoredUser = {
   selfRegistered?: boolean;
   /** 一般ユーザーが自分で設定したAI */
   ownAi?: StoredOwnAi;
+  /** メールアドレス（小文字）。自分で登録した人は必ず持つ */
+  email?: string;
+  /** メールの確認待ち（確認が済むと消す）。あるあいだはログインできない */
+  pendingVerify?: { tokenHash: string; expiresAt: string };
 };
 
 export const AUDIENCES = ["all", "admin"] as const;
@@ -113,6 +117,9 @@ function normalizeUsers(raw: unknown, version: unknown): StoredUser[] {
     const role = old && (u.role as string) === "user" ? "ai" : u.role;
     if (!ROLES.includes(role as Role)) continue;
     const user = { ...u, role } as StoredUser;
+    if (typeof user.email !== "string" || user.email.length > 254) delete user.email;
+    const pv = u.pendingVerify;
+    if (!pv || typeof pv.tokenHash !== "string" || typeof pv.expiresAt !== "string") delete user.pendingVerify;
     const ownAi = ownAiOf(u.ownAi);
     if (ownAi) user.ownAi = ownAi;
     else delete user.ownAi;

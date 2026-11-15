@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { hashPassword, passwordProblem, usernameProblem, verifyPassword } from "./password";
 import { ROLE_ORDER } from "@/lib/roles";
@@ -20,10 +21,20 @@ export type UserRow = PublicUser & {
   selfRegistered: boolean;
   /** 自分のAPIキーを設定している（キーそのものは返さない） */
   ownKey: boolean;
+  email: string | null;
+  /** メールの確認待ち */
+  pending: boolean;
 };
 
 function row(u: StoredUser): UserRow {
-  return { ...publicUser(u), createdAt: u.createdAt, selfRegistered: !!u.selfRegistered, ownKey: !!u.ownAi?.apiKeyEnc };
+  return {
+    ...publicUser(u),
+    createdAt: u.createdAt,
+    selfRegistered: !!u.selfRegistered,
+    ownKey: !!u.ownAi?.apiKeyEnc,
+    email: u.email ?? null,
+    pending: !!u.pendingVerify,
+  };
 }
 
 export function listUsers(data: StoreData): UserRow[] {
@@ -38,7 +49,10 @@ export const CreateUserSchema = z.object({
   role: z.enum(ROLES),
 });
 
+export const AI_FROM_GENERAL = "AI利用可能は一般ユーザーの中から選びます。一般で追加してから、ロールを「AI利用可能」に変えてください。";
+
 export async function createUser(data: StoreData, input: z.infer<typeof CreateUserSchema>): Promise<UserRow> {
+  if (input.role === "ai") throw new UserError(AI_FROM_GENERAL);
   const problem = usernameProblem(input.username) ?? passwordProblem(input.password);
   if (problem) throw new UserError(problem);
   const lower = input.username.toLowerCase();
@@ -53,19 +67,90 @@ export function signupOpen(env: Env = process.env): boolean {
   return env.NINEGAGE_SIGNUP !== "closed";
 }
 
-export const SignupSchema = z.object({ username: z.string().trim().max(100), password: z.string().max(200) });
+export const SignupSchema = z.object({
+  username: z.string().trim().max(100),
+  email: z.string().trim().max(254),
+  password: z.string().max(200),
+});
 
-/** 自分でのユーザー登録。ロールは必ず「一般」（AIは自分のAPIキーで使う） */
-export async function signupUser(data: StoreData, input: z.infer<typeof SignupSchema>, env: Env = process.env): Promise<StoredUser> {
+/** 確認メールのリンクの有効期限 */
+export const VERIFY_HOURS = 24;
+
+export function emailProblem(email: string): string | null {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return "メールアドレスの形が正しくありません。";
+  return null;
+}
+
+const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+/** 期限が切れた確認待ちの登録を消す（ユーザー名とメールアドレスを空ける） */
+export function purgeExpiredSignups(data: StoreData, now = Date.now()) {
+  data.users = data.users.filter((u) => !u.pendingVerify || Date.parse(u.pendingVerify.expiresAt) > now);
+}
+
+export type SignupResult =
+  /** 確認待ちの登録を作った。token を確認メールのリンクに入れる */
+  | { kind: "created"; user: StoredUser; token: string }
+  /** そのメールアドレスは登録済み。画面には同じ表示を返し、メールで知らせる（登録の有無を画面で漏らさない） */
+  | { kind: "already"; username: string };
+
+/**
+ * 自分でのユーザー登録。ロールは必ず「一般」（AIは自分のAPIキーで使う）。
+ * 確認メールのリンクを開くまではログインできない。同じメールアドレスで確認待ちの登録があれば作り直す。
+ */
+export async function signupUser(
+  data: StoreData,
+  input: z.infer<typeof SignupSchema>,
+  env: Env = process.env,
+  now = Date.now(),
+): Promise<SignupResult> {
   if (!signupOpen(env)) throw new UserError("このサーバーではユーザー登録を受け付けていません。管理者に依頼してください。", 403);
   if (data.users.length === 0) throw new UserError("サーバーの準備がまだです（最初の管理者がいません）。", 503);
-  const problem = usernameProblem(input.username) ?? passwordProblem(input.password);
+  const email = input.email.toLowerCase();
+  const problem = usernameProblem(input.username) ?? emailProblem(email) ?? passwordProblem(input.password);
   if (problem) throw new UserError(problem);
+  purgeExpiredSignups(data, now);
+  const owner = data.users.find((u) => u.email === email && !u.pendingVerify);
+  if (owner) return { kind: "already", username: owner.username };
+  data.users = data.users.filter((u) => !(u.email === email && u.pendingVerify));
   const lower = input.username.toLowerCase();
   if (data.users.some((u) => u.username.toLowerCase() === lower)) throw new UserError("そのユーザー名はすでに使われています。", 409);
+  const token = randomBytes(32).toString("base64url");
   const user = newUser(input.username, "user", await hashPassword(input.password), true);
+  user.email = email;
+  user.pendingVerify = { tokenHash: hashToken(token), expiresAt: new Date(now + VERIFY_HOURS * 3600_000).toISOString() };
   data.users.push(user);
+  return { kind: "created", user, token };
+}
+
+/** 確認メールのリンクのトークンで登録を完了する */
+export function verifyEmail(data: StoreData, token: string, now = Date.now()): StoredUser {
+  const hash = hashToken(token);
+  const user = data.users.find((u) => u.pendingVerify?.tokenHash === hash);
+  if (!user || Date.parse(user.pendingVerify!.expiresAt) <= now) {
+    throw new UserError("リンクが無効か、期限が切れています。もう一度ユーザー登録してください。", 400);
+  }
+  delete user.pendingVerify;
   return user;
+}
+
+export function signupMail(base: string, username: string, token: string) {
+  return {
+    subject: "【Nine-Gage】メールアドレスの確認",
+    text:
+      `${username} さん\n\nNine-Gage レイアウトプランナーへのご登録ありがとうございます。\n` +
+      `次のリンクを開いて「登録を完了する」を押すと、ログインできるようになります（${VERIFY_HOURS}時間有効）。\n\n` +
+      `${base}/verify#${token}\n\n心当たりがない場合は、このメールを破棄してください。登録は完了しません。\n`,
+  };
+}
+
+export function alreadyMail(base: string, username: string) {
+  return {
+    subject: "【Nine-Gage】このメールアドレスは登録済みです",
+    text:
+      `このメールアドレスで新しいユーザー登録がありましたが、すでにユーザー名「${username}」で登録されています。\n` +
+      `ログインはこちら: ${base}/login\n\n心当たりがない場合は、このメールを破棄してください。\n`,
+  };
 }
 
 export const UpdateUserSchema = z.object({
@@ -86,6 +171,9 @@ function find(data: StoreData, id: string) {
 /** ロールの変更とパスワードの再設定（管理者だけ）。変えるとそのユーザーのログインは切れる */
 export async function updateUser(data: StoreData, id: string, input: z.infer<typeof UpdateUserSchema>): Promise<UserRow> {
   const user = find(data, id);
+  if (input.role === "ai" && input.role !== user.role && user.pendingVerify) {
+    throw new UserError("メールの確認が済んでいないユーザーは、AI利用可能にできません。");
+  }
   if (input.role && input.role !== user.role) {
     if (user.role === "admin" && adminCount(data) <= 1) throw new UserError("管理者が1人もいなくなるため、変更できません。");
     user.role = input.role;

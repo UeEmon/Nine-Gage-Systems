@@ -465,3 +465,4 @@ button.link-button { border: none; background: none; padding: 0 0 0 4px; color: 
 .acc.is-dim { opacity: 0.25; }
 .part-icon .acc { cursor: inherit; }
 .chips.accs { margin-top: 4px; }
+.small-text { font-size: 11px; margin-top: 2px; }

@@ -26,13 +26,21 @@ export async function POST(req: Request) {
       { status: 503 },
     );
   }
-  const user = data.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
+  // ユーザー名かメールアドレスでログインできる
+  const lower = username.toLowerCase();
+  const user = data.users.find((u) => u.username.toLowerCase() === lower) ?? data.users.find((u) => u.email === lower && !u.pendingVerify);
   const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
   if (!user || !ok) {
     recordLoginFailure(keys);
     return Response.json({ error: "ユーザー名かパスワードが違います。" }, { status: 401 });
   }
   clearLoginFailures(keys);
+  if (user.pendingVerify) {
+    return Response.json(
+      { error: "メールアドレスの確認がまだです。届いたメールのリンクを開いてください（届かないときは、もう一度ユーザー登録してください）。" },
+      { status: 403 },
+    );
+  }
   (await cookies()).set(sessionCookie(createSessionToken(user, data.sessionSecret), secureCookies(req)));
   return Response.json({ user: publicUser(user) });
 }

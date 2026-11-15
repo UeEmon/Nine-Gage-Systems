@@ -24,7 +24,7 @@ export function LoginForm({ signup }: { signup: boolean }) {
     <form className="card form" onSubmit={submit}>
       <h2>ログイン</h2>
       <label>
-        ユーザー名
+        ユーザー名またはメールアドレス
         <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus required />
       </label>
       <label>

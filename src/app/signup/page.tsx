@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SignupForm } from "@/components/SignupForm";
 import { currentUser } from "@/lib/server/auth";
+import { canSendMail } from "@/lib/server/mailer";
 import { signupOpen } from "@/lib/server/users";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export default async function SignupPage() {
   return (
     <main className="page narrow">
       <h1>Nine-Gage レイアウトプランナー</h1>
-      {signupOpen() ? (
+      {signupOpen() && canSendMail() && (process.env.NODE_ENV !== "production" || !!process.env.NINEGAGE_PUBLIC_URL) ? (
         <SignupForm />
       ) : (
         <section className="card">
