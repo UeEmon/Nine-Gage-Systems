@@ -1,5 +1,10 @@
 {
   "$comment": "機能マップ。担当者（owners）やパスを変えたら `npm run features` を実行して CODEOWNERS・ラベル・Issue テンプレート・docs/FEATURES.md を作り直す。パスは CODEOWNERS と同じ書き方（/ で始まる。末尾が / ならフォルダ全体。* はフォルダをまたがない任意の文字列）。",
+  "supervisor": {
+    "title": "統括管理責任者",
+    "description": "全体の最上位の責任者。機能の担当の承認とは別に、すべての PR は統括管理責任者の最終承認（いまの最新のコミットへの Approve）がないと main にマージできない（.github/workflows/final-approval.yml）。統括管理責任者が自分で出した PR は、出したことを承認とみなす（GitHub では自分の PR を Approve できないため）。",
+    "owners": ["@UeEmon"]
+  },
   "protected": {
     "description": "セキュリティや本番に関わる場所。CODEOWNERS の最後に置くので機能の担当より優先され、ここに挙げた所有者の承認がないと main にマージできない。",
     "owners": ["@UeEmon"],

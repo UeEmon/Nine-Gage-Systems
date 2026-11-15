@@ -49,6 +49,10 @@ export function validateMap(map) {
     for (const p of f.paths) if (!p.startsWith("/")) errors.push(`機能「${f.id}」のパス「${p}」は / で始める`);
   }
   for (const p of map.protected.paths) if (!p.startsWith("/")) errors.push(`保護するパス「${p}」は / で始める`);
+  const sup = map.supervisor?.owners ?? [];
+  if (!sup.length) errors.push("統括管理責任者（supervisor.owners）がいない");
+  // 最終承認のチェックは個人の Approve を見るので、チームは指定できない
+  for (const o of sup) if (!/^@[\w.-]+$/.test(o)) errors.push(`統括管理責任者「${o}」は @ユーザー名 で書く（チームは不可）`);
   return errors;
 }
 
@@ -91,6 +95,7 @@ function codeowners(map) {
     "# 機能ごとの担当。PR で変更したファイルの担当の承認がないと main にマージできない",
     "# （main のブランチ保護で「Require review from Code Owners」を有効にしている）。",
     "# あとに書いた行ほど優先される。",
+    `# このほか、すべての PR に${map.supervisor.title}（${map.supervisor.owners.join(" ")}）の最終承認が要る（.github/workflows/final-approval.yml）。`,
     "",
   ];
   for (const f of map.features) {
@@ -163,6 +168,7 @@ function featuresDoc(map) {
     "",
     "- **担当の決め方**: `.github/features.json` の `owners` に GitHub のユーザー名（`@name`）かチーム（`@org/team`）を書き、`npm run features` を実行してコミットします。",
     "- **PR のレビュー**: 機能ごとの `CODEOWNERS` により、変更したファイルの担当者の承認が必要になります。ただしサーバー・API・CI など保護する場所（下の「保護する場所の担当」）は、機能の担当ではなく保護の担当者の承認が必要です。",
+    `- **最終承認**: 機能の担当の承認とは別に、すべての PR は${map.supervisor.title}（${map.supervisor.owners.join(" ")}）が最新のコミットを Approve しないとマージできません（チェック「最終承認」）。承認のあとにコミットを足したら、もう一度承認が要ります。${map.supervisor.title}が自分で出した PR は、出したことを承認とみなします（GitHub では自分の PR を Approve できないため）。`,
     "- **PR のラベル**: 変更したファイルに合わせて `feature:機能ID` のラベルが自動で付きます。",
     "- **Issue**: 「機能の追加・改善」「不具合の報告」のテンプレートで機能区分を選ぶと、ラベルが付き、その機能の担当者が割り当てられます。",
     "- **新しいファイル**: 置いた場所がどの機能にも入っていないと、テスト（`npm test`）が失敗します。`.github/features.json` のその機能の `paths` に足してください。新しい機能を作るときは、機能を1件足し、ファイルはその機能のフォルダにまとめて置くと担当の設定が1行で済みます。",

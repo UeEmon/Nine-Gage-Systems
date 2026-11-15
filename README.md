@@ -141,6 +141,7 @@ npm run typecheck
 
 - 担当は `.github/features.json` の `owners` で決め、`npm run features` で `CODEOWNERS`・PRの自動ラベル・Issueテンプレート・機能一覧を作り直します。
 - PR には変更したファイルの機能の `feature:…` ラベルが自動で付き、その機能の担当者の承認が要ります。Issue はテンプレートで機能区分を選ぶと担当者が割り当てられます。
+- 機能の担当の承認とは別に、すべての PR は統括管理責任者（`.github/features.json` の `supervisor`）が最新のコミットを承認しないとマージできません（チェック「最終承認」）。
 - サーバー側のコード、API、依存、Dockerfile、CI は保護する場所として、機能の担当ではなく所有者の承認が要ります。
 - 新しいファイルがどの機能にも入っていないと `npm test` が失敗します。
 

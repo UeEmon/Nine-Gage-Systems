@@ -2,6 +2,7 @@
 # 機能ごとの担当。PR で変更したファイルの担当の承認がないと main にマージできない
 # （main のブランチ保護で「Require review from Code Owners」を有効にしている）。
 # あとに書いた行ほど優先される。
+# このほか、すべての PR に統括管理責任者（@UeEmon）の最終承認が要る（.github/workflows/final-approval.yml）。
 
 # ── 線路エディタ（feature:editor）
 /src/app/page.tsx @UeEmon
