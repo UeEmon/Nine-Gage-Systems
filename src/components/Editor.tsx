@@ -31,6 +31,7 @@ import { PartDetail } from "./PartDetail";
 import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { OperationView } from "./operation/OperationView";
+import { TwinView } from "./twin/TwinView";
 import { AccessoryIcon, AccessoryShape } from "./AccessoryShape";
 import { SimObjectShape } from "./SimObjectShape";
 import { REPLICA_KIND_LABELS, SIM_DISCLAIMER, SIM_KIND_LABELS, type ReplicaInfo, type ReplicaKind, type SimObject } from "@/lib/replica";
@@ -174,6 +175,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [showProfile, setShowProfile] = useState(false);
   const [showDrive, setShowDrive] = useState(false);
   const [showOperation, setShowOperation] = useState(false);
+  const [showTwin, setShowTwin] = useState(false);
   const [showPiers, setShowPiers] = useState(true);
   const [placeHeight, setPlaceHeight] = useState<PlaceHeight>("auto");
   const [applyToRun, setApplyToRun] = useState(true);
@@ -1100,6 +1102,14 @@ export function Editor({ user }: { user: SessionUser | null }) {
           >
             運行計画
           </button>
+          <button
+            className={showTwin ? "on" : ""}
+            onClick={() => setShowTwin(true)}
+            disabled={layout.pieces.length === 0}
+            title="実物のレイアウト（いまは模擬の実機）とつなぎ、列車の位置・ポイント・センサーを映して操作します"
+          >
+            デジタルツイン
+          </button>
         </div>
         {showProfile && (
           <LevelProfile
@@ -1127,6 +1137,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           onClose={() => setShowOperation(false)}
         />
       )}
+      {showTwin && <TwinView layout={layout} elevation={analysis.elevation} onClose={() => setShowTwin(false)} />}
 
       <aside className="panel right">
         <section className="ai">

@@ -24,6 +24,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 | 部品リスト・所有パーツ | `feature:bom` | @UeEmon | 必要な品番・本数・箱数・費用の集計と、手持ちの所有パーツの登録 |
 | 運転席視点（3D） | `feature:drive` | @UeEmon | レイアウトの上を走る3Dの運転席視点・後ろからの視点・録画 |
 | 運行計画 | `feature:operation` | @UeEmon | 作ったレイアウトで列車の運行計画（ダイヤ・運用）を立てる機能 |
+| デジタルツイン | `feature:twin` | @UeEmon | 実物のレイアウト（実機・模擬の実機）とつなぎ、列車の位置・ポイント・センサーの状態を映して、アプリから操作する機能 |
 | AIレイアウト提案 | `feature:ai` | @UeEmon | AIへの指示と検査・修正のループ、AIプロバイダの切り替え、自分のAPIキー、利用量と料金 |
 | アカウント・ログイン・ロール | `feature:auth` | @UeEmon | ユーザー登録とメール確認、ログイン、パスワード、ロール（管理者・プレミアム・一般） |
 | 管理画面 | `feature:admin` | @UeEmon | 管理画面の枠とユーザー管理（AI設定・お知らせの管理画面はそれぞれの機能の担当） |
@@ -91,6 +92,12 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/components/operation/`
 - `/src/app/api/operation/`
 - `/tests/operation*.test.ts`
+
+### デジタルツイン（`feature:twin`）
+
+- `/src/lib/twin/`
+- `/src/components/twin/`
+- `/tests/twin.test.ts`
 
 ### AIレイアウト提案（`feature:ai`）
 

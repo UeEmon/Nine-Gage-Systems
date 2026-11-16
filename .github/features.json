@@ -123,6 +123,18 @@
       ]
     },
     {
+      "id": "twin",
+      "name": "デジタルツイン",
+      "color": "1d76db",
+      "description": "実物のレイアウト（実機・模擬の実機）とつなぎ、列車の位置・ポイント・センサーの状態を映して、アプリから操作する機能",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/twin/",
+        "/src/components/twin/",
+        "/tests/twin.test.ts"
+      ]
+    },
+    {
       "id": "ai",
       "name": "AIレイアウト提案",
       "color": "006b75",
