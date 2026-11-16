@@ -580,10 +580,3 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 @media (prefers-color-scheme: dark) {
   .sim-label { fill: #d5b3f0; }
 }
-.twin-targets { display: grid; gap: 4px; margin: 0 0 8px; font-size: 13px; }
-.twin-targets label { display: flex; gap: 6px; align-items: center; }
-.twin-ws { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-.twin-ws input { color: var(--text); width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; }
-.twin-id { width: 64px; box-sizing: border-box; }
-.twin-id.bad { border-color: var(--warn); }
-.twin-id-label { font-size: 11px; }
