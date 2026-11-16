@@ -20,8 +20,15 @@ const BodySchema = z.object({
   }),
   request: z.string().max(2000),
   maker: z.enum(MAKERS).default("kato"),
-  /** free=自由に設計, owned=所有パーツだけで組む, expand=所有パーツを広げる拡張案 */
-  mode: z.enum(["free", "owned", "expand"]).default("free"),
+  /** free=自由に設計, owned=所有パーツだけで組む, expand=所有パーツを広げる拡張案, replica=実在の路線・駅を再現 */
+  mode: z.enum(["free", "owned", "expand", "replica"]).default("free"),
+  /** replica のときに再現する実在の路線名・駅名 */
+  replica: z
+    .object({
+      kind: z.enum(["line", "station"]),
+      name: z.string().trim().min(1).max(60),
+    })
+    .optional(),
   /** 所有パーツ（"メーカー:品番" → 箱数） */
   inventory: z.record(z.string().max(40), z.number().int().min(0).max(999)).default({}),
   /** 出す案の数 */
@@ -53,7 +60,7 @@ function expandHints(budget: number): string[] {
 }
 
 /** 複数案を出すときの方向づけ */
-const HINTS: Record<"free" | "owned" | "expand", string[]> = {
+const HINTS: Record<"free" | "owned" | "expand" | "replica", string[]> = {
   free: ["要望にいちばん素直な基本の案", "分岐や待避線を多めにして、運転の変化を楽しめる案", "線路の長さを長くとり、周回を楽しめる案"],
   owned: [
     "所有パーツで確実に組める、シンプルな周回の案",
@@ -64,6 +71,11 @@ const HINTS: Record<"free" | "owned" | "expand", string[]> = {
     "追加購入を少なめ（5,000円程度まで）に抑えた小さな拡張案",
     "待避線や引き込み線を加える中くらいの拡張案（1万5,000円程度まで）",
     "複線化や駅の拡張など、大きく発展させる案（3万円程度まで）",
+  ],
+  replica: [
+    "いちばん目立つ特徴に絞って、ボードに素直に収めた案",
+    "線路の形（複線・分岐・高架など）をできるだけ実物に近づけた案",
+    "沿線や駅のまわりの建物・名所を多めに置いた、情景重視の案",
   ],
 };
 
@@ -77,9 +89,16 @@ export async function POST(req: Request) {
   if (!g.ok) return g.response;
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return Response.json({ error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで）" }, { status: 400 });
+    return Response.json(
+      { error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで、路線名・駅名は60文字まで）" },
+      { status: 400 },
+    );
   }
   const { board, request, maker, mode, inventory, patterns, fresh } = parsed.data;
+  const replica = mode === "replica" ? parsed.data.replica : undefined;
+  if (mode === "replica" && !replica) {
+    return Response.json({ error: "再現する路線名か駅名を入力してください。" }, { status: 400 });
+  }
   // 手持ちだけの案は買い足しがないので予算は使わない
   const budgetJpy = mode === "owned" ? undefined : parsed.data.budgetJpy;
   const counts = stockFromInventory(inventory, maker);
@@ -98,8 +117,10 @@ export async function POST(req: Request) {
 
   const hintList = mode === "expand" && budgetJpy !== undefined ? expandHints(budgetJpy) : HINTS[mode];
   const hints = patterns > 1 ? hintList.slice(0, patterns) : [undefined];
-  const stock = mode === "free" && counts.size === 0 ? undefined : { counts, mode };
-  const opts = sessionOptions(maker);
+  // 再現は部品の制限なし（自由に設計と同じ）。所有パーツは予算の計算にだけ使う
+  const stockMode = mode === "replica" ? "free" : mode;
+  const stock = stockMode === "free" && counts.size === 0 ? undefined : { counts, mode: stockMode };
+  const opts = sessionOptions(maker, !!replica);
 
   // 同じ人・同じAI設定・同じ条件なら、前の結果をそのまま返す（AIを呼ばない）
   const keyFor = (hint: string | undefined) =>
@@ -113,6 +134,7 @@ export async function POST(req: Request) {
       mode,
       stock: stock?.counts,
       budgetJpy,
+      replica,
       hint,
     });
   const tasks = hints.map((hint) => {
@@ -152,7 +174,7 @@ export async function POST(req: Request) {
       }
       const isFirst = t === misses[0];
       if (stagger && !isFirst) await firstStarted;
-      const input: ProposeInput = { board, request, maker, hint: t.hint, stock, budgetJpy };
+      const input: ProposeInput = { board, request, maker, hint: t.hint, stock, budgetJpy, replica };
       const session = createSession(settings, isFirst ? { ...opts, onResponseStart: releaseRest } : opts);
       try {
         const result = await proposeLayout(input, session, settings.model);

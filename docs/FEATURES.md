@@ -96,6 +96,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 
 - `/src/lib/ai.ts`
 - `/src/lib/plan.ts`
+- `/src/lib/replica.ts`
 - `/src/lib/llm/`
 - `/src/lib/server/aiSettings.ts`
 - `/src/lib/server/aiUsage.ts`
@@ -111,9 +112,11 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/components/OwnAiForm.tsx`
 - `/src/components/AdminAiPanel.tsx`
 - `/src/components/AdminAiUsagePanel.tsx`
+- `/src/components/SimObjectShape.tsx`
 - `/tests/ai.test.ts`
 - `/tests/anthropicStream.test.ts`
 - `/tests/cache.test.ts`
+- `/tests/replica.test.ts`
 
 ### アカウント・ログイン・ロール（`feature:auth`）
 

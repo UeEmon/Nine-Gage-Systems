@@ -3,6 +3,7 @@ import { computeElevation, placePiers, samplesWithZ, STEP_TOLERANCE_MM, type Ele
 import { getPart, localJoints, normDeg, type Joint, type Maker, type PartDef } from "./parts";
 import { routeSamples, routeSvg } from "./shapes";
 import type { Accessory } from "./accessories";
+import type { ReplicaInfo, SimObject } from "./replica";
 import type { OperationPlan } from "./operation/model";
 
 export type Piece = {
@@ -33,6 +34,10 @@ export type Layout = {
   accessories?: Accessory[];
   /** 運行計画（ダイヤ）。古い保存データにはない */
   operation?: OperationPlan;
+  /** シミュレーション上だけの仮オブジェクト（「再現してみた」で作った、実在の製品ではない物） */
+  sims?: SimObject[];
+  /** 「再現してみた」で再現した路線・駅と特徴 */
+  replica?: ReplicaInfo;
 };
 
 export type WorldJoint = Joint & { pieceUid: string; index: number };

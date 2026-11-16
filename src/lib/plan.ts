@@ -3,6 +3,7 @@ import { analyze, findConnections, placeAt, worldJoints, type Analysis, type Boa
 import { getPart, hasPart, partIdsFor, partKey, type Maker } from "./parts";
 import { accessoryIdsFor, getAccessory, hasAccessory, placeOnPiece, type Accessory } from "./accessories";
 import { computeElevation } from "./elevation";
+import { PlanReplicaSchema, placeSimOnPiece, type PlanReplica, type SimObject } from "./replica";
 
 /**
  * AIが出力する「線路の並び」。座標ではなく部品の順番で表し、
@@ -68,16 +69,28 @@ function buildPlanSchema(partIds: [string, ...string[]] | null, accIds: [string,
 
 /** 型と汎用の検証用（部品IDは文字列） */
 export const LayoutPlanSchema = buildPlanSchema(null);
-/** height は省略できる（省略時は地上）。AIの出力は省略しない形（JSON Schema では必須）で受け取る */
-export type LayoutPlan = z.input<typeof LayoutPlanSchema>;
+/**
+ * height は省略できる（省略時は地上）。AIの出力は省略しない形（JSON Schema では必須）で受け取る。
+ * replica は「再現してみた」のときだけ（製品にない物を仮オブジェクトとして置く）
+ */
+export type LayoutPlan = z.input<typeof LayoutPlanSchema> & { replica?: PlanReplica };
 
-const schemaCache = new Map<Maker, ReturnType<typeof buildPlanSchema>>();
-/** AIへの出力指定用。部品IDをそのメーカーの部品だけに絞る */
-export function planSchemaFor(maker: Maker) {
-  let s = schemaCache.get(maker);
+/** 「再現してみた」用。replica（再現の内容と仮オブジェクト）を必須にする */
+function buildReplicaPlanSchema(partIds: [string, ...string[]], accIds: [string, ...string[]]) {
+  return buildPlanSchema(partIds, accIds).extend({ replica: PlanReplicaSchema });
+}
+
+type AnyPlanSchema = ReturnType<typeof buildPlanSchema> | ReturnType<typeof buildReplicaPlanSchema>;
+const schemaCache = new Map<string, AnyPlanSchema>();
+/** AIへの出力指定用。部品IDをそのメーカーの部品だけに絞る。replica=true なら「再現してみた」用 */
+export function planSchemaFor(maker: Maker, replica = false): AnyPlanSchema {
+  const key = `${maker}:${replica ? "replica" : "plan"}`;
+  let s = schemaCache.get(key);
   if (!s) {
-    s = buildPlanSchema(partIdsFor(maker), accessoryIdsFor(maker));
-    schemaCache.set(maker, s);
+    s = replica
+      ? buildReplicaPlanSchema(partIdsFor(maker), accessoryIdsFor(maker))
+      : buildPlanSchema(partIdsFor(maker), accessoryIdsFor(maker));
+    schemaCache.set(key, s);
   }
   return s;
 }
@@ -85,6 +98,8 @@ export function planSchemaFor(maker: Maker) {
 export type BuildResult = {
   pieces: Piece[];
   accessories: Accessory[];
+  /** シミュレーション上だけの仮オブジェクト（「再現してみた」のとき） */
+  sims: SimObject[];
   /** 区間ごとの部品uid（AIへのフィードバック用） */
   index: string[][];
   errors: string[];
@@ -161,8 +176,10 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
   // 線路以外のパーツは、指定した部品の中央に置く
   const accessories: Accessory[] = [];
   const planAcc = plan.accessories ?? [];
+  const planSims = plan.replica?.objects ?? [];
+  const elevation =
+    planAcc.length || planSims.length ? computeElevation(pieces, findConnections(pieces).connections) : undefined;
   if (planAcc.length) {
-    const elevation = computeElevation(pieces, findConnections(pieces).connections);
     planAcc.forEach((pa, i) => {
       const key = partKey(maker, pa.item);
       if (!hasAccessory(key)) {
@@ -188,7 +205,19 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
     });
   }
 
-  return { pieces, accessories, index, errors };
+  // 製品にない物は、指定した部品の中央に仮オブジェクトとして置く
+  const sims: SimObject[] = [];
+  planSims.forEach((o, i) => {
+    const uid = index[o.segment]?.[o.piece];
+    const host = uid ? byUid.get(uid) : undefined;
+    if (!host) {
+      errors.push(`仮オブジェクト${i}(${o.name}): 区間${o.segment}の部品${o.piece} がありません`);
+      return;
+    }
+    sims.push(placeSimOnPiece(o, host, elevation, `sim${i}`));
+  });
+
+  return { pieces, accessories, sims, index, errors };
 }
 
 /** AIに返すフィードバック文（問題がなければ null） */
