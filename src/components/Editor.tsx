@@ -208,6 +208,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [showDrive, setShowDrive] = useState(false);
   const [showOperation, setShowOperation] = useState(false);
   const [showTwin, setShowTwin] = useState(false);
+  const twinVisible = user?.role === "admin";
   const [showPiers, setShowPiers] = useState(true);
   const [placeHeight, setPlaceHeight] = useState<PlaceHeight>("auto");
   const [applyToRun, setApplyToRun] = useState(true);
@@ -1177,14 +1178,17 @@ export function Editor({ user }: { user: SessionUser | null }) {
           >
             運行計画
           </button>
-          <button
-            className={showTwin ? "on" : ""}
-            onClick={() => setShowTwin(true)}
-            disabled={layout.pieces.length === 0}
-            title="実物のレイアウト（いまは模擬の実機）とつなぎ、列車の位置・ポイント・センサーを映して操作します"
-          >
-            デジタルツイン
-          </button>
+          {/* デジタルツインは開発を止めているあいだ管理者だけに出す（全員に戻すときは条件を外す） */}
+          {twinVisible && (
+            <button
+              className={showTwin ? "on" : ""}
+              onClick={() => setShowTwin(true)}
+              disabled={layout.pieces.length === 0}
+              title="実物のレイアウト（いまは模擬の実機）とつなぎ、列車の位置・ポイント・センサーを映して操作します"
+            >
+              デジタルツイン
+            </button>
+          )}
         </div>
         {showProfile && (
           <LevelProfile
@@ -1212,7 +1216,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           onClose={() => setShowOperation(false)}
         />
       )}
-      {showTwin && <TwinView layout={layout} elevation={analysis.elevation} onClose={() => setShowTwin(false)} />}
+      {showTwin && twinVisible && <TwinView layout={layout} elevation={analysis.elevation} onClose={() => setShowTwin(false)} />}
 
       <aside className="panel right">
         <section className="ai">
