@@ -64,29 +64,57 @@ export function formatEvent(ev: TwinEvent): string {
   }
 }
 
-/** DCC-EX の応答の文字列を出来事にする。知らない形なら null */
+/**
+ * DCC-EX の応答の文字列を出来事にする。知らない形なら null。
+ * 版によって後ろに語が付く形（`<p1 MAIN>`、`<H 1 DCC 5 0 1>` など）も読む。
+ */
 export function parseEvent(text: string): TwinEvent | null {
   const m = /^<\s*([A-Za-z])\s*([^>]*)>$/.exec(text.trim());
   if (!m) return null;
   const op = m[1];
-  const args = m[2].trim() === "" ? [] : m[2].trim().split(/\s+/).map(Number);
-  if (args.some((n) => !Number.isFinite(n))) return null;
+  const tokens = m[2].trim() === "" ? [] : m[2].trim().split(/\s+/);
+  const nums = tokens.map(Number);
+  const isInt = (i: number) => i < nums.length && Number.isInteger(nums[i]);
   switch (op) {
     case "Q":
     case "q":
-      return args.length === 1 ? { type: "sensor", id: args[0], active: op === "Q" } : null;
-    case "H":
-      return args.length >= 2 ? { type: "turnout", id: args[0], thrown: args[1] !== 0 } : null;
+      // <Q id>（状態）。<Q id pin pullup> はセンサーの定義なので読まない
+      return tokens.length === 1 && isInt(0) ? { type: "sensor", id: nums[0], active: op === "Q" } : null;
+    case "H": {
+      // <H id state>、または <H id DCC addr sub state> のように状態が最後に来る形
+      const last = nums.length - 1;
+      return nums.length >= 2 && isInt(0) && isInt(last) ? { type: "turnout", id: nums[0], thrown: nums[last] !== 0 } : null;
+    }
     case "l": {
-      if (args.length < 3) return null;
-      const byte = args[2];
+      if (!(isInt(0) && isInt(2))) return null;
+      const byte = nums[2];
       const raw = byte & 127;
-      return { type: "loco", cab: args[0], speed: raw <= 1 ? 0 : raw - 1, forward: (byte & 128) !== 0 };
+      return { type: "loco", cab: nums[0], speed: raw <= 1 ? 0 : raw - 1, forward: (byte & 128) !== 0 };
     }
     case "p":
-      return args.length >= 1 ? { type: "power", on: args[0] !== 0 } : null;
+      return isInt(0) ? { type: "power", on: nums[0] !== 0 } : null;
     default:
       return null;
+  }
+}
+
+/** 届いた文字の並びから `<...>` の形をすべて取り出す。途中で切れている分は rest に残す */
+export function extractFrames(buffer: string): { frames: string[]; rest: string } {
+  const frames: string[] = [];
+  let i = 0;
+  for (;;) {
+    const open = buffer.indexOf("<", i);
+    if (open < 0) return { frames, rest: "" };
+    const close = buffer.indexOf(">", open);
+    if (close < 0) return { frames, rest: buffer.slice(open) };
+    // 閉じる前に次の < があれば、前の分は壊れているので捨てる
+    const next = buffer.indexOf("<", open + 1);
+    if (next >= 0 && next < close) {
+      i = next;
+      continue;
+    }
+    frames.push(buffer.slice(open, close + 1));
+    i = close + 1;
   }
 }
 

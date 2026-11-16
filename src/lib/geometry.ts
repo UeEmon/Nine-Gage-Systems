@@ -5,6 +5,7 @@ import { routeSamples, routeSvg } from "./shapes";
 import type { Accessory } from "./accessories";
 import type { ReplicaInfo, SimObject } from "./replica";
 import type { OperationPlan } from "./operation/model";
+import type { TwinSettings } from "./twin/mapping";
 
 export type Piece = {
   uid: string;
@@ -34,6 +35,8 @@ export type Layout = {
   accessories?: Accessory[];
   /** 運行計画（ダイヤ）。古い保存データにはない */
   operation?: OperationPlan;
+  /** デジタルツインの番号の付け替えと接続先。古い保存データにはない */
+  twin?: TwinSettings;
   /** シミュレーション上だけの仮オブジェクト（「再現してみた」で作った、実在の製品ではない物） */
   sims?: SimObject[];
   /** 「再現してみた」で再現した路線・駅と特徴 */

@@ -1212,7 +1212,14 @@ export function Editor({ user }: { user: SessionUser | null }) {
           onClose={() => setShowOperation(false)}
         />
       )}
-      {showTwin && <TwinView layout={layout} elevation={analysis.elevation} onClose={() => setShowTwin(false)} />}
+      {showTwin && (
+        <TwinView
+          layout={layout}
+          elevation={analysis.elevation}
+          onChangeSettings={(twin) => setLayout((l) => ({ ...l, twin }))}
+          onClose={() => setShowTwin(false)}
+        />
+      )}
 
       <aside className="panel right">
         <section className="ai">

@@ -6,7 +6,7 @@
 
 import type { Piece } from "../geometry";
 import { computeSchedule, type OperationPlan, type ScheduleResult, type Station } from "../operation";
-import { buildTwinMap, defaultSpeedStep, type TwinMap } from "./mapping";
+import { buildTwinMap, defaultSpeedStep, type TwinMap, type TwinSettings } from "./mapping";
 import { MAX_SPEED_STEP, type TwinCommand, type TwinConnection, type TwinEvent } from "./protocol";
 
 export type SimulatorOptions = {
@@ -14,6 +14,8 @@ export type SimulatorOptions = {
   seed?: number;
   /** 列車ごとの遅さの上限（0.15 = ダイヤより最大15%遅い）。0 でダイヤどおり */
   slowness?: number;
+  /** 付け替えた番号（実機と同じ番号で模擬する） */
+  settings?: TwinSettings;
 };
 
 /** ポイントを列車の何秒前に切り替えるか */
@@ -47,7 +49,7 @@ export class SimulatedLayout implements TwinConnection {
   private started = false;
 
   constructor(pieces: Piece[], stations: Station[], plan: OperationPlan, opts: SimulatorOptions = {}) {
-    this.map = buildTwinMap(pieces, stations, plan);
+    this.map = buildTwinMap(pieces, stations, plan, opts.settings);
     this.schedule = computeSchedule(pieces, stations, plan);
     const rand = mulberry32(opts.seed ?? 1);
     const slowness = Math.max(0, opts.slowness ?? 0.15);
