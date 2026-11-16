@@ -32,6 +32,8 @@ import { InventoryPanel, yen } from "./InventoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { OperationView } from "./operation/OperationView";
 import { AccessoryIcon, AccessoryShape } from "./AccessoryShape";
+import { SimObjectShape } from "./SimObjectShape";
+import { REPLICA_KIND_LABELS, SIM_DISCLAIMER, SIM_KIND_LABELS, type ReplicaInfo, type ReplicaKind, type SimObject } from "@/lib/replica";
 import {
   accessoriesFor,
   getAccessory,
@@ -81,6 +83,9 @@ type ProposedPattern =
       plan: { title: string; description: string };
       pieces: Piece[];
       accessories?: Accessory[];
+      /** 「再現してみた」の仮オブジェクト（実在の製品ではない） */
+      sims?: SimObject[];
+      replica?: ReplicaInfo | null;
       attempts: number;
       remainingProblems: string | null;
       model: string;
@@ -101,12 +106,29 @@ const LEVEL_FILTERS: { value: LevelFilter; label: string }[] = [
 /** 新しく置く部品の高さ。auto はつなぐ先の部品に合わせる */
 type PlaceHeight = "auto" | "ground" | "elevated" | "ramp";
 
-type AiMode = "free" | "owned" | "expand";
+type AiMode = "free" | "owned" | "expand" | "replica";
 const AI_MODES: { mode: AiMode; label: string; help: string }[] = [
   { mode: "free", label: "自由に", help: "部品の制限なしで設計します" },
   { mode: "owned", label: "手持ちだけ", help: "登録した所有パーツの本数の範囲だけで組める案を出します" },
   { mode: "expand", label: "拡張案", help: "所有パーツを活かし、買い足しで広げる案を出します（追加の部品と費用つき）" },
+  {
+    mode: "replica",
+    label: "再現してみた",
+    help: "実在の路線名か駅名から、路線の特徴と沿線の名所、または駅舎とホームの形を再現します。製品にない物はシミュレーション上の仮オブジェクトで置きます",
+  },
 ];
+/** 所有パーツの登録が必要なモード */
+const needsStock = (m: AiMode) => m === "owned" || m === "expand";
+
+/** AIの案をレイアウトに入れるときの中身 */
+const patternLayout = (p: Extract<ProposedPattern, { ok: true }>) => ({
+  title: p.plan.title,
+  description: p.plan.description,
+  pieces: p.pieces,
+  accessories: p.accessories ?? [],
+  sims: p.sims ?? [],
+  replica: p.replica ?? undefined,
+});
 
 type AiState =
   | { status: "idle" }
@@ -137,6 +159,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [patternCount, setPatternCount] = useState(1);
   /** 追加購入の予算上限（円）。空なら制限なし */
   const [budget, setBudget] = useState("");
+  /** 「再現してみた」の路線名・駅名 */
+  const [replicaKind, setReplicaKind] = useState<ReplicaKind>("line");
+  const [replicaName, setReplicaName] = useState("");
+  /** 「再現してみた」の追加の要望（ふだんの要望とは分けて持つ） */
+  const [replicaExtra, setReplicaExtra] = useState("");
   const budgetJpy = aiMode !== "owned" && budget.trim() !== "" && Number(budget) >= 0 ? Math.floor(Number(budget)) : undefined;
   const [inventory, setInventory] = useLocalState<Inventory>("nine-gage-inventory-v1", {}, isInventory);
   const [library, setLibrary] = useLocalState<SavedPattern[]>("nine-gage-library-v1", [], isPatterns);
@@ -187,6 +214,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const maker: Maker = layout.maker ?? "kato";
   const analysis = useMemo(() => analyze(layout), [layout]);
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
+  const sims = useMemo(() => layout.sims ?? [], [layout.sims]);
   const bom = useMemo(() => billOfMaterials(layout.pieces, accessories), [layout.pieces, accessories]);
   const stock = useMemo(() => stockFromInventory(inventory, maker), [inventory, maker]);
   const hasStock = stock.size > 0;
@@ -507,15 +535,19 @@ export function Editor({ user }: { user: SessionUser | null }) {
   // ---- AI ----
   const showPattern = (p: ProposedPattern, index: number) => {
     if (!p.ok) return;
-    setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces, accessories: p.accessories ?? [] }));
+    setLayout((l) => ({ ...l, ...patternLayout(p) }));
     setSelection(null);
     setCurrentId(null);
     setAi((a) => (a.status === "done" ? { ...a, shown: index } : a));
   };
 
   const runAi = async (fresh = false) => {
-    if (aiMode !== "free" && !hasStock) {
+    if (needsStock(aiMode) && !hasStock) {
       setAi({ status: "error", message: "先に左の「所有パーツ」に品番と箱数を登録してください。" });
+      return;
+    }
+    if (aiMode === "replica" && !replicaName.trim()) {
+      setAi({ status: "error", message: `再現する${REPLICA_KIND_LABELS[replicaKind]}を入力してください。` });
       return;
     }
     setAi({ status: "loading" });
@@ -525,12 +557,13 @@ export function Editor({ user }: { user: SessionUser | null }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           board: layout.board,
-          request,
+          request: aiMode === "replica" ? replicaExtra : request,
           maker,
           mode: aiMode,
           inventory,
           patterns: patternCount,
           budgetJpy,
+          ...(aiMode === "replica" ? { replica: { kind: replicaKind, name: replicaName.trim() } } : {}),
           fresh,
         }),
       });
@@ -542,7 +575,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       if (first >= 0) {
         const p = patterns[first];
         if (p.ok) {
-          setLayout((l) => ({ ...l, title: p.plan.title, description: p.plan.description, pieces: p.pieces, accessories: p.accessories ?? [] }));
+          setLayout((l) => ({ ...l, ...patternLayout(p) }));
           setSelection(null);
           setCurrentId(null);
         }
@@ -559,7 +592,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       id,
       name: p.plan.title,
       savedAt: new Date().toISOString(),
-      layout: { title: p.plan.title, description: p.plan.description, maker, board: layout.board, pieces: p.pieces, accessories: p.accessories ?? [] },
+      layout: { ...patternLayout(p), maker, board: layout.board },
     };
     setLibrary((ps) => [saved, ...ps]);
   };
@@ -907,7 +940,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
               className="danger"
               onClick={() => {
                 if (confirm("すべての線路とパーツを消しますか？")) {
-                  setLayout((l) => ({ ...l, pieces: [], accessories: [] }));
+                  setLayout((l) => ({ ...l, pieces: [], accessories: [], sims: [], replica: undefined }));
                   setSelection(null);
                 }
               }}
@@ -938,6 +971,10 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <text x={4} y={-12} className="board-label">
             {b.width} × {b.height} mm（グリッド100mm）
           </text>
+          {/* 仮オブジェクトは線路の下に描く（線路をクリックできるように） */}
+          {sims.map((s) => (
+            <SimObjectShape key={s.uid} sim={s} fontSize={Math.max(view.w / 110, 9)} layer="body" />
+          ))}
           {drawOrder.map((p) => {
             const visible = isVisible(p.uid);
             if (!visible && hideOthers) return null;
@@ -997,6 +1034,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
               />
             );
           })}
+          {sims.map((s) => (
+            <SimObjectShape key={`l${s.uid}`} sim={s} fontSize={Math.max(view.w / 110, 9)} layer="label" />
+          ))}
           {layout.pieces.filter((p) => isVisible(p.uid)).flatMap((p) =>
             worldJoints(p)
               .filter((j) => openSet.has(`${j.pieceUid}:${j.index}`))
@@ -1104,12 +1144,39 @@ export function Editor({ user }: { user: SessionUser | null }) {
             </div>
           </div>
           <p className="hint">{AI_MODES.find((m) => m.mode === aiMode)!.help}</p>
-          {aiMode !== "free" && !hasStock && <p className="warn-text">所有パーツが未登録です（左の「所有パーツ」から登録）</p>}
+          {needsStock(aiMode) && !hasStock && <p className="warn-text">所有パーツが未登録です（左の「所有パーツ」から登録）</p>}
+          {aiMode === "replica" && (
+            <>
+              <div className="replica-input">
+                <span className="seg" role="group" aria-label="再現するもの">
+                  {(["line", "station"] as const).map((k) => (
+                    <button key={k} className={replicaKind === k ? "on" : ""} onClick={() => setReplicaKind(k)}>
+                      {REPLICA_KIND_LABELS[k]}
+                    </button>
+                  ))}
+                </span>
+                <input
+                  type="text"
+                  value={replicaName}
+                  maxLength={60}
+                  onChange={(e) => setReplicaName(e.target.value)}
+                  placeholder={replicaKind === "line" ? "例: 山手線、箱根登山鉄道" : "例: 東京駅、嵯峨野観光鉄道のトロッコ嵐山駅"}
+                  aria-label={REPLICA_KIND_LABELS[replicaKind]}
+                />
+              </div>
+              <p className="hint">
+                {replicaKind === "line"
+                  ? "複線・単線、高架やトンネル、カーブなど路線の特徴と、沿線の有名なストラクチャーを再現します。"
+                  : "ホームの形（島式・対向式）や番線数、駅舎の形を再現します。"}
+                製品にない物は点線の「仮」オブジェクト（シミュレーション上のみ）で置きます。
+              </p>
+            </>
+          )}
           <textarea
-            value={request}
-            onChange={(e) => setRequest(e.target.value)}
-            rows={4}
-            placeholder="例: 複線のエンドレスと、車両基地への引き込み線を2本"
+            value={aiMode === "replica" ? replicaExtra : request}
+            onChange={(e) => (aiMode === "replica" ? setReplicaExtra(e.target.value) : setRequest(e.target.value))}
+            rows={aiMode === "replica" ? 2 : 4}
+            placeholder={aiMode === "replica" ? "追加の要望（任意）。例: エンドレスにして周回できるように" : "例: 複線のエンドレスと、車両基地への引き込み線を2本"}
           />
           <div className="row">
             <label className="small">
@@ -1172,15 +1239,21 @@ export function Editor({ user }: { user: SessionUser | null }) {
                         </span>
                       </div>
                       {p.hint && <p className="hint">{p.hint}</p>}
+                      {p.replica && (
+                        <p className="hint">
+                          再現: {p.replica.target}
+                          {p.sims && p.sims.length > 0 && ` ／ 仮オブジェクト ${p.sims.length}個（シミュレーション上のみ）`}
+                        </p>
+                      )}
                       <p className="hint">
                         {p.pieces.length}本
-                        {(ai.mode !== "free" || ai.budgetJpy !== null) &&
+                        {(needsStock(ai.mode) || ai.budgetJpy !== null) &&
                           (p.shortfall.totalCostJpy > 0 || p.shortfall.hasUnknownPrice
                             ? ` ／ 追加 ${p.shortfall.rows.filter((r) => r.missing > 0).length}品番・${yen(p.shortfall.totalCostJpy)}${p.shortfall.hasUnknownPrice ? "＋価格不明分" : ""}${ai.budgetJpy !== null ? `（上限${yen(ai.budgetJpy)}）` : ""}`
                             : " ／ 追加購入なし")}
                         {` ／ ${p.model}・${p.attempts}回`}
                       </p>
-                      {(ai.mode !== "free" || ai.budgetJpy !== null) && p.shortfall.rows.some((r) => r.missing > 0) && (
+                      {(needsStock(ai.mode) || ai.budgetJpy !== null) && p.shortfall.rows.some((r) => r.missing > 0) && (
                         <table className="bom">
                           <tbody>
                             {p.shortfall.rows
@@ -1221,6 +1294,44 @@ export function Editor({ user }: { user: SessionUser | null }) {
             </div>
           )}
           {layout.description && <p className="desc">{layout.description}</p>}
+          {(layout.replica || sims.length > 0) && (
+            <div className="sim-note">
+              {layout.replica && (
+                <>
+                  <strong>
+                    再現してみた: {layout.replica.target}（{REPLICA_KIND_LABELS[layout.replica.kind]}）
+                  </strong>
+                  {layout.replica.features.length > 0 && (
+                    <ul>
+                      {layout.replica.features.map((f, i) => (
+                        <li key={i}>{f}</li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+              {sims.length > 0 && (
+                <>
+                  <p className="hint">仮オブジェクト（{sims.length}個）</p>
+                  <ul>
+                    {sims.map((s) => (
+                      <li key={s.uid}>
+                        {s.name}（{SIM_KIND_LABELS[s.kind]}）{s.note && <span className="muted">: {s.note}</span>}{" "}
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => setLayout((l) => ({ ...l, sims: (l.sims ?? []).filter((x) => x.uid !== s.uid) }))}
+                        >
+                          消す
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <p className="warn-text small-text">{SIM_DISCLAIMER}</p>
+            </div>
+          )}
         </section>
 
         <section>
