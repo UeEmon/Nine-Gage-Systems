@@ -63,6 +63,7 @@
 # ── AIレイアウト提案（feature:ai）
 /src/lib/ai.ts @UeEmon
 /src/lib/plan.ts @UeEmon
+/src/lib/replica.ts @UeEmon
 /src/lib/llm/ @UeEmon
 /src/lib/server/aiSettings.ts @UeEmon
 /src/lib/server/aiUsage.ts @UeEmon
@@ -78,9 +79,11 @@
 /src/components/OwnAiForm.tsx @UeEmon
 /src/components/AdminAiPanel.tsx @UeEmon
 /src/components/AdminAiUsagePanel.tsx @UeEmon
+/src/components/SimObjectShape.tsx @UeEmon
 /tests/ai.test.ts @UeEmon
 /tests/anthropicStream.test.ts @UeEmon
 /tests/cache.test.ts @UeEmon
+/tests/replica.test.ts @UeEmon
 
 # ── アカウント・ログイン・ロール（feature:auth）
 /src/lib/roles.ts @UeEmon

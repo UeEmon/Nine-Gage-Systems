@@ -11,6 +11,7 @@ import { isPierKey } from "./elevation";
 import { PIER_SYSTEMS } from "../data/piers";
 import { accessoriesFor, isAccessoryKey, type Accessory } from "./accessories";
 import type { AccessoryMount } from "../data/accessories";
+import { replicaGuide, replicaRequest, type ReplicaInfo, type ReplicaTarget, type SimObject } from "./replica";
 
 const MOUNT_PROMPT: Record<AccessoryMount, string> = {
   onTrack: "線路の上",
@@ -114,7 +115,12 @@ function elevationGuide(maker: Maker): string {
 - 高さのある線路は高架用の品番（${maker === "kato" ? "高架線路" : "高架橋付PCレール"}）と橋脚の費用がかかります。高架用の品番がない部品（ポイントなど）を高架に置くと、台の自作が必要になるので避けてください。`;
 }
 
-export function systemPrompt(maker: Maker): string {
+export function systemPrompt(maker: Maker, replica = false): string {
+  const base = basePrompt(maker);
+  return replica ? `${base}\n\n${replicaGuide()}` : base;
+}
+
+function basePrompt(maker: Maker): string {
   const info = MAKER_INFO[maker];
   const guide = MAKER_GUIDE[maker];
   const bumper = partsFor(maker).find((p) => p.bumper)!.id;
@@ -202,6 +208,8 @@ export type ProposeInput = {
    * 所有パーツ（stock）がある分は費用に数えない。未指定なら制限なし。
    */
   budgetJpy?: number;
+  /** 「再現してみた」: 再現する実在の路線・駅 */
+  replica?: ReplicaTarget;
 };
 
 const yenText = (n: number) => `${n.toLocaleString("ja-JP")}円`;
@@ -269,6 +277,10 @@ export type ProposeResult = {
   plan: LayoutPlan;
   pieces: ReturnType<typeof evaluatePlan>["build"]["pieces"];
   accessories: Accessory[];
+  /** シミュレーション上だけの仮オブジェクト（「再現してみた」のとき。製品ではない） */
+  sims: SimObject[];
+  /** 再現の内容（「再現してみた」のとき） */
+  replica: ReplicaInfo | null;
   attempts: number;
   remainingProblems: string | null;
   model: string;
@@ -296,23 +308,24 @@ export class ProposeError extends Error {
   }
 }
 
-const sessionOptionsCache = new Map<Maker, SessionOptions>();
+const sessionOptionsCache = new Map<string, SessionOptions>();
 
 /**
  * 各プロバイダに渡すシステムプロンプトと出力スキーマ。
  * メーカーごとに常に同じ内容（プロンプトキャッシュが効くよう、日時や利用者ごとの値は入れない）。
  */
-export function sessionOptions(maker: Maker = "kato"): SessionOptions {
-  let opts = sessionOptionsCache.get(maker);
+export function sessionOptions(maker: Maker = "kato", replica = false): SessionOptions {
+  const key = `${maker}:${replica ? "replica" : "plan"}`;
+  let opts = sessionOptionsCache.get(key);
   if (!opts) {
-    const schema = planSchemaFor(maker);
+    const schema = planSchemaFor(maker, replica);
     opts = {
-      system: systemPrompt(maker),
+      system: systemPrompt(maker, replica),
       zodSchema: schema,
       jsonSchema: sanitizeSchema(z.toJSONSchema(schema)) as Record<string, unknown>,
       schemaName: "layout_plan",
     };
-    sessionOptionsCache.set(maker, opts);
+    sessionOptionsCache.set(key, opts);
   }
   return opts;
 }
@@ -326,11 +339,16 @@ export async function proposeLayout(
   session: ChatSession,
   model: string,
 ): Promise<ProposeResult> {
-  const { board, request } = input;
+  const { board } = input;
   const maker = input.maker ?? "kato";
+  const replica = input.replica;
+  const request = replica ? replicaRequest(replica, input.request) : input.request;
   let prompt = `線路: ${MAKER_INFO[maker].label} ${MAKER_INFO[maker].system}
 ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm
 要望: ${request.trim() || "ボードに収まる、楽しく運転できるレイアウト"}`;
+  if (replica) {
+    prompt += `\n再現モード: ${replica.kind === "line" ? "路線" : "駅"}「${replica.name}」。replica を必ず出力してください。`;
+  }
   if (input.hint) prompt += `\n今回の案の方向: ${input.hint}`;
   if (input.stock?.mode === "owned") {
     prompt += `\n\n## 使える部品（利用者の所有パーツ）\nこの本数を超えて使わないでください。全部使う必要はありません。端は車止めで終えてもかまいませんが、車止めも所有数の範囲で使います。\n${stockText(input.stock.counts)}`;
@@ -359,7 +377,7 @@ export async function proposeLayout(
       throw new ProposeError("AIがこの依頼への回答を控えました。要望の書き方を変えてお試しください。", usage);
     }
 
-    const parsed = planSchemaFor(maker).safeParse(answer.json);
+    const parsed = planSchemaFor(maker, !!replica).safeParse(answer.json);
     if (!parsed.success) {
       prompt = answer.truncated
         ? "出力が長すぎて途中で切れました。部品の並びを簡潔にして、計画全体をJSONで出し直してください。"
@@ -369,7 +387,7 @@ export async function proposeLayout(
       continue;
     }
 
-    const plan = parsed.data;
+    const plan = parsed.data as LayoutPlan;
     const result = checkPlan(plan, input, maker);
     const score = result.problems ? result.problems.split("\n").length : 0;
     if (!best || score < best.score) best = { plan, result, score };
@@ -389,6 +407,15 @@ export async function proposeLayout(
     plan: best.plan,
     pieces: best.result.build.pieces,
     accessories: best.result.build.accessories,
+    sims: best.result.build.sims,
+    replica:
+      replica && best.plan.replica
+        ? {
+            kind: replica.kind,
+            target: best.plan.replica.target.trim() || replica.name,
+            features: best.plan.replica.features.map((f) => f.trim()).filter(Boolean).slice(0, 8),
+          }
+        : null,
     attempts,
     remainingProblems: best.result.problems,
     model,

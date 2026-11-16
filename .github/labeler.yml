@@ -70,6 +70,7 @@
       - any-glob-to-any-file:
           - "src/lib/ai.ts"
           - "src/lib/plan.ts"
+          - "src/lib/replica.ts"
           - "src/lib/llm/**"
           - "src/lib/server/aiSettings.ts"
           - "src/lib/server/aiUsage.ts"
@@ -85,9 +86,11 @@
           - "src/components/OwnAiForm.tsx"
           - "src/components/AdminAiPanel.tsx"
           - "src/components/AdminAiUsagePanel.tsx"
+          - "src/components/SimObjectShape.tsx"
           - "tests/ai.test.ts"
           - "tests/anthropicStream.test.ts"
           - "tests/cache.test.ts"
+          - "tests/replica.test.ts"
 "feature:auth":
   - changed-files:
       - any-glob-to-any-file:

@@ -3,6 +3,7 @@
 import type { Layout } from "./geometry";
 import { hasPart } from "./parts";
 import { hasAccessory } from "./accessories";
+import { isSimObject } from "./replica";
 
 export type SavedPattern = {
   id: string;
@@ -60,7 +61,8 @@ function validLayout(l: unknown): l is Layout {
             typeof a.x === "number" &&
             typeof a.y === "number" &&
             typeof a.rot === "number",
-        )))
+        ))) &&
+    (x.sims === undefined || (Array.isArray(x.sims) && x.sims.every(isSimObject)))
   );
 }
 
