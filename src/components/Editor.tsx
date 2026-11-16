@@ -118,6 +118,33 @@ const AI_MODES: { mode: AiMode; label: string; help: string }[] = [
     help: "実在の路線名か駅名から、路線の特徴と沿線の名所、または駅舎とホームの形を再現します。製品にない物はシミュレーション上の仮オブジェクトで置きます",
   },
 ];
+const escHtml = (t: string) =>
+  t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+/**
+ * 展開図の印刷用の画面。SVG は <img> で出す（SVG の中のスクリプトは動かない）。
+ * 実寸で印刷できるよう、用紙と同じ大きさ（mm）で並べる。
+ */
+function papercraftPrintHtml(name: string, pages: string[], warnings: string[]): string {
+  const imgs = pages
+    .map((svg, i) => `<img class="page" alt="展開図 ${i + 1}/${pages.length}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}">`)
+    .join("");
+  const warn = warnings.length ? `<ul class="warn">${warnings.map((w) => `<li>${escHtml(w)}</li>`).join("")}</ul>` : "";
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>展開図: ${escHtml(name)}</title>
+<style>
+body{margin:0;font-family:sans-serif;background:#eee}
+.bar{padding:12px 16px;background:#fff;border-bottom:1px solid #ccc;font-size:14px;line-height:1.6}
+.bar button{font-size:14px;padding:4px 12px;margin-right:8px}
+.warn{color:#b3261e;margin:4px 0}
+.page{display:block;width:210mm;margin:12px auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+@page{size:A4;margin:0}
+@media print{.bar{display:none}body{background:#fff}.page{margin:0;box-shadow:none;page-break-after:always}}
+</style></head><body>
+<div class="bar"><button onclick="print()">印刷</button><strong>${escHtml(name)}</strong> の展開図（${pages.length}枚・A4）。
+印刷するときは「実際のサイズ（100%）」を選んでください。これは実在の製品ではなく、シミュレーション上の仮オブジェクトです。${warn}</div>
+${imgs}</body></html>`;
+}
+
 /** 所有パーツの登録が必要なモード */
 const needsStock = (m: AiMode) => m === "owned" || m === "expand";
 
@@ -165,6 +192,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [replicaName, setReplicaName] = useState("");
   /** 「再現してみた」の追加の要望（ふだんの要望とは分けて持つ） */
   const [replicaExtra, setReplicaExtra] = useState("");
+  /** ペーパークラフトジェネレーターとの連携が使えるか（null=未確認） */
+  const [papercraftEnabled, setPapercraftEnabled] = useState<boolean | null>(null);
+  /** 展開図を作っている仮オブジェクトの uid */
+  const [papercraftBusy, setPapercraftBusy] = useState<string | null>(null);
+  const [papercraftError, setPapercraftError] = useState<string | null>(null);
   const budgetJpy = aiMode !== "owned" && budget.trim() !== "" && Number(budget) >= 0 ? Math.floor(Number(budget)) : undefined;
   const [inventory, setInventory] = useLocalState<Inventory>("nine-gage-inventory-v1", {}, isInventory);
   const [library, setLibrary] = useLocalState<SavedPattern[]>("nine-gage-library-v1", [], isPatterns);
@@ -217,6 +249,15 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const analysis = useMemo(() => analyze(layout), [layout]);
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
   const sims = useMemo(() => layout.sims ?? [], [layout.sims]);
+  const hasSims = sims.length > 0;
+  // 仮オブジェクトがあるときだけ、展開図の連携が使えるかを1回確かめる
+  useEffect(() => {
+    if (!user || !hasSims || papercraftEnabled !== null) return;
+    fetch("/api/papercraft")
+      .then((r) => (r.ok ? r.json() : { enabled: false }))
+      .then((d) => setPapercraftEnabled(!!d.enabled))
+      .catch(() => setPapercraftEnabled(false));
+  }, [user, hasSims, papercraftEnabled]);
   const bom = useMemo(() => billOfMaterials(layout.pieces, accessories), [layout.pieces, accessories]);
   const stock = useMemo(() => stockFromInventory(inventory, maker), [inventory, maker]);
   const hasStock = stock.size > 0;
@@ -584,6 +625,40 @@ export function Editor({ user }: { user: SessionUser | null }) {
       }
     } catch (err) {
       setAi({ status: "error", message: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
+  /** 仮オブジェクトの展開図をジェネレーターに作ってもらい、印刷用の画面を開く */
+  const makePapercraft = async (s: SimObject) => {
+    // 非同期のあとに開くとポップアップとして止められるので、先に開いておく
+    const win = window.open("", "_blank");
+    if (win) win.document.title = "展開図を作成中…";
+    setPapercraftBusy(s.uid);
+    setPapercraftError(null);
+    try {
+      const res = await fetch("/api/papercraft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          object: { name: s.name, kind: s.kind, length: s.length, width: s.width, height: s.height, note: s.note ?? "" },
+          paper: "A4",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const html = papercraftPrintHtml(s.name, data.pages as string[], (data.warnings as string[]) ?? []);
+      if (win) {
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+      } else {
+        setPapercraftError("ポップアップが止められました。ブラウザの設定でこのサイトのポップアップを許可してください。");
+      }
+    } catch (err) {
+      win?.close();
+      setPapercraftError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPapercraftBusy(null);
     }
   };
 
@@ -1335,9 +1410,21 @@ export function Editor({ user }: { user: SessionUser | null }) {
                         >
                           消す
                         </button>
+                        {papercraftEnabled && (
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => makePapercraft(s)}
+                            disabled={papercraftBusy !== null}
+                            title="ペーパークラフトジェネレーターで、この仮オブジェクトの展開図（実寸・A4）を作って印刷用の画面を開きます"
+                          >
+                            {papercraftBusy === s.uid ? "展開図を作成中…" : "展開図"}
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
+                  {papercraftError && <p className="error">{papercraftError}</p>}
                 </>
               )}
               <p className="warn-text small-text">{SIM_DISCLAIMER}</p>
