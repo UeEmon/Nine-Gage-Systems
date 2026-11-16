@@ -11,7 +11,7 @@ import { isPierKey } from "./elevation";
 import { PIER_SYSTEMS } from "../data/piers";
 import { accessoriesFor, isAccessoryKey, type Accessory } from "./accessories";
 import type { AccessoryMount } from "../data/accessories";
-import { replicaGuide, replicaRequest, type ReplicaInfo, type ReplicaTarget, type SimObject } from "./replica";
+import { REPLICA_LEVEL_LABELS, replicaGuide, replicaRequest, type ReplicaInfo, type ReplicaTarget, type SimObject } from "./replica";
 
 const MOUNT_PROMPT: Record<AccessoryMount, string> = {
   onTrack: "線路の上",
@@ -347,7 +347,7 @@ export async function proposeLayout(
 ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm
 要望: ${request.trim() || "ボードに収まる、楽しく運転できるレイアウト"}`;
   if (replica) {
-    prompt += `\n再現モード: ${replica.kind === "line" ? "路線" : "駅"}「${replica.name}」。replica を必ず出力してください。`;
+    prompt += `\n再現モード: ${replica.kind === "line" ? "路線" : "駅"}「${replica.name}」、再現度「${REPLICA_LEVEL_LABELS[replica.level ?? "standard"]}」。replica を必ず出力してください。`;
   }
   if (input.hint) prompt += `\n今回の案の方向: ${input.hint}`;
   if (input.stock?.mode === "owned") {
@@ -412,6 +412,7 @@ export async function proposeLayout(
       replica && best.plan.replica
         ? {
             kind: replica.kind,
+            level: replica.level ?? "standard",
             target: best.plan.replica.target.trim() || replica.name,
             features: best.plan.replica.features.map((f) => f.trim()).filter(Boolean).slice(0, 8),
           }

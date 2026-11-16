@@ -105,7 +105,29 @@ describe("再現してみた: AIへの指示", () => {
     expect(prompts[0]).toContain("路線「テスト線」");
     expect(res.remainingProblems).toBeNull();
     expect(res.sims).toHaveLength(1);
-    expect(res.replica).toEqual({ kind: "line", target: "テスト線", features: ["複線", "長いトンネル"] });
+    expect(res.replica).toEqual({ kind: "line", level: "standard", target: "テスト線", features: ["複線", "長いトンネル"] });
+    expect(prompts[0]).toContain("再現度「標準」");
+  });
+
+  it("再現度ごとに指示が変わり、忠実モードは実物の配線どおりにさせる", async () => {
+    const light = replicaRequest({ kind: "line", name: "山手線", level: "light" }, "");
+    const faithful = replicaRequest({ kind: "station", name: "東京駅", level: "faithful" }, "");
+    expect(light).toContain("「雰囲気」");
+    expect(light).toContain("2〜4個まで");
+    expect(faithful).toContain("「忠実」");
+    expect(faithful).toContain("配線");
+    expect(faithful).toContain("推測");
+    expect(replicaRequest({ kind: "line", name: "山手線" }, "")).toContain("「標準」");
+
+    const { session, prompts } = fakeSession([withReplica([tunnel])]);
+    const res = await proposeLayout(
+      { board, request: "", replica: { kind: "line", name: "テスト線", level: "faithful" } },
+      session,
+      "m",
+    );
+    expect(prompts[0]).toContain("再現度「忠実」");
+    expect(prompts[0]).toContain("実物どおり");
+    expect(res.replica?.level).toBe("faithful");
   });
 
   it("再現モードで replica がないと形式違いとして出し直させる", async () => {

@@ -18,7 +18,17 @@ export const SIM_DISCLAIMER =
 export type ReplicaKind = "line" | "station";
 export const REPLICA_KIND_LABELS: Record<ReplicaKind, string> = { line: "路線名", station: "駅名" };
 
-export type ReplicaTarget = { kind: ReplicaKind; name: string };
+/** 再現度。light=雰囲気だけ, standard=標準, faithful=実物に忠実 */
+export const REPLICA_LEVELS = ["light", "standard", "faithful"] as const;
+export type ReplicaLevel = (typeof REPLICA_LEVELS)[number];
+export const REPLICA_LEVEL_LABELS: Record<ReplicaLevel, string> = { light: "雰囲気", standard: "標準", faithful: "忠実" };
+export const REPLICA_LEVEL_HELP: Record<ReplicaLevel, string> = {
+  light: "目立つ特徴を2〜3個に絞り、小さなボードでも組みやすい形にします。",
+  standard: "主な特徴と有名なストラクチャーを、ボードに収まるよう縮めて再現します。",
+  faithful: "線路の配置・駅の配線・構造物の並びをできるだけ実物どおりにし、縮めるのは長さだけにします。部品が多くなります。",
+};
+
+export type ReplicaTarget = { kind: ReplicaKind; name: string; level?: ReplicaLevel };
 
 export const SIM_KINDS = [
   "tunnel",
@@ -91,6 +101,8 @@ export type SimObject = {
 export type ReplicaInfo = {
   kind: ReplicaKind;
   target: string;
+  /** 再現度（ない場合は標準） */
+  level?: ReplicaLevel;
   /** 再現した実物の特徴（箇条書き） */
   features: string[];
 };
@@ -119,7 +131,7 @@ export type PlanSimObject = z.infer<typeof PlanSimObjectSchema>;
 
 export const PlanReplicaSchema = z.object({
   target: z.string().describe("再現した路線・駅の名前"),
-  features: z.array(z.string()).describe("再現した実物の特徴（3〜6項目。例: 複線、高架区間、急カーブ、島式2面4線）"),
+  features: z.array(z.string()).describe("再現した実物の特徴（3〜8項目。例: 複線、高架区間、急カーブ、島式2面4線）"),
   objects: z.array(PlanSimObjectSchema).describe("製品にない物をシミュレーション上の仮オブジェクトとして置く"),
 });
 export type PlanReplica = z.infer<typeof PlanReplicaSchema>;
@@ -189,11 +201,27 @@ export function replicaGuide(): string {
 - description には、どこをどう再現したか、何を縮めたり省いたりしたかを日本語で2〜4文で書きます。`;
 }
 
+/** 再現度ごとの、AIへの指示 */
+const LEVEL_GUIDE: Record<ReplicaLevel, string> = {
+  light:
+    "再現度は「雰囲気」です。いちばん目立つ特徴を2〜3個に絞り、ボードに楽に収まるシンプルな形にしてください。仮オブジェクトは2〜4個までにします。",
+  standard: "再現度は「標準」です。主な特徴と有名なストラクチャーを、ボードに収まるよう縮めて再現してください。",
+  faithful: [
+    "再現度は「忠実」です。できるだけ実物に忠実に再現してください。",
+    "- 線路の配置を実物どおりの並びにします: 複線・単線の区間、分岐の位置と向き、カーブの向きと順序、高架・築堤・地下・トンネル・鉄橋の位置と順序。縮めるのは長さとカーブの半径だけにし、並びや本数は変えません。",
+    "- 駅は実物の配線にします: ホームの形と面数・番線数、渡り線・引き上げ線・留置線・副本線、駅舎の位置（橋上・地上・高架下）。",
+    "- 沿線の主な構造物・名所は、実際の順序と線路の左右に合わせて置き、大きさは1/150の実寸を目安にします（ボードに収まらない物だけ縮めます）。",
+    "- features は実物の特徴を6〜8項目書きます。確かでない所は推測と断り、作り話はしません。",
+    "- description には、実物と違う所（縮めた所・省いた所・推測した所）をはっきり書きます。",
+  ].join("\n"),
+};
+
 /** 再現モードで、利用者の入力からAIに渡す要望の文 */
 export function replicaRequest(target: ReplicaTarget, extra: string): string {
   const what =
     target.kind === "line"
       ? `路線「${target.name}」の特徴（線路の形・高架やトンネル・カーブ）と沿線の有名なストラクチャーを再現したレイアウト`
       : `駅「${target.name}」の駅舎とホームの特徴（ホームの形・番線数・駅舎）を再現したレイアウト`;
-  return extra.trim() ? `${what}。追加の要望: ${extra.trim()}` : what;
+  const base = extra.trim() ? `${what}。追加の要望: ${extra.trim()}` : what;
+  return `${base}\n${LEVEL_GUIDE[target.level ?? "standard"]}`;
 }
