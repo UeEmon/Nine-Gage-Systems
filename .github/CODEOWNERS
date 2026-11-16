@@ -55,6 +55,11 @@
 /src/app/api/operation/ @UeEmon
 /tests/operation*.test.ts @UeEmon
 
+# ── デジタルツイン（feature:twin）
+/src/lib/twin/ @UeEmon
+/src/components/twin/ @UeEmon
+/tests/twin.test.ts @UeEmon
+
 # ── AIレイアウト提案（feature:ai）
 /src/lib/ai.ts @UeEmon
 /src/lib/plan.ts @UeEmon

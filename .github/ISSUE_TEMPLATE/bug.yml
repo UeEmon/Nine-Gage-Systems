@@ -16,6 +16,7 @@ body:
         - "部品リスト・所有パーツ（feature:bom）"
         - "運転席視点（3D）（feature:drive）"
         - "運行計画（feature:operation）"
+        - "デジタルツイン（feature:twin）"
         - "AIレイアウト提案（feature:ai）"
         - "アカウント・ログイン・ロール（feature:auth）"
         - "管理画面（feature:admin）"

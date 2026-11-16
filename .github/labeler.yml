@@ -59,6 +59,12 @@
           - "src/components/operation/**"
           - "src/app/api/operation/**"
           - "tests/operation*.test.ts"
+"feature:twin":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/twin/**"
+          - "src/components/twin/**"
+          - "tests/twin.test.ts"
 "feature:ai":
   - changed-files:
       - any-glob-to-any-file:
