@@ -575,8 +575,8 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .sim-label { fill: #6a2f96; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
 .sim-note { border: 1px dashed #8a4fb8; border-radius: 6px; padding: 6px 8px; margin: 6px 0; font-size: 12px; line-height: 1.5; }
 .sim-note ul { margin: 4px 0 0; padding-left: 18px; }
-.replica-input { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
-.replica-input input { flex: 1; min-width: 0; }
+.replica-input { display: grid; gap: 6px; margin: 6px 0; }
+.replica-input input { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 14px; }
 @media (prefers-color-scheme: dark) {
   .sim-label { fill: #d5b3f0; }
 }
