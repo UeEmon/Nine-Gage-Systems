@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Board } from "./geometry";
+import { worldSamples, type Board, type Piece } from "./geometry";
 import { sanitizeSchema } from "./llm/json";
 import { addUsage, emptyUsage, type ChatSession, type SessionOptions, type TokenUsage } from "./llm/types";
 import { MAKER_INFO, partsFor, type Maker } from "./parts";
@@ -210,6 +210,11 @@ export type ProposeInput = {
   budgetJpy?: number;
   /** 「再現してみた」: 再現する実在の路線・駅 */
   replica?: ReplicaTarget;
+  /**
+   * true ならボードの大きさを制限しない（再現度「忠実」）。
+   * はみ出しを問題にせず、できたレイアウトに合わせてボードの大きさを決め直して返す。
+   */
+  unboundedBoard?: boolean;
 };
 
 const yenText = (n: number) => `${n.toLocaleString("ja-JP")}円`;
@@ -281,6 +286,8 @@ export type ProposeResult = {
   sims: SimObject[];
   /** 再現の内容（「再現してみた」のとき） */
   replica: ReplicaInfo | null;
+  /** ボードの大きさを制限しなかったとき、できたレイアウトに合わせたボード（線路などはこの中に移してある） */
+  board?: Board;
   attempts: number;
   remainingProblems: string | null;
   model: string;
@@ -289,7 +296,7 @@ export type ProposeResult = {
 };
 
 function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
-  const result = evaluatePlan(plan, input.board, maker);
+  const result = evaluatePlan(plan, input.unboundedBoard ? UNBOUNDED_BOARD : input.board, maker);
   const over = input.stock?.mode === "owned" ? overStock(result.build.pieces, input.stock.counts, result.build.accessories) : [];
   const budget = overBudget(result.build.pieces, result.build.accessories, input);
   if (budget) over.push(budget);
@@ -344,7 +351,11 @@ export async function proposeLayout(
   const replica = input.replica;
   const request = replica ? replicaRequest(replica, input.request) : input.request;
   let prompt = `線路: ${MAKER_INFO[maker].label} ${MAKER_INFO[maker].system}
-ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm
+${
+    input.unboundedBoard
+      ? "ボードの大きさ: 制限なし（実物の配置を優先し、必要なだけ広く使ってよい。座標が負になってもかまわない）"
+      : `ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm`
+  }
 要望: ${request.trim() || "ボードに収まる、楽しく運転できるレイアウト"}`;
   if (replica) {
     prompt += `\n再現モード: ${replica.kind === "line" ? "路線" : "駅"}「${replica.name}」、再現度「${REPLICA_LEVEL_LABELS[replica.level ?? "standard"]}」。replica を必ず出力してください。`;
@@ -403,11 +414,15 @@ export async function proposeLayout(
       usage,
     );
   }
+  const fitted = input.unboundedBoard
+    ? fitBoard(best.result.build.pieces, best.result.build.accessories, best.result.build.sims)
+    : { pieces: best.result.build.pieces, accessories: best.result.build.accessories, sims: best.result.build.sims };
   return {
     plan: best.plan,
-    pieces: best.result.build.pieces,
-    accessories: best.result.build.accessories,
-    sims: best.result.build.sims,
+    pieces: fitted.pieces,
+    accessories: fitted.accessories,
+    sims: fitted.sims,
+    ...("board" in fitted ? { board: fitted.board } : {}),
     replica:
       replica && best.plan.replica
         ? {
@@ -421,5 +436,41 @@ export async function proposeLayout(
     remainingProblems: best.result.problems,
     model,
     usage,
+  };
+}
+
+/** ボードの大きさを制限しないときに、組み立てと検証に使うボード */
+const UNBOUNDED_BOARD: Board = { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY };
+/** できたレイアウトのまわりに空けるボードの余白(mm) */
+export const FIT_MARGIN_MM = 100;
+
+/**
+ * 線路・パーツ・仮オブジェクトがちょうど収まるボードを決め、全体をその中へ移す。
+ * 大きさは 10mm 単位に切り上げる。
+ */
+export function fitBoard(pieces: Piece[], accessories: Accessory[], sims: SimObject[]) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const add = (x: number, y: number, r = 0) => {
+    minX = Math.min(minX, x - r);
+    minY = Math.min(minY, y - r);
+    maxX = Math.max(maxX, x + r);
+    maxY = Math.max(maxY, y + r);
+  };
+  for (const p of pieces) for (const pt of worldSamples(p)) add(pt.x, pt.y);
+  for (const a of accessories) add(a.x, a.y, 20);
+  for (const s of sims) add(s.x, s.y, Math.hypot(s.length, s.width) / 2);
+  if (!Number.isFinite(minX)) return { pieces, accessories, sims, board: { width: 1200, height: 600 } };
+  const dx = FIT_MARGIN_MM - minX;
+  const dy = FIT_MARGIN_MM - minY;
+  const shift = <T extends { x: number; y: number }>(o: T): T => ({ ...o, x: o.x + dx, y: o.y + dy });
+  const round10 = (v: number) => Math.ceil(v / 10) * 10;
+  return {
+    pieces: pieces.map(shift),
+    accessories: accessories.map(shift),
+    sims: sims.map(shift),
+    board: { width: round10(maxX - minX + FIT_MARGIN_MM * 2), height: round10(maxY - minY + FIT_MARGIN_MM * 2) },
   };
 }

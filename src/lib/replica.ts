@@ -25,7 +25,8 @@ export const REPLICA_LEVEL_LABELS: Record<ReplicaLevel, string> = { light: "雰�
 export const REPLICA_LEVEL_HELP: Record<ReplicaLevel, string> = {
   light: "目立つ特徴を2〜3個に絞り、小さなボードでも組みやすい形にします。",
   standard: "主な特徴と有名なストラクチャーを、ボードに収まるよう縮めて再現します。",
-  faithful: "線路の配置・駅の配線・構造物の並びをできるだけ実物どおりにし、縮めるのは長さだけにします。部品が多くなります。",
+  faithful:
+    "線路の配置・駅の配線・構造物の並びをできるだけ実物どおりにし、縮めるのは長さだけにします。ボードの大きさは、出来上がったレイアウトに合わせます。部品とAIのトークン消費が多くなります。",
 };
 
 export type ReplicaTarget = { kind: ReplicaKind; name: string; level?: ReplicaLevel };

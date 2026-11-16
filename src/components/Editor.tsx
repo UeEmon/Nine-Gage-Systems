@@ -87,6 +87,8 @@ type ProposedPattern =
       /** 「再現してみた」の仮オブジェクト（実在の製品ではない） */
       sims?: SimObject[];
       replica?: ReplicaInfo | null;
+      /** ボードの大きさを制限しなかったとき（再現度「忠実」）、できた形に合わせたボード */
+      board?: Board;
       attempts: number;
       remainingProblems: string | null;
       model: string;
@@ -156,7 +158,18 @@ const patternLayout = (p: Extract<ProposedPattern, { ok: true }>) => ({
   accessories: p.accessories ?? [],
   sims: p.sims ?? [],
   replica: p.replica ?? undefined,
+  ...(p.board ? { board: p.board } : {}),
 });
+
+/** 再現度「忠実」で提案を始める前の確認 */
+const FAITHFUL_CONFIRM = [
+  "再現度「忠実」で作ります。",
+  "",
+  "・ボードの大きさは、出来上がったレイアウトに合わせて決め直します（いまのボードの大きさにはしばられません）。",
+  "・実物の配線どおりにするため部品が多くなり、AIのトークン消費が「標準」よりかなり多くなります（自分のAPIキーなら、その分の料金がかかります）。出す案の数を増やすと、さらに増えます。",
+  "",
+  "続けますか？",
+].join("\n");
 
 type AiState =
   | { status: "idle" }
@@ -596,6 +609,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       setAi({ status: "error", message: `再現する${REPLICA_KIND_LABELS[replicaKind]}を入力してください。` });
       return;
     }
+    if (aiMode === "replica" && replicaLevel === "faithful" && !window.confirm(FAITHFUL_CONFIRM)) return;
     setAi({ status: "loading" });
     try {
       const res = await fetch("/api/propose", {
@@ -672,7 +686,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       id,
       name: p.plan.title,
       savedAt: new Date().toISOString(),
-      layout: { ...patternLayout(p), maker, board: layout.board },
+      layout: { maker, board: layout.board, ...patternLayout(p) },
     };
     setLibrary((ps) => [saved, ...ps]);
   };

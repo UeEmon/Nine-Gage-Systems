@@ -196,7 +196,17 @@ export async function POST(req: Request) {
       }
       const isFirst = t === misses[0];
       if (stagger && !isFirst) await firstStarted;
-      const input: ProposeInput = { board, request, maker, hint: t.hint, stock, budgetJpy, replica };
+      const input: ProposeInput = {
+        board,
+        request,
+        maker,
+        hint: t.hint,
+        stock,
+        budgetJpy,
+        replica,
+        // 再現度「忠実」はボードの大きさを制限しない（できた形に合わせてボードを広げる）
+        unboundedBoard: replica?.level === "faithful",
+      };
       const session = createSession(settings, isFirst ? { ...opts, onResponseStart: releaseRest } : opts);
       try {
         const result = await proposeLayout(input, session, settings.model);
