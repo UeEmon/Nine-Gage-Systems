@@ -69,7 +69,9 @@
 /src/lib/server/aiUsage.ts @UeEmon
 /src/lib/server/ownAi.ts @UeEmon
 /src/lib/server/proposeCache.ts @UeEmon
+/src/lib/server/papercraft.ts @UeEmon
 /src/app/api/propose/ @UeEmon
+/src/app/api/papercraft/ @UeEmon
 /src/app/api/models/ @UeEmon
 /src/app/api/ai-config/ @UeEmon
 /src/app/api/account/ai/ @UeEmon
@@ -84,6 +86,7 @@
 /tests/anthropicStream.test.ts @UeEmon
 /tests/cache.test.ts @UeEmon
 /tests/replica.test.ts @UeEmon
+/tests/papercraft.test.ts @UeEmon
 
 # ── アカウント・ログイン・ロール（feature:auth）
 /src/lib/roles.ts @UeEmon
