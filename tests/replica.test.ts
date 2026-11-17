@@ -24,6 +24,7 @@ function fakeSession(outputs: unknown[]) {
 const replica = (objects: PlanReplica["objects"]): PlanReplica => ({
   target: "テスト線",
   features: ["複線", "長いトンネル"],
+  lines: [],
   objects,
 });
 
@@ -211,5 +212,30 @@ describe("再現度「忠実」: ボードの大きさを制限しない", () =>
     expect(Math.min(...pts.map((p) => p.y))).toBeCloseTo(FIT_MARGIN_MM, 5);
     expect(Math.max(...pts.map((p) => p.x))).toBeLessThanOrEqual(f.board.width - FIT_MARGIN_MM + 10);
     expect(f.board.width % 10).toBe(0);
+  });
+});
+
+describe("複数の路線が乗り入れる駅", () => {
+  it("駅名のときは乗り入れる路線をすべて再現するよう指示する", () => {
+    expect(replicaRequest({ kind: "station", name: "新宿駅" }, "")).toContain("乗り入れる路線をそれぞれ再現");
+    expect(systemPrompt("kato", true)).toContain("replica.lines");
+    expect(replicaRequest({ kind: "station", name: "新宿駅", level: "faithful" }, "")).toContain("乗り入れる路線はすべて");
+    expect(replicaRequest({ kind: "station", name: "新宿駅", level: "light" }, "")).toContain("主な2路線まで");
+  });
+
+  it("再現した路線を結果に入れる（路線名のときは入れない）", async () => {
+    const plan = { ...withReplica([tunnel]), replica: { ...replica([tunnel]), lines: ["山手線", " 中央線 ", ""] } };
+    const st = fakeSession([plan]);
+    const res = await proposeLayout({ board, request: "", replica: { kind: "station", name: "テスト駅" } }, st.session, "m");
+    expect(res.replica?.lines).toEqual(["山手線", "中央線"]);
+    const ln = fakeSession([plan]);
+    const res2 = await proposeLayout({ board, request: "", replica: { kind: "line", name: "テスト線" } }, ln.session, "m");
+    expect(res2.replica?.lines).toBeUndefined();
+  });
+
+  it("lines がない出力も受け付ける", () => {
+    const { lines: _omit, ...noLines } = replica([tunnel]);
+    const parsed = planSchemaFor("kato", true).safeParse({ ...sidingPlan(), replica: noLines });
+    expect(parsed.success).toBe(true);
   });
 });
