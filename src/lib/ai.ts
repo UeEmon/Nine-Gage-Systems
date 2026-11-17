@@ -133,6 +133,7 @@ function basePrompt(maker: Maker): string {
 - start: 区間0の最初の部品をつなぐ位置(mm)と進行方向(度)。
 - segments: 区間の配列。区間0は from=null で start から始まり、部品を順に前の部品の出口へつなぎます。
 - 区間1以降は from で既存の部品のジョイント（主にポイントの分岐側 j2）から伸ばします。from が指す区間は自分より前の番号にしてください。
+- ほかの線路とつながらない別の線路（別の路線のエンドレスなど）は、from=null にして、その区間の start に始める位置と向きを入れます。
 - 各部品: part=部品ID, dir=L/R, enter=前の部品につなぐジョイント, exit=次へ進むジョイント, height=線路面の高さ(mm。0=地上、null=勾配)。
 
 ## 座標と向き
@@ -298,6 +299,7 @@ export type ProposeResult = {
 function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
   const result = evaluatePlan(plan, input.unboundedBoard ? UNBOUNDED_BOARD : input.board, maker);
   const over = input.stock?.mode === "owned" ? overStock(result.build.pieces, input.stock.counts, result.build.accessories) : [];
+  if (input.replica) over.push(...lineProblems(plan, input.replica));
   const budget = overBudget(result.build.pieces, result.build.accessories, input);
   if (budget) over.push(budget);
   if (!over.length) return result;
@@ -476,4 +478,38 @@ export function fitBoard(pieces: Piece[], accessories: Accessory[], sims: SimObj
     sims: sims.map(shift),
     board: { width: round10(maxX - minX + FIT_MARGIN_MM * 2), height: round10(maxY - minY + FIT_MARGIN_MM * 2) },
   };
+}
+
+/** 路線名を比べるための形（空白と「線」の有無の違いを無視する） */
+const lineKey = (name: string) => name.normalize("NFKC").replace(/\s+/g, "").replace(/線$/, "");
+
+/**
+ * 「再現してみた」の駅で、乗り入れる路線をまとめずに、路線ごとに線路を分けたかを確かめる。
+ * replica.lines の路線それぞれに、その路線の区間（segments[].line）があること。
+ */
+export function lineProblems(plan: LayoutPlan, target: ReplicaTarget): string[] {
+  if (target.kind !== "station") return [];
+  const lines = (plan.replica?.lines ?? []).map((l) => l.trim()).filter(Boolean);
+  const level = target.level ?? "standard";
+  if (!lines.length) {
+    return level === "faithful"
+      ? ["乗り入れ路線: replica.lines に、この駅に乗り入れる路線をすべて書いてください（1路線だけの駅なら、その1路線）"]
+      : [];
+  }
+  const labelled = new Set(plan.segments.map((s) => lineKey(s.line ?? "")).filter(Boolean));
+  const missing = lines.filter((l) => !labelled.has(lineKey(l)));
+  const problems: string[] = [];
+  if (missing.length) {
+    problems.push(
+      `乗り入れ路線: ${missing.join("、")} の線路がありません。路線をまとめずに、路線ごとに別の線路（区間）を置き、各区間の line にその路線名を入れてください`,
+    );
+  }
+  if (level === "faithful") {
+    const keys = new Set(lines.map(lineKey));
+    const extra = [...labelled].filter((k) => !keys.has(k));
+    if (extra.length) {
+      problems.push(`乗り入れ路線: 区間の line（${extra.join("、")}）が replica.lines にありません。名前をそろえてください`);
+    }
+  }
+  return problems;
 }
