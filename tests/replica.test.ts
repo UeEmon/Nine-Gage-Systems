@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { FIT_MARGIN_MM, fitBoard, proposeLayout, sessionOptions, systemPrompt } from "../src/lib/ai";
+import { FIT_MARGIN_MM, fitBoard, lineProblems, proposeLayout, sessionOptions, systemPrompt } from "../src/lib/ai";
 import { analyze, worldSamples } from "../src/lib/geometry";
 import type { ChatSession } from "../src/lib/llm/types";
 import { buildFromPlan, planSchemaFor, type LayoutPlan } from "../src/lib/plan";
 import { toPatternFile, parsePatternFile } from "../src/lib/patternFile";
 import { isSimObject, replicaRequest, SIZE_LIMITS, type PlanReplica } from "../src/lib/replica";
-import { sidingPlan } from "./fixtures";
+import { p as pc, sidingPlan } from "./fixtures";
 
 const board = { width: 1400, height: 800 };
 
@@ -237,5 +237,67 @@ describe("複数の路線が乗り入れる駅", () => {
     const { lines: _omit, ...noLines } = replica([tunnel]);
     const parsed = planSchemaFor("kato", true).safeParse({ ...sidingPlan(), replica: noLines });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("乗り入れる路線をまとめない", () => {
+  // 区間0・1は「A線」、区間2はつながらない別の線路の「B線」
+  const twoLines = (): LayoutPlan => {
+    const base = sidingPlan();
+    const C = pc("R249-45", "R");
+    return {
+      ...base,
+      segments: [
+        { ...base.segments[0], line: "A線" },
+        { ...base.segments[1], line: "A線" },
+        { from: null, start: { x: 300, y: 700, heading: 0 }, line: "B線", pieces: [pc("S248"), C, C, C, C, pc("S248"), C, C, C, C] },
+      ],
+      replica: { ...replica([]), lines: ["A線", "B線"] },
+    };
+  };
+
+  it("区間ごとの start で、つながらない別の線路を置ける", () => {
+    const b = buildFromPlan(twoLines());
+    expect(b.errors).toEqual([]);
+    expect(b.index[2]).toHaveLength(10);
+    const first = b.pieces.find((x) => x.uid === b.index[2][0])!;
+    expect(first.y).toBeCloseTo(700, 0);
+  });
+
+  it("start がない from=null の区間1以降はエラー", () => {
+    const plan = twoLines();
+    plan.segments[2] = { ...plan.segments[2], start: null };
+    expect(buildFromPlan(plan).errors.join()).toContain("start");
+  });
+
+  it("replica.lines の路線に区間がないと出し直させる", () => {
+    const plan = twoLines();
+    plan.segments[2] = { ...plan.segments[2], line: "A線" };
+    const station = { kind: "station" as const, name: "テスト駅", level: "faithful" as const };
+    expect(lineProblems(plan, station).join()).toContain("B線 の線路がありません");
+    expect(lineProblems(twoLines(), station)).toEqual([]);
+    // 「線」の有無や空白の違いは同じ路線とみなす
+    const loose = twoLines();
+    loose.segments[2] = { ...loose.segments[2], line: " B " };
+    expect(lineProblems(loose, station)).toEqual([]);
+    // 路線名のときは確かめない
+    expect(lineProblems(plan, { kind: "line", name: "A線" })).toEqual([]);
+    // 忠実で路線が空なら書かせる
+    expect(lineProblems({ ...plan, replica: { ...replica([]), lines: [] } }, station).join()).toContain("replica.lines");
+  });
+
+  it("忠実の駅で路線をまとめた案は、出し直しを求める", async () => {
+    const merged = twoLines();
+    merged.segments[2] = { ...merged.segments[2], line: "A線" };
+    const { session, prompts } = fakeSession([merged, twoLines()]);
+    const res = await proposeLayout(
+      { board: { width: 2000, height: 1200 }, request: "", replica: { kind: "station", name: "テスト駅", level: "faithful" } },
+      session,
+      "m",
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("B線 の線路がありません");
+    expect(res.remainingProblems).toBeNull();
+    expect(res.replica?.lines).toEqual(["A線", "B線"]);
   });
 });

@@ -47,7 +47,20 @@ function buildPlanSchema(partIds: [string, ...string[]] | null, accIds: [string,
       joint: z.number().int().describe("分岐元部品のジョイント番号（ポイントの分岐側なら通常2）"),
     })
     .nullable()
-    .describe("null なら start から始める（区間0のみ）。それ以外は既存部品の空きジョイントから伸ばす"),
+    .describe("null なら start から始める（区間0は計画の start、区間1以降はこの区間の start）。それ以外は既存部品の空きジョイントから伸ばす"),
+  start: z
+    .object({
+      x: z.number().describe("x座標(mm)"),
+      y: z.number().describe("y座標(mm)"),
+      heading: z.number().describe("進行方向(度)"),
+    })
+    .nullable()
+    .default(null)
+    .describe("from=null の区間1以降で、ほかの線路とつながらない別の線路（別の路線など）を始める位置と向き。それ以外は null"),
+  line: z
+    .string()
+    .default("")
+    .describe("「再現してみた」で、この区間がどの路線の線路か（replica.lines の名前と同じ書き方）。それ以外は空文字"),
   pieces: z.array(planPieceSchema(partIds)),
 });
 
@@ -117,12 +130,14 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
     let cursor: { x: number; y: number; deg: number } | null = null;
 
     if (seg.from === null) {
-      if (si !== 0) {
-        errors.push(`区間${si}: from が null なのは区間0だけです`);
+      // start は「直前の部品の出口」とみなす。外向き＝進行方向。
+      // 区間0は計画の start、区間1以降は区間ごとの start（ほかとつながらない別の線路）から始める
+      const st = si === 0 ? plan.start : seg.start;
+      if (!st) {
+        errors.push(`区間${si}: from が null の区間1以降は、start（別の線路を始める位置と向き）を入れてください`);
         return;
       }
-      // start は「直前の部品の出口」とみなす。外向き＝進行方向。
-      cursor = { x: plan.start.x, y: plan.start.y, deg: plan.start.heading };
+      cursor = { x: st.x, y: st.y, deg: st.heading };
     } else {
       const src = index[seg.from.segment]?.[seg.from.piece];
       const srcPiece = src ? byUid.get(src) : undefined;
