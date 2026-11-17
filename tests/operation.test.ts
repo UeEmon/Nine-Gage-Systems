@@ -5,13 +5,17 @@ import { buildFromPlan } from "../src/lib/plan";
 import {
   computeSchedule,
   detectStations,
+  carsFitting,
+  fitCarsToPlatforms,
   formatTime,
   newTrain,
   normalizeOperation,
   parseTime,
+  platformLimit,
   profile,
   TrainPlayback,
   type OperationPlan,
+  type Station,
   type Train,
 } from "../src/lib/operation";
 import { sidingPlan } from "./fixtures";
@@ -39,6 +43,7 @@ describe("operation: stations", () => {
     const a = stations.find((s) => s.id === "accA")!;
     expect(a.tracks).toHaveLength(1);
     expect(a.tracks[0].pieces).toContain("s0p1");
+    expect(a.tracks[0].platformLength).toBe(getAccessory("kato:SIDE-A").length);
     expect(stations.map((s) => s.defaultName)).toEqual(["A駅", "B駅"]);
   });
 
@@ -52,6 +57,7 @@ describe("operation: stations", () => {
     expect(stations).toHaveLength(1);
     // 画面の上の線路から 1番線
     expect(stations[0].tracks.map((t) => t.pieces)).toEqual([["upper"], ["lower"]]);
+    expect(stations[0].tracks.map((t) => t.platformLength)).toEqual([def.length, def.length]);
   });
 });
 
@@ -143,6 +149,47 @@ describe("operation: schedule", () => {
     const stations = detectStations(pieces, accessories);
     const r = computeSchedule(pieces, stations, { stationNames: {}, trains: [train({ id: "t1" }, ["accA", "gone"])] });
     expect(r.trains[0].errors[0]).toContain("レイアウトにない駅");
+  });
+});
+
+describe("operation: consist length and platforms", () => {
+  it("warns when the consist is longer than a platform it stops at", () => {
+    const { pieces, accessories } = layout();
+    const stations = detectStations(pieces, accessories);
+    const ids = stations.map((s) => s.id);
+    const short = computeSchedule(pieces, stations, { stationNames: {}, trains: [train({ id: "a", cars: 1 }, ids)] }).trains[0];
+    expect(short.warnings).toEqual([]);
+    const long = computeSchedule(pieces, stations, { stationNames: {}, trains: [train({ id: "a", cars: 3 }, ids)] }).trains[0];
+    expect(long.warnings.some((w) => w.includes("ホーム（約248mm・1両まで）より編成（3両"))).toBe(true);
+  });
+
+  it("finds the shortest platform among the stations the train stops at (not the ones it passes)", () => {
+    const long = getAccessory("kato:SIDE").length;
+    // 6両編成用のホームセットには6両が収まる
+    expect(carsFitting(long)).toBe(6);
+    const st = (id: string, platformLength: number): Station => ({
+      id,
+      defaultName: id,
+      platforms: [id],
+      tracks: [{ number: 1, pieces: [], platformLength }],
+      x: 0,
+      y: 0,
+    });
+    const stations = [st("A", 248), st("B", long)];
+    const ev = (stationId: string, pass: boolean) => ({ stationId, track: 1, arr: 0, dep: 0, pass, lap: 0 });
+    expect(platformLimit({ events: [ev("B", false), ev("A", false), ev("B", false)] }, stations)).toMatchObject({ maxCars: 1, stationId: "A" });
+    expect(platformLimit({ events: [ev("B", false), ev("A", true), ev("B", false)] }, stations)).toMatchObject({ maxCars: 6, stationId: "B" });
+    expect(platformLimit({ events: [] }, stations)).toBeNull();
+  });
+
+  it("shortens only the trains that do not fit", () => {
+    const { pieces, accessories } = layout();
+    const stations = detectStations(pieces, accessories);
+    const ids = stations.map((s) => s.id);
+    const plan: OperationPlan = { stationNames: {}, trains: [train({ id: "a", cars: 5 }, ids), train({ id: "b", cars: 1, departSec: 300 }, ids)] };
+    const { plan: fitted, changed } = fitCarsToPlatforms(plan, computeSchedule(pieces, stations, plan), stations);
+    expect(changed).toEqual(["a"]);
+    expect(fitted.trains.map((t) => t.cars)).toEqual([1, 1]);
   });
 });
 

@@ -49,7 +49,8 @@ describe("operation AI", () => {
     const { pieces, accessories } = layout();
     const stations = stationsFor(pieces, accessories);
     const text = describeLayout(pieces, stations, { accA: "東町" });
-    expect(text).toContain("S1 東町: 1番線（約248mm・1両まで）");
+    expect(text).toContain("S1 東町: 1番線（ホーム約248mm・1両まで／線路約248mm）");
+    expect(text).toContain("全部の駅に停車する列車は1両まで");
     expect(text).toMatch(/S1→S2: \d+秒/);
     expect(text).toMatch(/S2→S1: \d+秒/);
     expect(text).toMatch(/- S1: \d+秒/);
@@ -87,6 +88,15 @@ describe("operation AI", () => {
     expect(session.prompts[1]).toContain("支障");
     expect(session.prompts[1]).toContain("参考: アプリで計算した時刻");
     expect(r.usage.inputTokens).toBe(20);
+  });
+
+  it("shortens a consist longer than the platforms it stops at", async () => {
+    const { pieces, accessories } = layout();
+    const session = fakeSession([{ summary: "長い編成", trains: [{ ...train("101", 0), cars: 6 }] }]);
+    const r = await proposeOperation({ pieces, accessories, stationNames: {}, request: "" }, session, "fake");
+    expect(r.attempts).toBe(1);
+    expect(r.plan.trains[0].cars).toBe(1);
+    expect(r.remainingProblems).toBeNull();
   });
 
   it("asks again when the output is not in the format", async () => {
