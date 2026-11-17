@@ -1284,7 +1284,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
               <p className="hint">
                 {replicaKind === "line"
                   ? "複線・単線、高架やトンネル、カーブなど路線の特徴と、沿線の有名なストラクチャーを再現します。"
-                  : "ホームの形（島式・対向式）や番線数、駅舎の形を再現します。"}
+                  : "ホームの形（島式・対向式）や番線数、駅舎の形を再現します。複数の路線が乗り入れる駅は、それぞれの路線を再現します。"}
                 製品にない物は点線の「仮」オブジェクト（シミュレーション上のみ）で置きます。
               </p>
             </>
@@ -1359,6 +1359,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
                       {p.replica && (
                         <p className="hint">
                           再現: {p.replica.target}（再現度: {REPLICA_LEVEL_LABELS[p.replica.level ?? "standard"]}）
+                          {p.replica.lines && p.replica.lines.length > 0 && ` ／ ${p.replica.lines.length}路線`}
                           {p.sims && p.sims.length > 0 && ` ／ 仮オブジェクト ${p.sims.length}個（シミュレーション上のみ）`}
                         </p>
                       )}
@@ -1418,6 +1419,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
                   <strong>
                     再現してみた: {layout.replica.target}（{REPLICA_KIND_LABELS[layout.replica.kind]}・再現度: {REPLICA_LEVEL_LABELS[layout.replica.level ?? "standard"]}）
                   </strong>
+                  {layout.replica.lines && layout.replica.lines.length > 0 && (
+                    <p className="hint">乗り入れ路線: {layout.replica.lines.join("、")}</p>
+                  )}
                   {layout.replica.features.length > 0 && (
                     <ul>
                       {layout.replica.features.map((f, i) => (

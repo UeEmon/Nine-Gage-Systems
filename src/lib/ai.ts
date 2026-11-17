@@ -429,7 +429,10 @@ ${
             kind: replica.kind,
             level: replica.level ?? "standard",
             target: best.plan.replica.target.trim() || replica.name,
-            features: best.plan.replica.features.map((f) => f.trim()).filter(Boolean).slice(0, 8),
+            features: best.plan.replica.features.map((f) => f.trim()).filter(Boolean).slice(0, 10),
+            ...(replica.kind === "station" && best.plan.replica.lines?.length
+              ? { lines: best.plan.replica.lines.map((l) => l.trim().slice(0, 40)).filter(Boolean).slice(0, 12) }
+              : {}),
           }
         : null,
     attempts,
