@@ -184,6 +184,44 @@ async function readJson(res: Response): Promise<any> {
   }
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** バックグラウンドの提案の状態を問い合わせる間隔(ms) */
+const JOB_POLL_MS = 3000;
+/** 問い合わせが続けて失敗してもあきらめない回数（通信が一時的に切れたとき） */
+const JOB_POLL_RETRIES = 5;
+
+/**
+ * /api/propose に background: true で頼んだ応答から、作業が終わるのを待って結果を返す。
+ * 時間のかかる提案（忠実モードなど）でも、1つのリクエストを長くつなぎっぱなしにしない。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- res.json() と同じく中身の型は呼び出し側で扱う
+async function waitProposeJob(res: Response): Promise<any> {
+  let data = await readJson(res);
+  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+  if (typeof data.jobId !== "string") return data;
+  const url = `/api/propose/jobs/${encodeURIComponent(data.jobId)}`;
+  let failures = 0;
+  for (;;) {
+    await sleep(JOB_POLL_MS);
+    let r: Response;
+    try {
+      r = await fetch(url, { cache: "no-store" });
+    } catch (err) {
+      if (++failures > JOB_POLL_RETRIES) throw err;
+      continue;
+    }
+    data = await readJson(r);
+    if (!r.ok) {
+      // 502/504 はサーバーの更新中など一時的なことがあるので、少し待って問い合わせ直す
+      if ((r.status === 502 || r.status === 503 || r.status === 504) && ++failures <= JOB_POLL_RETRIES) continue;
+      throw new Error(data.error ?? `HTTP ${r.status}`);
+    }
+    failures = 0;
+    if (data.status !== "running") return data;
+  }
+}
+
 /** 再現度「忠実」で提案を始める前の確認 */
 const FAITHFUL_CONFIRM = [
   "再現度「忠実」で作ります。",
@@ -650,10 +688,10 @@ export function Editor({ user }: { user: SessionUser | null }) {
           budgetJpy,
           ...(aiMode === "replica" ? { replica: { kind: replicaKind, name: replicaName.trim(), level: replicaLevel } } : {}),
           fresh,
+          background: true,
         }),
       });
-      const data = await readJson(res);
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const data = await waitProposeJob(res);
       const patterns = data.patterns as ProposedPattern[];
       const first = patterns.findIndex((p) => p.ok);
       setAi({ status: "done", provider: data.provider, mode: data.mode, budgetJpy: data.budgetJpy ?? null, patterns, shown: first });
@@ -1386,7 +1424,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
             </p>
           )}
           <button className="primary" onClick={() => runAi()} disabled={ai.status === "loading"}>
-            {ai.status === "loading" ? "設計中…（1〜3分かかります）" : "提案してもらう"}
+            {ai.status === "loading"
+              ? aiMode === "replica" && replicaLevel === "faithful"
+                ? "設計中…（忠実は5〜15分かかることがあります）"
+                : "設計中…（1〜3分かかります）"
+              : "提案してもらう"}
           </button>
           <p className="hint">今のボードの大きさで設計し、1つ目の案がキャンバスに表示されます（編集中の線路は置き換わります）。</p>
           {ai.status === "error" && <p className="error">{ai.message}</p>}

@@ -6,6 +6,7 @@ import { emptyUsage } from "@/lib/llm/types";
 import { logUsage, priced, usageLog, type NewUsage } from "@/lib/server/aiUsage";
 import { aiLayouts } from "@/lib/server/aiLayouts";
 import { cacheKey } from "@/lib/server/proposeCache";
+import { startProposeJob } from "@/lib/server/proposeJobs";
 import { requireUser } from "@/lib/server/auth";
 import { settingsForUser, type KeySource } from "@/lib/server/ownAi";
 import { MAKERS } from "@/lib/parts";
@@ -16,10 +17,15 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * 応答を返すまでの持ち時間(ms)。サーバー（Node の requestTimeout は既定300秒）やブラウザが
+ * その場で待つときの持ち時間(ms)。サーバー（Node の requestTimeout は既定300秒）やブラウザが
  * 先に接続を切ると、画面には中身のないエラーしか出ないので、それより前に返す。
  */
 const TIME_BUDGET_MS = 230_000;
+/**
+ * バックグラウンドで作るとき（画面は background: true で頼み、状態を問い合わせる）の持ち時間(ms)。
+ * 忠実モードは1回の応答だけで数分かかることがあり、出し直しの分も含めて待てるようにする。
+ */
+const BACKGROUND_TIME_BUDGET_MS = 15 * 60 * 1000;
 
 const BodySchema = z.object({
   board: z.object({
@@ -47,6 +53,8 @@ const BodySchema = z.object({
   budgetJpy: z.number().int().min(0).max(10_000_000).optional(),
   /** true なら保存済みの結果を使わず、AIに作り直してもらう */
   fresh: z.boolean().default(false),
+  /** true ならすぐ作業の id を返し、結果は /api/propose/jobs/[id] で受け取る */
+  background: z.boolean().default(false),
 });
 
 /** 2つ目以降の案を送る前に、1つ目の応答の開始（＝プロンプトキャッシュの書き込み）を待つ上限 */
@@ -111,7 +119,7 @@ const REPLICA_LEVEL_HINTS: Record<Exclude<ReplicaLevel, "standard">, string[]> =
 export async function POST(req: Request) {
   const g = await requireUser(req);
   if (!g.ok) return g.response;
-  const deadline = Date.now() + TIME_BUDGET_MS;
+  const received = Date.now();
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(
@@ -119,6 +127,18 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (parsed.data.background) {
+    const body = parsed.data;
+    const jobId = startProposeJob(g.user.id, () => propose(g, body, received + BACKGROUND_TIME_BUDGET_MS));
+    return Response.json({ jobId }, { status: 202 });
+  }
+  return propose(g, parsed.data, received + TIME_BUDGET_MS);
+}
+
+type Guarded = Extract<Awaited<ReturnType<typeof requireUser>>, { ok: true }>;
+
+async function propose(g: Guarded, body: z.infer<typeof BodySchema>, deadline: number): Promise<Response> {
+  const parsed = { data: body };
   const { board, request, maker, mode, inventory, patterns, fresh } = parsed.data;
   const replica = mode === "replica" ? parsed.data.replica : undefined;
   if (mode === "replica" && !replica) {

@@ -69,6 +69,7 @@
 /src/lib/server/aiUsage.ts @UeEmon
 /src/lib/server/ownAi.ts @UeEmon
 /src/lib/server/proposeCache.ts @UeEmon
+/src/lib/server/proposeJobs.ts @UeEmon
 /src/lib/server/aiLayouts.ts @UeEmon
 /src/lib/server/papercraft.ts @UeEmon
 /src/app/api/propose/ @UeEmon
@@ -88,6 +89,7 @@
 /tests/ai.test.ts @UeEmon
 /tests/anthropicStream.test.ts @UeEmon
 /tests/cache.test.ts @UeEmon
+/tests/proposeJobs.test.ts @UeEmon
 /tests/aiLayouts.test.ts @UeEmon
 /tests/replica.test.ts @UeEmon
 /tests/papercraft.test.ts @UeEmon
