@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-17-ai-cutoff-retry",
+    date: "2026-11-17T20:00:00+09:00",
+    title: "Claude のAI提案が「JSONの解析に失敗」で止まることがあったのを直しました",
+    body: "部品の多い案（「再現してみた」の忠実モードなど）で、Claude の答えが長すぎて途中で切れると「Failed to parse structured output」というエラーで提案が止まっていました。今は答えが切れても自動で簡潔に出し直します。一度に出せる答えの長さも広げたので、切れること自体も減ります。",
+  },
+  {
     id: "2026-11-17-replica-level",
     date: "2026-11-17T07:00:00+09:00",
     title: "「再現してみた」で再現度（雰囲気・標準・忠実）を選べるようになりました",

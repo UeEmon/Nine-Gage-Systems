@@ -25,6 +25,22 @@ export function usageFromAnthropic(u: Anthropic.Beta.BetaUsage | undefined): Tok
 }
 
 /**
+ * 1回の応答の出力上限。思考（effort: high）もここに含まれる。
+ * 「再現してみた」の忠実モードなど部品が多い案では 16000 で切れることがあったため広げた。
+ * 上限は使った分だけ課金されるので、広げても普段の費用は変わらない。
+ */
+export const MAX_TOKENS = 32000;
+
+function parseJson(text: string): unknown | null {
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Claude 用セッション。構造化出力（zod）で部品の並びを受け取る。
  * 会話は追記のみで、思考ブロックを含む応答をそのまま履歴に戻す。
  *
@@ -47,15 +63,21 @@ export function createAnthropicSession(
   const system: Anthropic.Beta.BetaTextBlockParam[] = [
     { type: "text", text: opts.system, cache_control: systemCacheControl(env) },
   ];
-  const format = betaZodOutputFormat(opts.zodSchema);
+  // JSONの解釈はこちらで行う。SDKに任せる（parse 付きで渡す）と、出力が上限で途中で切れたときや
+  // 空のときに finalMessage() が例外を投げ、出し直しの処理まで届かない。
+  const { parse: _parse, ...format } = betaZodOutputFormat(opts.zodSchema);
+  // 途中で切れた応答は履歴に残さず、その依頼を次の依頼の前に付けて送り直す
+  let carryOver = "";
 
   return {
     async ask(userText: string): Promise<AskResult> {
-      messages.push({ role: "user", content: userText });
+      const content = carryOver ? `${carryOver}\n\n${userText}` : userText;
+      carryOver = "";
+      messages.push({ role: "user", content });
       // ストリーミングで受け取り、応答の開始（＝キャッシュが読めるようになった時点）を知らせる
       const stream = client.beta.messages.stream({
         model: settings.model,
-        max_tokens: 16000,
+        max_tokens: MAX_TOKENS,
         ...(supportsFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
         cache_control: { type: "ephemeral" },
         system,
@@ -70,13 +92,20 @@ export function createAnthropicSession(
         }
       });
       const response = await stream.finalMessage();
-      messages.push({ role: "assistant", content: response.content });
       const text = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+      const truncated = response.stop_reason === "max_tokens";
+      if (truncated) {
+        // 途中で切れた思考・出力を履歴に戻すと次の呼び出しが拒否されることがあり、入力も無駄に増える
+        messages.pop();
+        carryOver = content;
+      } else {
+        messages.push({ role: "assistant", content: response.content });
+      }
       return {
-        json: response.parsed_output ?? null,
+        json: truncated ? null : parseJson(text),
         text,
         refused: response.stop_reason === "refusal",
-        truncated: response.stop_reason === "max_tokens",
+        truncated,
         usage: usageFromAnthropic(response.usage),
       };
     },
