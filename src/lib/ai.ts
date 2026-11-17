@@ -384,6 +384,7 @@ ${
   let best: { plan: LayoutPlan; result: ReturnType<typeof checkPlan>; score: number } | null = null;
   let attempts = 0;
   let lastText = "";
+  let lastTruncated = false;
   let usage = emptyUsage();
   /** 直前のAIの応答にかかった時間(ms) */
   let lastDuration = 0;
@@ -400,6 +401,7 @@ ${
     lastDuration = Date.now() - askStarted;
     usage = addUsage(usage, answer.usage);
     lastText = answer.text;
+    lastTruncated = !!answer.truncated;
     if (answer.refused) {
       throw new ProposeError("AIがこの依頼への回答を控えました。要望の書き方を変えてお試しください。", usage);
     }
@@ -424,7 +426,9 @@ ${
 
   if (!best && timedOut) {
     throw new ProposeError(
-      "時間内に作れませんでした。出す案の数を減らすか、再現度を下げる・要望を小さくしてお試しください。",
+      lastTruncated
+        ? "AIの出力が長すぎて途中で切れ、時間内に作り直せませんでした。範囲を絞る（要望に「○○駅の構内だけ」などと書く）か、再現度を下げてお試しください。"
+        : "時間内に作れませんでした。出す案の数を減らすか、再現度を下げる・要望を小さくしてお試しください。",
       usage,
     );
   }
