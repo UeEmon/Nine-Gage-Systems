@@ -284,6 +284,8 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [hideOthers, setHideOthers] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showDrive, setShowDrive] = useState(false);
+  /** 運行計画の画面から運転席を開いたときに乗る列車（null は自由に運転） */
+  const [driveTrainId, setDriveTrainId] = useState<string | null>(null);
   const [showOperation, setShowOperation] = useState(false);
   const [showTwin, setShowTwin] = useState(false);
   const twinVisible = user?.role === "admin";
@@ -1273,7 +1275,10 @@ export function Editor({ user }: { user: SessionUser | null }) {
           </button>
           <button
             className={showDrive ? "on" : ""}
-            onClick={() => setShowDrive(true)}
+            onClick={() => {
+              setDriveTrainId(null);
+              setShowDrive(true);
+            }}
             disabled={layout.pieces.length === 0}
             title="線路の上を運転席の視点で走る3Dの映像（選択中の部品から走り始めます）"
           >
@@ -1315,13 +1320,18 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <button onClick={() => fitView(b)}>全体表示</button>
         </div>
       </main>
-      {showDrive && <DriveView layout={layout} startUid={selectedUid} onClose={() => setShowDrive(false)} />}
+      {showDrive && <DriveView layout={layout} startUid={selectedUid} planTrainId={driveTrainId} onClose={() => setShowDrive(false)} />}
       {showOperation && (
         <OperationView
           layout={layout}
           elevation={analysis.elevation}
           canUseAi={!!user}
           onChange={(operation) => setLayout((l) => ({ ...l, operation }))}
+          onRide={(trainId) => {
+            setShowOperation(false);
+            setDriveTrainId(trainId);
+            setShowDrive(true);
+          }}
           onClose={() => setShowOperation(false)}
         />
       )}

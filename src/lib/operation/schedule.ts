@@ -27,9 +27,36 @@ export type StopEvent = {
 /** 部品の経路を通った記録（列車の走行距離 s と時刻） */
 export type Traversal = { uid: string; routeIndex: number; from: number; to: number };
 
+/**
+ * 列車の動き（運転席の映像や、ほかの列車を動かすのに使う）。
+ * 列車は区間の並び（run）の上を走る。折り返すたびに新しい並びになる。
+ */
+export type MotionRun = {
+  /** 走る区間の並び（進む向き） */
+  refs: SegmentRef[];
+  /** この並びを使い始める時刻（最初の並びは -Infinity） */
+  startT: number;
+  /** この並びを使い始めるときの走行距離 s */
+  startS: number;
+  /** そのときの先頭の位置（refs の先頭からの距離, mm） */
+  frontAt: number;
+};
+
+export type TrainMotion = {
+  /** 最高速度(mm/s) */
+  speed: number;
+  /** 編成の長さ(mm) */
+  length: number;
+  runs: MotionRun[];
+  /** 止まる所（通過は含めない）。s は走行距離、arr 着・dep 発（終着は Infinity）。最初は始発駅 */
+  stops: { s: number; arr: number; dep: number }[];
+};
+
 export type TrainSchedule = {
   trainId: string;
   events: StopEvent[];
+  /** 列車の動き（始発駅に置けなかったときは null） */
+  motion: TrainMotion | null;
   /** 部品ごとに列車がいる時間（先頭が入ってから最後尾が出るまで） */
   occupancy: Traversal[];
   errors: string[];
@@ -195,9 +222,40 @@ function originCandidates(cache: SegCache, station: Station, track: number | nul
   return out.sort((a, b) => a.d - b.d);
 }
 
-function reversePos(cache: SegCache, pos: Pos): Pos {
-  const seg = cache.get({ uid: pos.seg.uid, routeIndex: pos.seg.routeIndex, reverse: !pos.seg.reverse });
-  return { seg, offset: seg.length - pos.offset };
+/**
+ * 折り返し。区間の並び refs の front の位置に先頭がある編成（長さ len）の向きを変え、
+ * 最後尾を新しい先頭にする。新しい並び（逆向き。いまの編成が乗っている区間を含む）と、その中の先頭の位置を返す。
+ * 来た道が編成より短ければ（始発駅で折り返すなど）、線路のつながりをたどって足す
+ */
+function turnAround(cache: SegCache, refs: SegmentRef[], front: number, len: number): { refs: SegmentRef[]; frontAt: number; pos: Pos } {
+  const segs = refs.map((r) => cache.get({ ...r, reverse: !r.reverse })).reverse();
+  const total = segs.reduce((a, g) => a + g.length, 0);
+  const want = total - front + len;
+  let acc = 0;
+  for (let guard = 0; guard < 200; guard++) {
+    let i = 0;
+    acc = 0;
+    while (i < segs.length && acc + segs[i].length < want) acc += segs[i++].length;
+    if (i < segs.length) {
+      const kept = segs.slice(0, i + 1);
+      return {
+        refs: kept.map((g) => ({ uid: g.uid, routeIndex: g.routeIndex, reverse: g.reverse })),
+        frontAt: want,
+        pos: { seg: segs[i], offset: want - acc },
+      };
+    }
+    const next = nextOptions(cache.graph, segs[segs.length - 1]);
+    if (!next.length) break;
+    segs.push(cache.get(next[0]));
+  }
+  // 行き止まり：つながりの端を先頭にする
+  const lastSeg = segs[segs.length - 1];
+  const sum = segs.reduce((a, g) => a + g.length, 0);
+  return {
+    refs: segs.map((g) => ({ uid: g.uid, routeIndex: g.routeIndex, reverse: g.reverse })),
+    frontAt: sum,
+    pos: { seg: lastSeg, offset: lastSeg.length },
+  };
 }
 
 function targetsFor(station: Station, track: number | null): Map<number, Set<string>> {
@@ -212,7 +270,7 @@ function scheduleTrain(
   stations: Map<string, Station>,
   stationName: (id: string) => string,
 ): TrainSchedule {
-  const result: TrainSchedule = { trainId: train.id, events: [], occupancy: [], errors: [], warnings: [] };
+  const result: TrainSchedule = { trainId: train.id, events: [], motion: null, occupancy: [], errors: [], warnings: [] };
   const stops: { stop: TrainStop; lap: number }[] = [];
   for (let lap = 0; lap < train.laps; lap++) for (const stop of train.stops) stops.push({ stop, lap });
   if (stops.length === 0) {
@@ -265,6 +323,13 @@ function scheduleTrain(
   result.events.push({ stationId: origin.id, track: start.track, arr: null, dep: t, pass: false, lap: 0 });
   const traversals: Traversal[] = [];
   let curFrom = -pos.offset;
+  // 動き：今の並び。pos.seg はいつも並びの最後の区間
+  const toRef = (g: Segment): SegmentRef => ({ uid: g.uid, routeIndex: g.routeIndex, reverse: g.reverse });
+  let run: MotionRun = { refs: [toRef(pos.seg)], startT: -Infinity, startS: 0, frontAt: pos.offset };
+  const runs: MotionRun[] = [run];
+  /** 並びの中の先頭の位置（並びの最初からの距離） */
+  const frontIn = (r: MotionRun) => r.refs.slice(0, -1).reduce((a, x) => a + cache.get(x).length, 0) + pos.offset;
+  const stopsMotion: TrainMotion["stops"] = [{ s: 0, arr: t - dwell0, dep: t }];
 
   for (let i = 1; i < stops.length; i++) {
     const { stop, lap } = stops[i];
@@ -289,6 +354,7 @@ function scheduleTrain(
       const w = `${stationName(st.id)} ${leg.track}番線は編成（${train.cars}両・約${Math.round(len)}mm）より短い線路です（約${Math.round(leg.trackLength)}mm）`;
       if (!result.warnings.includes(w)) result.warnings.push(w);
     }
+    for (let k = 1; k < leg.path.length; k++) run.refs.push(toRef(leg.path[k]));
     s += leg.distance;
     t += leg.distance / v;
     const isLast = i === stops.length - 1;
@@ -296,16 +362,21 @@ function scheduleTrain(
     const arr = t;
     const dep = isLast ? null : t + dwell;
     marks.push({ s, arr, dep: dep ?? Infinity });
+    if (!stop.pass) stopsMotion.push({ s, arr, dep: dep ?? Infinity });
     result.events.push({ stationId: st.id, track: leg.track, arr: stop.pass ? null : arr, dep: stop.pass ? arr : dep, pass: stop.pass, lap });
     t = dep ?? t;
     pos = leg.end;
     if (stop.turnback && !isLast) {
-      // 向きを変える：今いる区間を逆向きにして走り出す（ここまでの部品は、編成が離れるまで使用中のまま）
+      // 向きを変える：最後尾が新しい先頭になって走り出す（ここまでの部品は、編成が離れるまで使用中のまま）
       traversals.push({ uid: pos.seg.uid, routeIndex: pos.seg.routeIndex, from: curFrom, to: s });
-      pos = reversePos(cache, pos);
+      const turned = turnAround(cache, run.refs, frontIn(run), len);
+      pos = turned.pos;
+      run = { refs: turned.refs, startT: t, startS: s, frontAt: turned.frontAt };
+      runs.push(run);
       curFrom = s;
     }
   }
+  result.motion = { speed: v, length: len, runs, stops: stopsMotion };
   // 最後の区間（停止位置のある部品）。終着後はそこに留まる
   traversals.push({ uid: pos.seg.uid, routeIndex: pos.seg.routeIndex, from: curFrom, to: s });
 

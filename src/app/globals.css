@@ -585,3 +585,14 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 @media (prefers-color-scheme: dark) {
   .sim-label { fill: #d5b3f0; }
 }
+.drive-stage canvas.drive-map { position: absolute; right: 12px; bottom: 12px; width: 240px; height: auto; border-radius: 8px; background: rgba(10, 14, 12, 0.55); cursor: pointer; }
+.drive-plan-hud .speed b { font-size: 26px; }
+.drive-clock input { width: 220px; }
+.drive-ride { display: flex; gap: 6px; align-items: center; }
+.drive-ride select { width: auto; }
+@media (max-width: 700px) {
+  .drive-stage canvas.drive-map { width: 140px; }
+  .drive-clock input { width: 140px; }
+}
+.op-head button + button { margin-left: 0; }
+.op-head button.primary { width: auto; margin-top: 0; }
