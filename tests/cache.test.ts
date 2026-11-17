@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { costUsd, costWithoutCacheUsd, priceFor, priceTable } from "../src/lib/llm/pricing";
 import { cacheHitRate, jstDay, priced, summarize, UsageLog, usageView, type NewUsage } from "../src/lib/server/aiUsage";
-import { cacheKey, proposeCacheTtlMs, ResultCache, stableStringify } from "../src/lib/server/proposeCache";
+import { cacheKey, stableStringify } from "../src/lib/server/proposeCache";
 
 describe("proposal result cache", () => {
   it("makes the same key for the same input regardless of key order", () => {
@@ -13,27 +13,6 @@ describe("proposal result cache", () => {
     expect(a).toBe(b);
     expect(cacheKey({ request: "x" })).not.toBe(cacheKey({ request: "y" }));
     expect(stableStringify({ b: 1, a: [1, { d: 2, c: 3 }] })).toBe('{"a":[1,{"c":3,"d":2}],"b":1}');
-  });
-
-  it("expires entries and keeps at most 200", () => {
-    let now = 0;
-    const cache = new ResultCache<number>(() => 1000, () => now);
-    cache.set("k", 1);
-    expect(cache.get("k")).toBe(1);
-    now = 1000;
-    expect(cache.get("k")).toBeUndefined();
-    for (let i = 0; i < 250; i++) cache.set(`k${i}`, i);
-    expect(cache.size).toBe(200);
-    expect(cache.get("k0")).toBeUndefined();
-    expect(cache.get("k249")).toBe(249);
-  });
-
-  it("can be turned off", () => {
-    expect(proposeCacheTtlMs({})).toBe(60 * 60_000);
-    expect(proposeCacheTtlMs({ PROPOSE_CACHE_TTL_MIN: "0" })).toBe(0);
-    const cache = new ResultCache<number>(() => 0);
-    cache.set("k", 1);
-    expect(cache.get("k")).toBeUndefined();
   });
 });
 

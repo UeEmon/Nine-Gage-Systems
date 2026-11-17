@@ -275,6 +275,9 @@ button.link:hover { text-decoration: underline; }
 .patterns li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
 .patterns li.on button.link { font-weight: 700; }
 .patterns .actions { margin-left: auto; }
+.ai-history { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.ai-history > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.ai-history-list { max-height: 320px; overflow-y: auto; }
 
 /* 新機能のお知らせ */
 .notice-bell { position: relative; }

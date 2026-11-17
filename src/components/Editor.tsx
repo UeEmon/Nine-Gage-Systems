@@ -29,6 +29,7 @@ import { LevelProfile } from "./LevelProfile";
 import { PartIcon } from "./PartIcon";
 import { PartDetail } from "./PartDetail";
 import { InventoryPanel, yen } from "./InventoryPanel";
+import { AiHistoryPanel, type AiLayoutEntry } from "./AiHistoryPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { OperationView } from "./operation/OperationView";
 import { TwinView } from "./twin/TwinView";
@@ -94,8 +95,10 @@ type ProposedPattern =
       model: string;
       hint: string | null;
       shortfall: Shortfall;
-      /** 同じ条件の前回の結果をそのまま返した（AIは呼んでいない） */
+      /** 同じ条件で前に作った案を自動保存から返した（AIは呼んでいない） */
       cached?: boolean;
+      /** 自動保存した日時（ISO）。保存できなかったときは null */
+      savedAt?: string | null;
     }
   | { ok: false; error: string };
 
@@ -196,6 +199,8 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [detailKey, setDetailKey] = useState<string | null>(null);
   const [request, setRequest] = useState("エンドレスに待避線を1本。駅を置けるスペースもほしい");
   const [ai, setAi] = useState<AiState>({ status: "idle" });
+  /** 「AIで作ったレイアウト」の一覧を読み直すための番号 */
+  const [aiHistoryVersion, setAiHistoryVersion] = useState(0);
   const [aiMode, setAiMode] = useState<AiMode>("free");
   const [patternCount, setPatternCount] = useState(1);
   /** 追加購入の予算上限（円）。空なら制限なし */
@@ -642,7 +647,25 @@ export function Editor({ user }: { user: SessionUser | null }) {
       }
     } catch (err) {
       setAi({ status: "error", message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setAiHistoryVersion((v) => v + 1);
     }
+  };
+
+  /** 自動保存の1件を、AI提案の1案の形にする */
+  const entryPattern = (e: AiLayoutEntry): Extract<ProposedPattern, { ok: true }> =>
+    ({ ...(e.value as object), ok: true }) as Extract<ProposedPattern, { ok: true }>;
+  /** 自動保存の1件のボードとメーカー（頼んだときのもの。忠実はできた形に合わせたボード） */
+  const entryBase = (e: AiLayoutEntry) => ({
+    maker: ((MAKERS as readonly string[]).includes(e.maker) ? e.maker : "kato") as Maker,
+    board: e.input?.board ?? e.board,
+  });
+
+  const openAiLayout = (e: AiLayoutEntry) => {
+    setLayout((l) => ({ ...l, ...entryBase(e), ...patternLayout(entryPattern(e)) }));
+    setSelection(null);
+    setCurrentId(null);
+    setAi((a) => (a.status === "done" ? { ...a, shown: -1 } : a));
   };
 
   /** 仮オブジェクトの展開図をジェネレーターに作ってもらい、印刷用の画面を開く */
@@ -689,6 +712,18 @@ export function Editor({ user }: { user: SessionUser | null }) {
       layout: { maker, board: layout.board, ...patternLayout(p) },
     };
     setLibrary((ps) => [saved, ...ps]);
+  };
+
+  const saveAiLayout = (e: AiLayoutEntry) => {
+    const p = entryPattern(e);
+    const saved: SavedPattern = {
+      id: `pat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      name: p.plan.title,
+      savedAt: new Date().toISOString(),
+      layout: { ...entryBase(e), ...patternLayout(p) },
+    };
+    setLibrary((ps) => [saved, ...ps]);
+    alert(`「${saved.name}」をパターンに登録しました`);
   };
 
   const selectedPiece = selectedUid ? layout.pieces.find((p) => p.uid === selectedUid) : undefined;
@@ -1337,7 +1372,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
           {ai.status === "error" && <p className="error">{ai.message}</p>}
           {ai.status === "done" && ai.patterns.some((p) => p.ok && p.cached) && (
             <p className="hint">
-              前回と同じ条件なので、保存しておいた案を表示しています（AIは使っていません）。
+              {(() => {
+                const at = ai.patterns.find((p) => p.ok && p.cached && p.savedAt);
+                const when = at?.ok && at.savedAt ? `${new Date(at.savedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}に` : "前に";
+                return `同じ条件で${when}作った案を、自動保存から表示しています（AIは使っていないのでトークンはかかりません）。`;
+              })()}
               <button type="button" className="link-button" onClick={() => runAi(true)}>
                 新しく作り直す
               </button>
@@ -1402,6 +1441,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
               ))}
             </ol>
           )}
+          <AiHistoryPanel version={aiHistoryVersion} onOpen={openAiLayout} onSave={saveAiLayout} />
             </>
           ) : (
             <div className="guest-ai">

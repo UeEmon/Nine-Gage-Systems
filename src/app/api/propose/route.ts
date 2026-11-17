@@ -4,7 +4,8 @@ import { usageOf } from "@/lib/bom";
 import { createSession, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
 import { emptyUsage } from "@/lib/llm/types";
 import { logUsage, priced, usageLog, type NewUsage } from "@/lib/server/aiUsage";
-import { cacheKey, proposeCache } from "@/lib/server/proposeCache";
+import { aiLayouts } from "@/lib/server/aiLayouts";
+import { cacheKey } from "@/lib/server/proposeCache";
 import { requireUser } from "@/lib/server/auth";
 import { settingsForUser, type KeySource } from "@/lib/server/ownAi";
 import { MAKERS } from "@/lib/parts";
@@ -144,12 +145,11 @@ export async function POST(req: Request) {
   const stock = stockMode === "free" && counts.size === 0 ? undefined : { counts, mode: stockMode };
   const opts = sessionOptions(maker, !!replica);
 
-  // 同じ人・同じAI設定・同じ条件なら、前の結果をそのまま返す（AIを呼ばない）
+  // 同じ人・同じAI（プロバイダとモデル）・同じ条件で作ったレイアウトが自動保存にあれば、それを返す（AIを呼ばない）。
+  // アプリの更新でAIへの指示が変わっても、保存済みはそのまま使う（作り直しは画面の「新しく作り直す」から）
   const keyFor = (hint: string | undefined) =>
     cacheKey({
-      user: g.user.id,
-      ai: { provider: settings.provider, model: settings.model, baseUrl: settings.baseUrl, keySource },
-      prompt: opts.system,
+      ai: { provider: settings.provider, model: settings.model },
       board,
       request: request.trim(),
       maker,
@@ -159,9 +159,17 @@ export async function POST(req: Request) {
       replica,
       hint,
     });
+  const lookup = (key: string) => {
+    try {
+      return aiLayouts.find<ProposedValue>(g.user.id, key);
+    } catch (err) {
+      console.error("ai-layouts: read failed", err);
+      return undefined;
+    }
+  };
   const tasks = hints.map((hint) => {
     const key = keyFor(hint);
-    return { hint, key, cached: fresh ? undefined : (proposeCache.get(key) as ProposedValue | undefined) };
+    return { hint, key, cached: fresh ? undefined : lookup(key) };
   });
 
   // Claude は応答が始まるまでキャッシュを読めないので、複数案のときは1つ目の応答が始まってから残りを送る
@@ -192,7 +200,7 @@ export async function POST(req: Request) {
     tasks.map(async (t) => {
       if (t.cached) {
         await record({ attempts: 0, resultCached: true, ok: true, usage: emptyUsage() });
-        return { ...t.cached, cached: true };
+        return { ...t.cached.value, cached: true, savedId: t.cached.id, savedAt: t.cached.createdAt };
       }
       const isFirst = t === misses[0];
       if (stagger && !isFirst) await firstStarted;
@@ -220,8 +228,29 @@ export async function POST(req: Request) {
           );
         }
         const value = { ...result, hint: t.hint ?? null, shortfall: sf, budgetJpy: budgetJpy ?? null };
-        proposeCache.set(t.key, value);
-        return { ...value, cached: false };
+        let saved: { id: string; createdAt: string } | null = null;
+        try {
+          saved = aiLayouts.add(
+            g.user.id,
+            t.key,
+            {
+              title: result.plan.title,
+              mode,
+              maker,
+              target: replica?.name ?? null,
+              board: result.board ?? board,
+              pieces: result.pieces.length,
+              model: result.model,
+              hint: t.hint ?? null,
+            },
+            { board, request: request.trim(), maker, mode, budgetJpy: budgetJpy ?? null, replica: replica ?? null, hint: t.hint ?? null },
+            value,
+          );
+        } catch (err) {
+          // 保存できなくても、できた案はそのまま返す
+          console.error("ai-layouts: save failed", err);
+        }
+        return { ...value, cached: false, savedId: saved?.id ?? null, savedAt: saved?.createdAt ?? null };
       } catch (err) {
         if (err instanceof ProposeError && err.usage) {
           await record({ attempts: 0, resultCached: false, ok: false, usage: err.usage });

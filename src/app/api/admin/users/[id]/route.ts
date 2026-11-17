@@ -1,3 +1,4 @@
+import { aiLayouts } from "@/lib/server/aiLayouts";
 import { requireUser } from "@/lib/server/auth";
 import { updateStore } from "@/lib/server/store";
 import { deleteUser, updateUser, UpdateUserSchema, UserError } from "@/lib/server/users";
@@ -33,6 +34,11 @@ export async function DELETE(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   try {
     await updateStore((d) => deleteUser(d, id, g.user.id));
+    try {
+      aiLayouts.removeUser(id);
+    } catch (err) {
+      console.error("ai-layouts: remove failed", err);
+    }
     return Response.json({ ok: true });
   } catch (err) {
     return fail(err);

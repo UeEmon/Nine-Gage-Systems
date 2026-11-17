@@ -222,10 +222,7 @@ export function AdminAiUsagePanel() {
             {state.saved && <span className="ok-text">保存しました</span>}
           </div>
           <p className="hint">
-            記録はサーバーのデータフォルダ（ai-usage.jsonl）に残り、再起動しても消えません。同じ条件の提案の保存済み結果は{num(view.savedResults)}件です。
-            <button type="button" className="link-button" onClick={() => run("DELETE")} disabled={state.busy}>
-              保存済みの結果を消す
-            </button>
+            記録はサーバーのデータフォルダ（ai-usage.jsonl）に残り、再起動しても消えません。AIで作ったレイアウトの自動保存は全員で{num(view.savedResults)}件です（1人100件まで。同じ条件で頼まれたときはAIを使わずにここから出します）。
           </p>
         </>
       )}

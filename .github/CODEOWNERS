@@ -69,8 +69,10 @@
 /src/lib/server/aiUsage.ts @UeEmon
 /src/lib/server/ownAi.ts @UeEmon
 /src/lib/server/proposeCache.ts @UeEmon
+/src/lib/server/aiLayouts.ts @UeEmon
 /src/lib/server/papercraft.ts @UeEmon
 /src/app/api/propose/ @UeEmon
+/src/app/api/ai-layouts/ @UeEmon
 /src/app/api/papercraft/ @UeEmon
 /src/app/api/models/ @UeEmon
 /src/app/api/ai-config/ @UeEmon
@@ -78,6 +80,7 @@
 /src/app/api/admin/ai/ @UeEmon
 /src/app/api/admin/ai-usage/ @UeEmon
 /src/components/AiStatus.tsx @UeEmon
+/src/components/AiHistoryPanel.tsx @UeEmon
 /src/components/OwnAiForm.tsx @UeEmon
 /src/components/AdminAiPanel.tsx @UeEmon
 /src/components/AdminAiUsagePanel.tsx @UeEmon
@@ -85,6 +88,7 @@
 /tests/ai.test.ts @UeEmon
 /tests/anthropicStream.test.ts @UeEmon
 /tests/cache.test.ts @UeEmon
+/tests/aiLayouts.test.ts @UeEmon
 /tests/replica.test.ts @UeEmon
 /tests/papercraft.test.ts @UeEmon
 
