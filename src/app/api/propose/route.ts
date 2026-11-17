@@ -15,6 +15,12 @@ import { shortfall, stockFromInventory } from "@/lib/productDb";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+/**
+ * 応答を返すまでの持ち時間(ms)。サーバー（Node の requestTimeout は既定300秒）やブラウザが
+ * 先に接続を切ると、画面には中身のないエラーしか出ないので、それより前に返す。
+ */
+const TIME_BUDGET_MS = 230_000;
+
 const BodySchema = z.object({
   board: z.object({
     width: z.number().min(200).max(10000),
@@ -105,6 +111,7 @@ const REPLICA_LEVEL_HINTS: Record<Exclude<ReplicaLevel, "standard">, string[]> =
 export async function POST(req: Request) {
   const g = await requireUser(req);
   if (!g.ok) return g.response;
+  const deadline = Date.now() + TIME_BUDGET_MS;
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(
@@ -214,6 +221,7 @@ export async function POST(req: Request) {
         replica,
         // 再現度「忠実」はボードの大きさを制限しない（できた形に合わせてボードを広げる）
         unboundedBoard: replica?.level === "faithful",
+        deadline,
       };
       const session = createSession(settings, isFirst ? { ...opts, onResponseStart: releaseRest } : opts);
       try {

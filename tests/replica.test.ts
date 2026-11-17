@@ -301,3 +301,35 @@ describe("乗り入れる路線をまとめない", () => {
     expect(res.replica?.lines).toEqual(["A線", "B線"]);
   });
 });
+
+describe("持ち時間（deadline）", () => {
+  it("持ち時間を過ぎたら出し直さず、それまでの一番よい案を返す", async () => {
+    const bad = { ...withReplica([tunnel]), segments: sidingPlan().segments.slice(0, 1) };
+    const { session, prompts } = fakeSession([bad, withReplica([tunnel])]);
+    const res = await proposeLayout(
+      { board, request: "", replica: { kind: "line", name: "テスト線" }, deadline: Date.now() - 1 },
+      session,
+      "m",
+    );
+    expect(prompts).toHaveLength(1);
+    expect(res.attempts).toBe(1);
+  });
+
+  it("持ち時間を過ぎて案が1つもなければ、分かる文で返す", async () => {
+    const { session } = fakeSession([{ nope: true }, withReplica([tunnel])]);
+    await expect(
+      proposeLayout({ board, request: "", replica: { kind: "line", name: "テスト線" }, deadline: Date.now() - 1 }, session, "m"),
+    ).rejects.toThrow("時間内に作れませんでした");
+  });
+
+  it("持ち時間内なら今までどおり出し直す", async () => {
+    const bad = { ...withReplica([tunnel]), segments: sidingPlan().segments.slice(0, 1) };
+    const { session, prompts } = fakeSession([bad, withReplica([tunnel])]);
+    await proposeLayout(
+      { board, request: "", replica: { kind: "line", name: "テスト線" }, deadline: Date.now() + 60_000 },
+      session,
+      "m",
+    );
+    expect(prompts).toHaveLength(2);
+  });
+});
