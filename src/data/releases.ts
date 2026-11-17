@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-17-ai-timeout-message",
+    date: "2026-11-17T21:00:00+09:00",
+    title: "AI提案が長くかかったときに、分かりにくいエラーが出ないようにしました",
+    body: "再現度「忠実」などでAI提案に時間がかかりすぎると、「The string did not match the expected pattern.」のようなエラーが出ることがありました。時間がかかりそうなときは、作り直しを途中で止めてそれまでで一番よい案を出します。それでも応答が途切れたときは、案の数を減らすなどの対処を日本語で表示します。",
+  },
+  {
     id: "2026-11-17-replica-keep-every-line",
     date: "2026-11-17T21:00:00+09:00",
     title: "「再現してみた」の駅で、乗り入れる路線をまとめずに路線ごとに再現するようにしました",

@@ -164,6 +164,26 @@ const patternLayout = (p: Extract<ProposedPattern, { ok: true }>) => ({
   ...(p.board ? { board: p.board } : {}),
 });
 
+/**
+ * 応答をJSONとして読む。サーバーの時間切れなどでJSONでない応答（空・HTML）が返ったときに、
+ * ブラウザの分かりにくいエラー（Safari の「The string did not match the expected pattern.」など）ではなく、
+ * 利用者に分かる文で返す。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- res.json() と同じく中身の型は呼び出し側で扱う
+async function readJson(res: Response): Promise<any> {
+  const text = await res.text().catch(() => "");
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (res.status === 502 || res.status === 504 || !text) {
+      return {
+        error: `サーバーの応答が途中で切れました（${res.status}）。AIの作成に時間がかかりすぎた可能性があります。出す案の数を減らすか、再現度を下げてお試しください。`,
+      };
+    }
+    return { error: `サーバーから予期しない応答が返りました（${res.status}）。少し時間をおいてお試しください。` };
+  }
+}
+
 /** 再現度「忠実」で提案を始める前の確認 */
 const FAITHFUL_CONFIRM = [
   "再現度「忠実」で作ります。",
@@ -632,7 +652,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           fresh,
         }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       const patterns = data.patterns as ProposedPattern[];
       const first = patterns.findIndex((p) => p.ok);

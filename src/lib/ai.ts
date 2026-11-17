@@ -216,6 +216,11 @@ export type ProposeInput = {
    * はみ出しを問題にせず、できたレイアウトに合わせてボードの大きさを決め直して返す。
    */
   unboundedBoard?: boolean;
+  /**
+   * この時刻（Date.now() の値）までに返す。出し直しの前に、前回と同じくらいかかると
+   * 間に合わないなら、出し直さずにそれまでの一番よい案を返す（サーバーやブラウザの時間切れを防ぐ）。
+   */
+  deadline?: number;
 };
 
 const yenText = (n: number) => `${n.toLocaleString("ja-JP")}円`;
@@ -380,10 +385,19 @@ ${
   let attempts = 0;
   let lastText = "";
   let usage = emptyUsage();
+  /** 直前のAIの応答にかかった時間(ms) */
+  let lastDuration = 0;
 
+  let timedOut = false;
   for (; attempts < MAX_ATTEMPTS; ) {
+    if (attempts > 0 && input.deadline !== undefined && Date.now() + lastDuration > input.deadline) {
+      timedOut = true;
+      break;
+    }
     attempts++;
+    const askStarted = Date.now();
     const answer = await session.ask(prompt);
+    lastDuration = Date.now() - askStarted;
     usage = addUsage(usage, answer.usage);
     lastText = answer.text;
     if (answer.refused) {
@@ -408,6 +422,12 @@ ${
     prompt = `アプリで組み立てたところ、次の問題がありました。直した計画全体を出し直してください。\n${result.problems}`;
   }
 
+  if (!best && timedOut) {
+    throw new ProposeError(
+      "時間内に作れませんでした。出す案の数を減らすか、再現度を下げる・要望を小さくしてお試しください。",
+      usage,
+    );
+  }
   if (!best) {
     throw new ProposeError(
       `AIの出力をレイアウトとして読み取れませんでした（${model}）。より大きなモデルを選ぶと改善することがあります。${
