@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { PRICES_AS_OF, priceFor, priceTable } from "@/lib/llm/pricing";
+import { aiLayouts } from "@/lib/server/aiLayouts";
 import { PERIODS, usageLog, usageView, type Period } from "@/lib/server/aiUsage";
 import { requireUser } from "@/lib/server/auth";
-import { proposeCache } from "@/lib/server/proposeCache";
 import { updateStore } from "@/lib/server/store";
 
 export const runtime = "nodejs";
@@ -17,7 +17,7 @@ async function view(period: Period, usdJpy: number) {
     usdJpy,
     pricesAsOf: PRICES_AS_OF,
     unpricedModels: models.filter((m) => !priceFor(m, priceTable())),
-    savedResults: proposeCache.size,
+    savedResults: aiLayouts.count(),
   };
 }
 
@@ -46,12 +46,4 @@ export async function PUT(req: Request) {
     return d.aiCost.usdJpy;
   });
   return Response.json(await view(periodOf(req), usdJpy));
-}
-
-/** 保存済みの提案結果を消す（管理者だけ）。使用記録は消さない */
-export async function DELETE(req: Request) {
-  const g = await requireUser(req, "admin");
-  if (!g.ok) return g.response;
-  proposeCache.clear();
-  return Response.json(await view(periodOf(req), g.data.aiCost.usdJpy));
 }

@@ -109,8 +109,10 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/lib/server/aiUsage.ts`
 - `/src/lib/server/ownAi.ts`
 - `/src/lib/server/proposeCache.ts`
+- `/src/lib/server/aiLayouts.ts`
 - `/src/lib/server/papercraft.ts`
 - `/src/app/api/propose/`
+- `/src/app/api/ai-layouts/`
 - `/src/app/api/papercraft/`
 - `/src/app/api/models/`
 - `/src/app/api/ai-config/`
@@ -118,6 +120,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/app/api/admin/ai/`
 - `/src/app/api/admin/ai-usage/`
 - `/src/components/AiStatus.tsx`
+- `/src/components/AiHistoryPanel.tsx`
 - `/src/components/OwnAiForm.tsx`
 - `/src/components/AdminAiPanel.tsx`
 - `/src/components/AdminAiUsagePanel.tsx`
@@ -125,6 +128,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/tests/ai.test.ts`
 - `/tests/anthropicStream.test.ts`
 - `/tests/cache.test.ts`
+- `/tests/aiLayouts.test.ts`
 - `/tests/replica.test.ts`
 - `/tests/papercraft.test.ts`
 
