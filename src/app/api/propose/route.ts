@@ -8,6 +8,7 @@ import { cacheKey, proposeCache } from "@/lib/server/proposeCache";
 import { requireUser } from "@/lib/server/auth";
 import { settingsForUser, type KeySource } from "@/lib/server/ownAi";
 import { MAKERS } from "@/lib/parts";
+import { REPLICA_LEVELS, type ReplicaLevel } from "@/lib/replica";
 import { shortfall, stockFromInventory } from "@/lib/productDb";
 
 export const runtime = "nodejs";
@@ -27,6 +28,8 @@ const BodySchema = z.object({
     .object({
       kind: z.enum(["line", "station"]),
       name: z.string().trim().min(1).max(60),
+      /** 再現度。light=雰囲気, standard=標準, faithful=忠実 */
+      level: z.enum(REPLICA_LEVELS).default("standard"),
     })
     .optional(),
   /** 所有パーツ（"メーカー:品番" → 箱数） */
@@ -79,6 +82,20 @@ const HINTS: Record<"free" | "owned" | "expand" | "replica", string[]> = {
   ],
 };
 
+/** 再現度「雰囲気」「忠実」のときの複数案の方向づけ（標準は HINTS.replica） */
+const REPLICA_LEVEL_HINTS: Record<Exclude<ReplicaLevel, "standard">, string[]> = {
+  light: [
+    "いちばん目立つ特徴1つを中心にした、小さくまとまる案",
+    "特徴を2〜3個入れて、周回して楽しめる案",
+    "線路はシンプルにして、名所の仮オブジェクトで雰囲気を出す案",
+  ],
+  faithful: [
+    "線路の配置と駅の配線を、いちばん実物どおりにした案",
+    "配線は実物どおりにしつつ、端をつないで周回運転もできるようにした案",
+    "沿線の構造物・名所の並びと大きさまで実物に合わせた、情景重視の案",
+  ],
+};
+
 /**
  * ログインした人だけ使える（ログインなしは使えない）。
  * 管理者・プレミアムユーザーは管理者が設定したAI、一般ユーザーは自分で設定したAPIキーを使う。
@@ -115,7 +132,12 @@ export async function POST(req: Request) {
     return Response.json({ error: e.message }, { status: e.status });
   }
 
-  const hintList = mode === "expand" && budgetJpy !== undefined ? expandHints(budgetJpy) : HINTS[mode];
+  const hintList =
+    mode === "expand" && budgetJpy !== undefined
+      ? expandHints(budgetJpy)
+      : replica && replica.level !== "standard"
+        ? REPLICA_LEVEL_HINTS[replica.level]
+        : HINTS[mode];
   const hints = patterns > 1 ? hintList.slice(0, patterns) : [undefined];
   // 再現は部品の制限なし（自由に設計と同じ）。所有パーツは予算の計算にだけ使う
   const stockMode = mode === "replica" ? "free" : mode;
@@ -174,7 +196,17 @@ export async function POST(req: Request) {
       }
       const isFirst = t === misses[0];
       if (stagger && !isFirst) await firstStarted;
-      const input: ProposeInput = { board, request, maker, hint: t.hint, stock, budgetJpy, replica };
+      const input: ProposeInput = {
+        board,
+        request,
+        maker,
+        hint: t.hint,
+        stock,
+        budgetJpy,
+        replica,
+        // 再現度「忠実」はボードの大きさを制限しない（できた形に合わせてボードを広げる）
+        unboundedBoard: replica?.level === "faithful",
+      };
       const session = createSession(settings, isFirst ? { ...opts, onResponseStart: releaseRest } : opts);
       try {
         const result = await proposeLayout(input, session, settings.model);

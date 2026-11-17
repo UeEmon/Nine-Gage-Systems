@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { proposeLayout, sessionOptions, systemPrompt } from "../src/lib/ai";
+import { FIT_MARGIN_MM, fitBoard, proposeLayout, sessionOptions, systemPrompt } from "../src/lib/ai";
+import { analyze, worldSamples } from "../src/lib/geometry";
 import type { ChatSession } from "../src/lib/llm/types";
 import { buildFromPlan, planSchemaFor, type LayoutPlan } from "../src/lib/plan";
 import { toPatternFile, parsePatternFile } from "../src/lib/patternFile";
@@ -105,7 +106,29 @@ describe("再現してみた: AIへの指示", () => {
     expect(prompts[0]).toContain("路線「テスト線」");
     expect(res.remainingProblems).toBeNull();
     expect(res.sims).toHaveLength(1);
-    expect(res.replica).toEqual({ kind: "line", target: "テスト線", features: ["複線", "長いトンネル"] });
+    expect(res.replica).toEqual({ kind: "line", level: "standard", target: "テスト線", features: ["複線", "長いトンネル"] });
+    expect(prompts[0]).toContain("再現度「標準」");
+  });
+
+  it("再現度ごとに指示が変わり、忠実モードは実物の配線どおりにさせる", async () => {
+    const light = replicaRequest({ kind: "line", name: "山手線", level: "light" }, "");
+    const faithful = replicaRequest({ kind: "station", name: "東京駅", level: "faithful" }, "");
+    expect(light).toContain("「雰囲気」");
+    expect(light).toContain("2〜4個まで");
+    expect(faithful).toContain("「忠実」");
+    expect(faithful).toContain("配線");
+    expect(faithful).toContain("推測");
+    expect(replicaRequest({ kind: "line", name: "山手線" }, "")).toContain("「標準」");
+
+    const { session, prompts } = fakeSession([withReplica([tunnel])]);
+    const res = await proposeLayout(
+      { board, request: "", replica: { kind: "line", name: "テスト線", level: "faithful" } },
+      session,
+      "m",
+    );
+    expect(prompts[0]).toContain("再現度「忠実」");
+    expect(prompts[0]).toContain("実物どおり");
+    expect(res.replica?.level).toBe("faithful");
   });
 
   it("再現モードで replica がないと形式違いとして出し直させる", async () => {
@@ -146,5 +169,47 @@ describe("再現してみた: 保存", () => {
     const layout = { title: "t", description: "", board, pieces: b.pieces, sims: [{ uid: "x", kind: "ufo" }] };
     const text = JSON.stringify(toPatternFile([{ id: "a", name: "a", savedAt: "", layout: layout as never }]));
     expect(() => parsePatternFile(text)).toThrow();
+  });
+});
+
+describe("再現度「忠実」: ボードの大きさを制限しない", () => {
+  it("はみ出しを問題にせず、できた形に合わせたボードを返す", async () => {
+    // 小さなボードでは収まらない案でも、忠実なら出し直しにならない
+    const small = { width: 300, height: 200 };
+    const { session, prompts } = fakeSession([withReplica([tunnel])]);
+    const res = await proposeLayout(
+      { board: small, request: "", replica: { kind: "line", name: "テスト線", level: "faithful" }, unboundedBoard: true },
+      session,
+      "m",
+    );
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("ボードの大きさ: 制限なし");
+    expect(res.remainingProblems).toBeNull();
+    expect(res.board).toBeDefined();
+    const b = res.board!;
+    expect(b.width).toBeGreaterThan(small.width);
+    expect(analyze({ board: b, pieces: res.pieces }).outOfBoard).toEqual([]);
+    const xs = res.pieces.flatMap((p) => worldSamples(p).map((pt) => pt.x));
+    expect(Math.min(...xs)).toBeCloseTo(FIT_MARGIN_MM, 0);
+    for (const s of res.sims) {
+      expect(s.x).toBeGreaterThan(0);
+      expect(s.x).toBeLessThan(b.width);
+    }
+  });
+
+  it("制限しないときだけボードを返す", async () => {
+    const { session } = fakeSession([withReplica([tunnel])]);
+    const res = await proposeLayout({ board, request: "", replica: { kind: "line", name: "テスト線" } }, session, "m");
+    expect(res.board).toBeUndefined();
+  });
+
+  it("fitBoard は全体を余白の内側へ移す", () => {
+    const pieces = buildFromPlan(sidingPlan()).pieces.map((p) => ({ ...p, x: p.x - 5000, y: p.y - 3000 }));
+    const f = fitBoard(pieces, [], []);
+    const pts = f.pieces.flatMap((p) => worldSamples(p));
+    expect(Math.min(...pts.map((p) => p.x))).toBeCloseTo(FIT_MARGIN_MM, 5);
+    expect(Math.min(...pts.map((p) => p.y))).toBeCloseTo(FIT_MARGIN_MM, 5);
+    expect(Math.max(...pts.map((p) => p.x))).toBeLessThanOrEqual(f.board.width - FIT_MARGIN_MM + 10);
+    expect(f.board.width % 10).toBe(0);
   });
 });

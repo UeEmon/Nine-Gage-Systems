@@ -214,7 +214,10 @@ export function analyze(layout: Pick<Layout, "board" | "pieces">): Analysis {
 
   const samples = new Map(layout.pieces.map((p) => [p.uid, samplesWithZ(p, elevation)]));
   const { width, height } = layout.board;
+  // ボードの大きさを制限しないとき（再現度「忠実」）は、はみ出しを数えない
+  const bounded = Number.isFinite(width) && Number.isFinite(height);
   const outOfBoard = layout.pieces
+    .filter(() => bounded)
     .filter((p) => samples.get(p.uid)!.some((s) => s.x < 0 || s.y < 0 || s.x > width || s.y > height))
     .map((p) => p.uid);
 

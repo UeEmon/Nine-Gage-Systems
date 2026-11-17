@@ -34,7 +34,7 @@ import { OperationView } from "./operation/OperationView";
 import { TwinView } from "./twin/TwinView";
 import { AccessoryIcon, AccessoryShape } from "./AccessoryShape";
 import { SimObjectShape } from "./SimObjectShape";
-import { REPLICA_KIND_LABELS, SIM_DISCLAIMER, SIM_KIND_LABELS, type ReplicaInfo, type ReplicaKind, type SimObject } from "@/lib/replica";
+import { REPLICA_KIND_LABELS, REPLICA_LEVEL_HELP, REPLICA_LEVEL_LABELS, REPLICA_LEVELS, SIM_DISCLAIMER, SIM_KIND_LABELS, type ReplicaInfo, type ReplicaKind, type ReplicaLevel, type SimObject } from "@/lib/replica";
 import {
   accessoriesFor,
   getAccessory,
@@ -87,6 +87,8 @@ type ProposedPattern =
       /** 「再現してみた」の仮オブジェクト（実在の製品ではない） */
       sims?: SimObject[];
       replica?: ReplicaInfo | null;
+      /** ボードの大きさを制限しなかったとき（再現度「忠実」）、できた形に合わせたボード */
+      board?: Board;
       attempts: number;
       remainingProblems: string | null;
       model: string;
@@ -156,7 +158,18 @@ const patternLayout = (p: Extract<ProposedPattern, { ok: true }>) => ({
   accessories: p.accessories ?? [],
   sims: p.sims ?? [],
   replica: p.replica ?? undefined,
+  ...(p.board ? { board: p.board } : {}),
 });
+
+/** 再現度「忠実」で提案を始める前の確認 */
+const FAITHFUL_CONFIRM = [
+  "再現度「忠実」で作ります。",
+  "",
+  "・ボードの大きさは、出来上がったレイアウトに合わせて決め直します（いまのボードの大きさにはしばられません）。",
+  "・実物の配線どおりにするため部品が多くなり、AIのトークン消費が「標準」よりかなり多くなります（自分のAPIキーなら、その分の料金がかかります）。出す案の数を増やすと、さらに増えます。",
+  "",
+  "続けますか？",
+].join("\n");
 
 type AiState =
   | { status: "idle" }
@@ -190,6 +203,8 @@ export function Editor({ user }: { user: SessionUser | null }) {
   /** 「再現してみた」の路線名・駅名 */
   const [replicaKind, setReplicaKind] = useState<ReplicaKind>("line");
   const [replicaName, setReplicaName] = useState("");
+  /** 「再現してみた」の再現度 */
+  const [replicaLevel, setReplicaLevel] = useState<ReplicaLevel>("standard");
   /** 「再現してみた」の追加の要望（ふだんの要望とは分けて持つ） */
   const [replicaExtra, setReplicaExtra] = useState("");
   /** ペーパークラフトジェネレーターとの連携が使えるか（null=未確認） */
@@ -594,6 +609,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       setAi({ status: "error", message: `再現する${REPLICA_KIND_LABELS[replicaKind]}を入力してください。` });
       return;
     }
+    if (aiMode === "replica" && replicaLevel === "faithful" && !window.confirm(FAITHFUL_CONFIRM)) return;
     setAi({ status: "loading" });
     try {
       const res = await fetch("/api/propose", {
@@ -607,7 +623,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           inventory,
           patterns: patternCount,
           budgetJpy,
-          ...(aiMode === "replica" ? { replica: { kind: replicaKind, name: replicaName.trim() } } : {}),
+          ...(aiMode === "replica" ? { replica: { kind: replicaKind, name: replicaName.trim(), level: replicaLevel } } : {}),
           fresh,
         }),
       });
@@ -670,7 +686,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       id,
       name: p.plan.title,
       savedAt: new Date().toISOString(),
-      layout: { ...patternLayout(p), maker, board: layout.board },
+      layout: { maker, board: layout.board, ...patternLayout(p) },
     };
     setLibrary((ps) => [saved, ...ps]);
   };
@@ -1254,6 +1270,17 @@ export function Editor({ user }: { user: SessionUser | null }) {
                   aria-label={REPLICA_KIND_LABELS[replicaKind]}
                 />
               </div>
+              <div className="replica-level">
+                <span className="replica-level-label">再現度</span>
+                <span className="seg" role="group" aria-label="再現度">
+                  {REPLICA_LEVELS.map((lv) => (
+                    <button key={lv} className={replicaLevel === lv ? "on" : ""} onClick={() => setReplicaLevel(lv)}>
+                      {REPLICA_LEVEL_LABELS[lv]}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <p className="hint">{REPLICA_LEVEL_HELP[replicaLevel]}</p>
               <p className="hint">
                 {replicaKind === "line"
                   ? "複線・単線、高架やトンネル、カーブなど路線の特徴と、沿線の有名なストラクチャーを再現します。"
@@ -1331,7 +1358,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
                       {p.hint && <p className="hint">{p.hint}</p>}
                       {p.replica && (
                         <p className="hint">
-                          再現: {p.replica.target}
+                          再現: {p.replica.target}（再現度: {REPLICA_LEVEL_LABELS[p.replica.level ?? "standard"]}）
                           {p.sims && p.sims.length > 0 && ` ／ 仮オブジェクト ${p.sims.length}個（シミュレーション上のみ）`}
                         </p>
                       )}
@@ -1389,7 +1416,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
               {layout.replica && (
                 <>
                   <strong>
-                    再現してみた: {layout.replica.target}（{REPLICA_KIND_LABELS[layout.replica.kind]}）
+                    再現してみた: {layout.replica.target}（{REPLICA_KIND_LABELS[layout.replica.kind]}・再現度: {REPLICA_LEVEL_LABELS[layout.replica.level ?? "standard"]}）
                   </strong>
                   {layout.replica.features.length > 0 && (
                     <ul>
