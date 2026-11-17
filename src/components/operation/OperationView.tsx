@@ -28,11 +28,13 @@ type Props = {
   /** ログインしていて、AI提案を使える */
   canUseAi: boolean;
   onChange: (plan: OperationPlan) => void;
+  /** この列車の運転席で、運行計画どおりの走りを見る */
+  onRide?: (trainId: string) => void;
   onClose: () => void;
 };
 
 /** 運行計画（ダイヤ）を立てる画面。駅はホームの配置から自動で見つける */
-export function OperationView({ layout, elevation, canUseAi, onChange, onClose }: Props) {
+export function OperationView({ layout, elevation, canUseAi, onChange, onRide, onClose }: Props) {
   const plan = useMemo(() => normalizeOperation(layout.operation) ?? EMPTY_OPERATION, [layout.operation]);
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
   const stations = useMemo(() => detectStations(layout.pieces, accessories, elevation), [layout.pieces, accessories, elevation]);
@@ -109,6 +111,16 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onClose }
         <span className="muted">
           駅 {stations.length} ・ 列車 {plan.trains.length} 本
         </span>
+        {onRide && (
+          <button
+            className="primary"
+            onClick={() => selected && onRide(selected.id)}
+            disabled={!selected || !selectedSchedule?.motion}
+            title="全部の列車を運行計画どおりに走らせ、選んでいる列車の運転席から見ます"
+          >
+            ▶ {selected ? `${selected.name}の運転席で見る` : "運転席で見る"}
+          </button>
+        )}
         <button onClick={onClose}>閉じる</button>
       </header>
 

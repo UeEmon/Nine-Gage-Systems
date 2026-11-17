@@ -406,7 +406,7 @@ export type CarPlacement = {
  * 先頭の車両の前端を現在位置にして、cars 両の車体の置き方を求める。
  * 実物と同じく、車体は前後の台車の位置（線路の上）を結んだ向きに置く（曲線では車体の端が少し外へ出る）
  */
-export function carPlacements(drive: Drive, cars: number): CarPlacement[] {
+export function carPlacements(drive: { poseAt(offset?: number): DrivePose }, cars: number): CarPlacement[] {
   const { length, bogieCenters, gap } = N_CAR;
   const out: CarPlacement[] = [];
   for (let i = 0; i < cars; i++) {

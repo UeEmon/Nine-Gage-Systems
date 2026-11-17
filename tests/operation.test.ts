@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getAccessory, placeOnPiece } from "../src/lib/accessories";
-import { scaleKmhToMmPerSec } from "../src/lib/drive";
+import { buildDriveGraph, scaleKmhToMmPerSec } from "../src/lib/drive";
 import { buildFromPlan } from "../src/lib/plan";
 import {
   computeSchedule,
@@ -9,6 +9,8 @@ import {
   newTrain,
   normalizeOperation,
   parseTime,
+  profile,
+  TrainPlayback,
   type OperationPlan,
   type Train,
 } from "../src/lib/operation";
@@ -126,12 +128,13 @@ describe("operation: schedule", () => {
   it("turns back at a station and returns the way it came", () => {
     const { pieces, accessories } = layout();
     const stations = detectStations(pieces, accessories);
-    const t = train({ id: "t1", departSec: 0 }, ["accA", "accB", "accA"]);
+    // 番線におさまる1両の列車
+    const t = train({ id: "t1", departSec: 0, cars: 1 }, ["accA", "accB", "accA"]);
     t.stops[1].turnback = true;
     const r = computeSchedule(pieces, stations, { stationNames: {}, trains: [t] }).trains[0];
     expect(r.errors).toEqual([]);
     const [a, b, c] = r.events;
-    // 来た道を戻るので、行きと帰りの所要時間はほぼ同じ（折り返しでは先頭の位置をそのままにするので、編成の長さぶんの差は出る）
+    // 来た道を戻るので、行きと帰りの所要時間はほぼ同じ（折り返しでは最後尾が新しい先頭になる）
     expect(Math.abs(c.arr! - b.dep! - (b.arr! - a.dep!))).toBeLessThan(2);
   });
 
@@ -165,5 +168,58 @@ describe("operation: model", () => {
     expect(n.trains[0]).toMatchObject({ kind: "local", color: "#2f6fb5", cars: 16, speedKmh: 10, laps: 1 });
     expect(n.trains[0].stops[0]).toMatchObject({ track: null, pass: false, dwellSec: 20 });
     expect(normalizeOperation(null)).toBeUndefined();
+  });
+});
+
+describe("operation: playback", () => {
+  it("keeps the train at the stations at the timetable times and moves it between them", () => {
+    const { pieces, accessories } = layout();
+    const stations = detectStations(pieces, accessories);
+    const t = train({ id: "t1", departSec: 10, cars: 1 }, ["accA", "accB"]);
+    const r = computeSchedule(pieces, stations, { stationNames: {}, trains: [t] }).trains[0];
+    const pb = new TrainPlayback(buildDriveGraph(pieces), r.motion!);
+    const [a, b] = r.events;
+    // 現れる前は見えない
+    expect(pb.stateAt(-100).hidden).toBe(true);
+    // 発車前は始発駅の番線にいる
+    const st = stations.find((s) => s.id === "accA")!;
+    expect(st.tracks[0].pieces).toContain(pb.poseAt(5).uid);
+    expect(pb.stateAt(5).stopped).toBe(true);
+    // 途中は走っていて、着時刻には止まっている
+    const mid = pb.stateAt((a.dep! + b.arr!) / 2);
+    expect(mid.stopped).toBe(false);
+    expect(mid.kmh).toBeGreaterThan(0);
+    const atB = pb.stateAt(b.arr! + 1);
+    expect(atB.stopped).toBe(true);
+    const bTrack = stations.find((s) => s.id === "accB")!.tracks[0].pieces;
+    expect(bTrack).toContain(pb.poseAt(b.arr! + 1, -r.motion!.length / 2).uid);
+    // 加減速しても、駅に着くまでに進む距離は時刻表と同じ
+    expect(pb.stateAt(b.arr! - 0.001).s).toBeCloseTo(atB.s, 0);
+  });
+
+  it("makes the rear the new front when turning back", () => {
+    const { pieces, accessories } = layout();
+    const stations = detectStations(pieces, accessories);
+    const t = train({ id: "t1", departSec: 0, cars: 4 }, ["accA", "accB", "accA"]);
+    t.stops[1].turnback = true;
+    const r = computeSchedule(pieces, stations, { stationNames: {}, trains: [t] }).trains[0];
+    const pb = new TrainPlayback(buildDriveGraph(pieces), r.motion!);
+    const b = r.events[1];
+    const before = pb.poseAt(b.dep! - 1);
+    const after = pb.poseAt(b.dep! + 0.001);
+    // 先頭は編成の長さぶん後ろへ移り、向きは逆
+    expect(Math.hypot(before.x - after.x, before.y - after.y)).toBeGreaterThan(r.motion!.length * 0.8);
+    const turn = Math.abs(((after.heading - before.heading + 540) % 360) - 180);
+    expect(turn).toBeGreaterThan(150);
+  });
+
+  it("accelerates and brakes within the time of the timetable", () => {
+    const a = 100;
+    expect(profile(1000, 20, 0, a).s).toBe(0);
+    expect(profile(1000, 20, 20, a).s).toBeCloseTo(1000, 6);
+    expect(profile(1000, 20, 20, a).v).toBeCloseTo(0, 6);
+    expect(profile(1000, 20, 10, a).s).toBeCloseTo(500, 6);
+    // 短い区間（時間内に着けない加速）でも着く
+    expect(profile(1000, 2, 2, a).s).toBeCloseTo(1000, 6);
   });
 });
