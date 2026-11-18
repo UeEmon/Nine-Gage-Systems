@@ -44,7 +44,7 @@ jobs:
       IMAGE: ghcr.io/ueemon/nine-gage-systems
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -97,7 +97,7 @@ jobs:
       IMAGE: ghcr.io/ueemon/nine-gage-share
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - id: meta
         uses: docker/metadata-action@v5
         with:
