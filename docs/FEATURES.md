@@ -125,6 +125,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/components/AiStatus.tsx`
 - `/src/components/AiHistoryPanel.tsx`
 - `/src/components/OwnAiForm.tsx`
+- `/src/app/guide/api-key/`
 - `/src/components/AdminAiPanel.tsx`
 - `/src/components/AdminAiUsagePanel.tsx`
 - `/src/components/SimObjectShape.tsx`

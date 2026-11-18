@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { PROVIDER_LABELS } from "@/lib/llm/types";
-import { api } from "@/lib/roles";
+import Link from "next/link";
+import { api, API_KEY_GUIDE_PATH, ROLE_LABELS } from "@/lib/roles";
 
 const PROVIDERS = ["anthropic", "openai", "gemini"] as const;
 type Provider = (typeof PROVIDERS)[number];
@@ -28,8 +29,11 @@ const KEY_HINT: Record<Provider, string> = {
   gemini: "Google AI Studio の API キー",
 };
 
-/** 一般ユーザーが自分のAPIキーを設定する。キーは暗号化して保存し、末尾4文字だけ表示する */
-export function OwnAiForm() {
+/**
+ * 自分のAPIキーを設定する（一般・プレミアムユーザー）。キーは暗号化して保存し、末尾4文字だけ表示する。
+ * premium: プレミアムユーザー向けの表示（キーは任意。登録したときだけ自分のキーを使う）
+ */
+export function OwnAiForm({ premium = false }: { premium?: boolean }) {
   const [view, setView] = useState<View | null>(null);
   const [provider, setProvider] = useState<Provider>("anthropic");
   const [model, setModel] = useState("");
@@ -64,15 +68,37 @@ export function OwnAiForm() {
     save({ provider, model, ...(apiKey ? { apiKey } : {}) }, "保存しました。AI提案でこのキーを使います。");
   };
 
+  const removeKey = () => {
+    if (!view) return;
+    save(
+      { provider: view.provider, apiKey: "" },
+      premium ? "キーを削除しました。AI提案は管理者が設定したAIに戻ります。" : "キーを削除しました。",
+    );
+  };
+
   if (!view) return <section className="card">{state.error ? <p className="error">{state.error}</p> : <p className="hint">読み込み中…</p>}</section>;
   const sameProvider = provider === view.provider;
 
   return (
     <form className="card form" onSubmit={submit}>
-      <h2>AIの設定（自分のAPIキー）</h2>
+      <h2>AIの設定（自分のAPIキー{premium ? "・任意" : ""}）</h2>
+      {premium ? (
+        <p className="hint">
+          {ROLE_LABELS.ai}は、ふだんは管理者が設定したAIを使います。自分で用意したAPIキーを登録すると、AI提案にそのキーとモデルを使います（料金はキーの持ち主＝あなたのアカウントに請求されます）。キーを削除すると、管理者が設定したAIに戻ります。
+        </p>
+      ) : (
+        <p className="hint">
+          一般ユーザーは、自分で用意したAPIキーでAI提案を使えます。料金はキーの持ち主（あなた）のアカウントに請求されます。キーはサーバーに暗号化して保存し、画面には末尾4文字だけを表示します。
+        </p>
+      )}
       <p className="hint">
-        一般ユーザーは、自分で用意したAPIキーでAI提案を使えます。料金はキーの持ち主（あなた）のアカウントに請求されます。キーはサーバーに暗号化して保存し、画面には末尾4文字だけを表示します。
+        はじめての方は <Link href={API_KEY_GUIDE_PATH}>APIキー登録のチュートリアル</Link> を見ながら進めてください。
       </p>
+      {premium && (
+        <p className="hint">
+          いまAI提案に使っているキー: <strong>{view.savedKey && !view.unreadable ? `自分のキー（${view.savedKey}）` : "管理者が設定したキー"}</strong>
+        </p>
+      )}
       {!view.savedKey && (
         <ol className="hint steps">
           <li>使うAIを選びます（迷ったら Claude）。</li>
@@ -127,7 +153,7 @@ export function OwnAiForm() {
             type="button"
             className="danger"
             disabled={state.busy}
-            onClick={() => save({ provider: view.provider, apiKey: "" }, "キーを削除しました。")}
+            onClick={removeKey}
           >
             キーを削除
           </button>

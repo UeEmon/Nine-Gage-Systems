@@ -97,8 +97,11 @@ export type ProviderSettings = { model?: string; apiKey?: string; baseUrl?: stri
 
 /** 管理者が画面で設定するAI。空の項目は環境変数を使う */
 export type StoredAi = {
+  /** 管理者が使うプロバイダ（モデルは byProvider の model） */
   provider?: ProviderId;
   byProvider: Partial<Record<ProviderId, ProviderSettings>>;
+  /** プレミアムユーザーが使うプロバイダとモデル。なければ管理者と同じ。キー・接続先URLは byProvider を使う */
+  premium?: { provider: ProviderId; model?: string };
 };
 
 /** 管理画面の料金表示の設定 */
@@ -192,7 +195,13 @@ function normalize(raw: unknown, env: Env = process.env): StoreData {
     sessionSecret:
       typeof d.sessionSecret === "string" && d.sessionSecret.length >= 32 ? d.sessionSecret : randomBytes(32).toString("hex"),
     users: normalizeUsers(d.users, raw ? d.version : STORE_VERSION),
-    ai: { provider: ai.provider && PROVIDERS.includes(ai.provider) ? ai.provider : undefined, byProvider },
+    ai: {
+      provider: ai.provider && PROVIDERS.includes(ai.provider) ? ai.provider : undefined,
+      byProvider,
+      ...(ai.premium && PROVIDERS.includes(ai.premium.provider)
+        ? { premium: { provider: ai.premium.provider, model: str(ai.premium.model, 200) } }
+        : {}),
+    },
     notices: Array.isArray(d.notices)
       ? d.notices.filter(
           (n): n is StoredNotice =>

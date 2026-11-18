@@ -32,7 +32,7 @@ export function UserMenu({ user }: { user: SessionUser | null }) {
       <a href="/share">みんなのレイアウト</a>
       <Link href="/feedback">改善リクエスト</Link>
       {user.role === "admin" && <Link href="/admin">管理</Link>}
-      <Link href="/account">{user.role === "user" ? "アカウント・AI設定" : "アカウント"}</Link>
+      <Link href="/account">{user.role === "admin" ? "アカウント" : "アカウント・AI設定"}</Link>
       <button type="button" onClick={logout}>
         ログアウト
       </button>

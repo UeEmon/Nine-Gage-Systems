@@ -73,7 +73,7 @@ export function AdminUsersPanel({ currentUserId }: { currentUserId: string }) {
                   {u.username}
                   {u.id === currentUserId && <span className="muted">（自分）</span>}
                   {u.selfRegistered && <span className="muted">（自分で登録）</span>}
-                  {u.role === "user" && u.ownKey && <span className="muted">（自分のキー設定済み）</span>}
+                  {u.role !== "admin" && u.ownKey && <span className="muted">（自分のキー設定済み）</span>}
                   {u.email && <div className="muted small-text">{u.email}</div>}
                   {u.pending && <div className="warn-text small-text">メール確認待ち</div>}
                 </td>

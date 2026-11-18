@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { resolveSettings, type ResolvedAiSettings } from "@/lib/llm";
 import { DEFAULT_MODELS, LlmError } from "@/lib/llm/types";
-import { aiAccessOf } from "@/lib/roles";
-import { publicAiView, settingsForUse } from "./aiSettings";
+import { aiAccessOf, canSetOwnKey } from "@/lib/roles";
+import { publicAiView, settingsForRole } from "./aiSettings";
 import { openSecret, sealSecret } from "./secretBox";
 import { OWN_AI_PROVIDERS, type Env, type OwnAiProvider, type StoreData, type StoredUser } from "./store";
 
 /**
- * 一般ユーザーが自分で設定するAI（自分のAPIキー）。
+ * 一般ユーザー・プレミアムユーザーが自分で設定するAI（自分のAPIキー）。
+ * 一般は必ず自分のキー、プレミアムユーザーはキーを登録したときだけ自分のキー（なければサーバーのキー）を使う。
  * - キーは暗号化して保存し、画面には末尾4文字しか返さない
  * - 接続先URLは指定できない（サーバーから任意の宛先へ通信させない）。環境変数のキーやURLも使わない
  */
@@ -64,7 +65,7 @@ export function ownAiView(user: StoredUser, env: Env = process.env): OwnAiView {
 
 /** 保存する。プロバイダを変えたときに新しいキーがなければ、前のキーは消す（別の会社のキーを送らない） */
 export function applyOwnAi(user: StoredUser, patch: OwnAiPatch, env: Env = process.env) {
-  if (aiAccessOf(user.role) !== "own") {
+  if (!canSetOwnKey(user.role)) {
     throw new OwnAiError("このアカウントは管理者が設定したAIを使います。自分のAPIキーは設定できません。", 403);
   }
   const cur = user.ownAi;
@@ -87,17 +88,25 @@ export function ownSettings(user: StoredUser, env: Env = process.env): ResolvedA
 
 export type KeySource = "server" | "own";
 
+/** どちらのキーを使うか。一般は自分のキー、プレミアムユーザーは自分のキーを登録していればそれ、管理者はサーバーのキー */
+export function keySourceOf(user: StoredUser): KeySource | null {
+  const access = aiAccessOf(user.role);
+  if (access === "own") return "own";
+  if (access === "server") return user.role === "ai" && user.ownAi?.apiKeyEnc ? "own" : "server";
+  return null;
+}
+
 /** ロールに合わせて、AIの設定と、どちらのキーを使うかを決める */
 export function settingsForUser(data: StoreData, user: StoredUser, env: Env = process.env): { settings: ResolvedAiSettings; keySource: KeySource } {
-  const access = aiAccessOf(user.role);
-  if (access === "server") return { settings: settingsForUse(data.ai, env), keySource: "server" };
-  if (access === "own") return { settings: ownSettings(user, env), keySource: "own" };
+  const source = keySourceOf(user);
+  if (source === "own") return { settings: ownSettings(user, env), keySource: "own" };
+  if (source === "server") return { settings: settingsForRole(data.ai, user.role === "admin" ? "admin" : "ai", env), keySource: "server" };
   throw new LlmError("AIを使うにはログインしてください。", 401);
 }
 
 /** 画面のAI欄の表示（使うAIの名前と、使える状態か） */
 export function aiStatusFor(data: StoreData, user: StoredUser, env: Env = process.env) {
-  if (aiAccessOf(user.role) === "own") {
+  if (keySourceOf(user) === "own") {
     const v = ownAiView(user, env);
     let ready = true;
     try {
@@ -107,5 +116,5 @@ export function aiStatusFor(data: StoreData, user: StoredUser, env: Env = proces
     }
     return { provider: v.provider, model: v.model || v.defaultModels[v.provider], ready, source: "own" as const };
   }
-  return { ...publicAiView(data.ai, env), source: "server" as const };
+  return { ...publicAiView(data.ai, env, user.role === "admin" ? "admin" : "ai"), source: "server" as const };
 }
