@@ -11,8 +11,8 @@ import { sanitizeSchema } from "../llm/json";
 import { addUsage, emptyUsage, type ChatSession, type SessionOptions, type TokenUsage } from "../llm/types";
 import { getPart } from "../parts";
 import { routeSamples } from "../shapes";
-import { N_CAR } from "../drive";
 import { LIMITS, newTrainId, TRAIN_KINDS, type OperationPlan, type Train, type TrainKind } from "./model";
+import { carsFitting, fitCarsToPlatforms } from "./consist";
 import { computeSchedule, type ScheduleResult } from "./schedule";
 import { detectStations, type Station } from "./stations";
 
@@ -34,7 +34,7 @@ const AiStopSchema = z.object({
 const AiTrainSchema = z.object({
   name: z.string().describe("列車名（例: 101M、特急1号）"),
   kind: z.enum(KIND_VALUES).describe("種別。local=普通, rapid=快速, express=特急, freight=貨物, deadhead=回送"),
-  cars: z.number().int().describe("両数（1〜16）。停車する番線の線路に収まる両数にする"),
+  cars: z.number().int().describe("両数（1〜16）。停車するすべての駅の番線のホームの長さを基準に、いちばん短いホームに収まる両数にする"),
   speedKmh: z.number().describe("縮尺の最高速度(km/h)。普通60〜90、特急100〜130、貨物50〜80くらい"),
   departSec: z.number().int().describe("始発駅を出る時刻（運転開始からの秒）"),
   laps: z.number().int().describe("停車駅の並びを何回くり返すか（エンドレスを周回する列車）。1=1回だけ"),
@@ -66,7 +66,9 @@ export function operationSystemPrompt(): string {
 - 単線のエンドレスで列車を複数走らせるなら、2線以上ある駅で行き違い・待避をさせ、番線を指定して分けます。
 - 速い列車（特急など）が遅い列車を追い越すなら、遅い列車を2線以上の駅の別の番線に止めて待たせ、その間に速い列車を通過させます。
 - 同じ方向へ続けて走る列車は、前の列車が十分に離れてから出します（前の列車の駅間の所要時間以上あける）。
-- 両数は、停車する番線に収まる両数（駅の番線ごとの「収まる両数」）以下にします。
+- 両数（編成の長さ）はホームの長さを基準に決めます。列車が停車する（通過しない）すべての駅の番線のうち、いちばん短いホームの「何両まで」を上限にし、ふつうはその上限いっぱいの両数にします（要望があればそれより短くしてもよい）。
+- 長い編成を走らせたいときは、長いホームのある番線を指定して停車させ、短いホームの駅は通過にします。
+- ホームからはみ出す両数にすると、アプリが自動でホームに収まる両数まで減らします。
 - 列車の本数は、要望になければ駅や番線の数に合わせて2〜5本くらい、全体で数分〜10分くらいの運転にします。最大${MAX_TRAINS}本。
 - 列車名は日本の鉄道らしく（例: 普通 101M・102M、特急「〇〇」1号）。`;
 }
@@ -96,11 +98,6 @@ function trackLengthMm(pieces: Map<string, Piece>, uids: string[]): number {
   return total;
 }
 
-/** 番線に収まる両数 */
-function carsFitting(lengthMm: number): number {
-  return Math.max(0, Math.floor((lengthMm + N_CAR.gap) / (N_CAR.length + N_CAR.gap)));
-}
-
 const code = (i: number) => `S${i + 1}`;
 
 function probeTrain(stops: { stationId: string; turnback?: boolean }[], laps = 1): Train {
@@ -121,14 +118,25 @@ function probeTrain(stops: { stationId: string; turnback?: boolean }[], laps = 1
 export function describeLayout(pieces: Piece[], stations: Station[], stationNames: Record<string, string>): string {
   const byUid = new Map(pieces.map((p) => [p.uid, p]));
   const name = (s: Station) => stationNames[s.id] || s.defaultName;
-  const lines: string[] = ["## 駅と番線"];
+  const lines: string[] = ["## 駅と番線（ホームの長さと、そのホームに収まる両数）"];
   stations.forEach((s, i) => {
     const tracks = s.tracks.map((t) => {
       const len = trackLengthMm(byUid, t.pieces);
-      return `${t.number}番線（約${Math.round(len)}mm・${carsFitting(len)}両まで）`;
+      return `${t.number}番線（ホーム約${Math.round(t.platformLength)}mm・${carsFitting(t.platformLength)}両まで／線路約${Math.round(len)}mm）`;
     });
     lines.push(`- ${code(i)} ${name(s)}: ${tracks.join("、")}`);
   });
+  if (stations.length) {
+    const fit = (s: Station) => Math.max(0, ...s.tracks.map((t) => carsFitting(t.platformLength)));
+    const shortest = stations.reduce((a, b) => (fit(b) < fit(a) ? b : a));
+    const n = fit(shortest);
+    const where = `${code(stations.indexOf(shortest))} ${name(shortest)}`;
+    lines.push(
+      n > 0
+        ? `- 全部の駅に停車する列車は${n}両まで（長いほうの番線を使っても、${where}のホームが${n}両まで）`
+        : `- ${where}のホームは1両でもはみ出す短さ（停車させるなら1両）`,
+    );
+  }
 
   const time = (stops: { stationId: string; turnback?: boolean }[], laps = 1) => {
     const r = computeSchedule(pieces, stations, { stationNames: {}, trains: [probeTrain(stops, laps)] }).trains[0];
@@ -274,8 +282,14 @@ ${input.request.trim() || "このレイアウトで楽しく運転できる運�
         : `出力が指定のJSON形式に合いませんでした。形式を守って計画全体を出し直してください。\n${z.prettifyError(parsed.error).slice(0, 1500)}`;
       continue;
     }
-    const { plan, problems } = toOperationPlan(parsed.data, stations, input.stationNames);
-    const checked = scheduleProblems(plan, computeSchedule(input.pieces, stations, plan), stations);
+    const converted = toOperationPlan(parsed.data, stations, input.stationNames);
+    const problems = converted.problems;
+    // 両数はホームの長さを基準にする：止まる駅のいちばん短いホームに収まるまで減らす
+    let schedule = computeSchedule(input.pieces, stations, converted.plan);
+    const fitted = fitCarsToPlatforms(converted.plan, schedule, stations);
+    const plan = fitted.plan;
+    if (fitted.changed.length) schedule = computeSchedule(input.pieces, stations, plan);
+    const checked = scheduleProblems(plan, schedule, stations);
     const all = [...problems, ...checked.problems];
     if (!best || all.length < best.problems.length) best = { plan, summary: parsed.data.summary, problems: all };
     if (all.length === 0) break;

@@ -505,6 +505,11 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .op-form input, .op-form select { color: var(--text); min-width: 0; width: 100%; box-sizing: border-box; }
 .op-form input[type="color"] { height: 30px; padding: 2px; }
 .op-form input.bad { border-color: var(--warn); }
+.op-cars { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; }
+.op-cars-label { color: var(--muted); width: 100%; }
+.op-cars-input { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+.op-form .op-cars-input input { width: 44px; text-align: center; }
+.op-cars-fit { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .op-stops { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 6px; }
 .op-stops th { text-align: left; font-weight: 600; color: var(--muted); padding: 2px; }
 .op-stops td { padding: 2px; }

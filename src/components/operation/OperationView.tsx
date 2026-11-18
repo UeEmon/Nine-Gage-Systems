@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { trainLength } from "@/lib/drive";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
 import {
@@ -14,7 +15,9 @@ import {
   newTrainId,
   normalizeOperation,
   parseTime,
+  platformLimit,
   TRAIN_KINDS,
+  type PlatformLimit,
   type OperationPlan,
   type Train,
   type TrainKind,
@@ -202,7 +205,10 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
                     <button className={t.id === selectedId ? "on" : ""} onClick={() => setSelectedId(t.id)}>
                       <span className="op-swatch" style={{ background: t.color }} />
                       {t.name}
-                      <span className="muted"> {kindLabel(t.kind)} {formatTime(t.departSec)}発</span>
+                      <span className="muted">
+                        {" "}
+                        {kindLabel(t.kind)} {t.cars}両 {formatTime(t.departSec)}発
+                      </span>
                       {bad && <span className="error"> ⚠</span>}
                     </button>
                   </li>
@@ -219,6 +225,8 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
               key={selected.id}
               train={selected}
               stations={stations.map((s) => ({ id: s.id, name: stationName(s.id), tracks: s.tracks.length }))}
+              platform={selectedSchedule && !selectedSchedule.errors.length ? platformLimit(selectedSchedule, stations) : null}
+              stationName={stationName}
               onChange={(patch) => updateTrain(selected.id, patch)}
               onStop={(i, patch) => updateStop(selected, i, patch)}
               onCopy={() => copyTrain(selected)}
@@ -320,6 +328,8 @@ type StationOption = { id: string; name: string; tracks: number };
 function TrainEditor({
   train,
   stations,
+  platform,
+  stationName,
   onChange,
   onStop,
   onCopy,
@@ -327,6 +337,9 @@ function TrainEditor({
 }: {
   train: Train;
   stations: StationOption[];
+  /** 止まる駅のうち、いちばん短いホーム */
+  platform: PlatformLimit | null;
+  stationName: (id: string) => string;
   onChange: (patch: Partial<Train>) => void;
   onStop: (i: number, patch: Partial<TrainStop>) => void;
   onCopy: () => void;
@@ -372,10 +385,23 @@ function TrainEditor({
           線の色
           <input type="color" value={train.color} onChange={(e) => onChange({ color: e.target.value })} />
         </label>
-        <label>
-          両数
-          <input type="number" min={LIMITS.cars.min} max={LIMITS.cars.max} value={train.cars} onChange={(e) => onChange({ cars: num(e.target.value, LIMITS.cars) })} />
-        </label>
+        <div className="op-cars">
+          <span className="op-cars-label">編成の長さ</span>
+          <CarsInput value={train.cars} onChange={(cars) => onChange({ cars })} />
+          <span className="muted">約{Math.round(trainLength(train.cars))}mm</span>
+          {platform && (
+            <span className={train.cars > platform.maxCars ? "warn-text op-cars-fit" : "muted op-cars-fit"}>
+              {platform.maxCars > 0
+                ? `止まる駅のホームに収まるのは${platform.maxCars}両まで（${stationName(platform.stationId)} ${platform.track}番線のホーム 約${Math.round(platform.platformLength)}mm）`
+                : `${stationName(platform.stationId)} ${platform.track}番線のホーム（約${Math.round(platform.platformLength)}mm）は1両でもはみ出します`}
+              {platform.maxCars > 0 && platform.maxCars !== train.cars && (
+                <button className="mini" onClick={() => onChange({ cars: Math.max(LIMITS.cars.min, platform.maxCars) })}>
+                  ホームに合わせて{platform.maxCars}両にする
+                </button>
+              )}
+            </span>
+          )}
+        </div>
         <label>
           最高速度(km/h)
           <input
@@ -483,6 +509,41 @@ function TrainEditor({
         </button>
       </div>
     </section>
+  );
+}
+
+/** 両数。−／＋ で1両ずつ、数字でも入れられる（入力の途中は文字のまま持ち、読めたときだけ反映する） */
+function CarsInput({ value, onChange }: { value: number; onChange: (cars: number) => void }) {
+  const [text, setText] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+  const shown = focused ? text : String(value);
+  const { min, max } = LIMITS.cars;
+  const set = (n: number) => onChange(Math.min(max, Math.max(min, n)));
+  return (
+    <span className="op-cars-input">
+      <button className="mini" onClick={() => set(value - 1)} disabled={value <= min} aria-label="1両減らす">
+        −
+      </button>
+      <input
+        value={shown}
+        inputMode="numeric"
+        aria-label="両数"
+        onFocus={() => {
+          setText(String(value));
+          setFocused(true);
+        }}
+        onBlur={() => setFocused(false)}
+        onChange={(e) => {
+          setText(e.target.value);
+          const n = Number(e.target.value.trim());
+          if (e.target.value.trim() && Number.isInteger(n) && n >= min && n <= max) onChange(n);
+        }}
+      />
+      <span>両</span>
+      <button className="mini" onClick={() => set(value + 1)} disabled={value >= max} aria-label="1両増やす">
+        ＋
+      </button>
+    </span>
   );
 }
 

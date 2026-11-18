@@ -13,6 +13,8 @@ export type StationTrack = {
   number: number;
   /** この番線の線路の部品 uid */
   pieces: string[];
+  /** この番線に面したホームの長さ(mm)。ホームを縦に並べたときは合計 */
+  platformLength: number;
 };
 
 export type Station = {
@@ -141,12 +143,15 @@ export function detectStations(pieces: Piece[], accessories: Accessory[], elevat
     const tuf = new UnionFind(all.length);
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (intersects(all[i].pieces, all[j].pieces)) tuf.union(i, j);
     const trackSets = new Map<number, Set<string>>();
+    const trackPlatforms = new Map<number, Set<string>>();
     all.forEach((e, i) => {
       const g = tuf.find(i);
       const s = trackSets.get(g) ?? new Set<string>();
       e.pieces.forEach((p) => s.add(p));
       trackSets.set(g, s);
+      trackPlatforms.set(g, (trackPlatforms.get(g) ?? new Set<string>()).add(e.platform));
     });
+    const platLength = new Map(members.map((a) => [a.uid, getAccessory(a.itemId).length]));
     // 番線は、最初のホームの向きに対して左（画面の上側）から順に
     const ref = members.slice().sort((a, b) => (a.uid < b.uid ? -1 : 1))[0];
     const r = (ref.rot * Math.PI) / 180;
@@ -159,10 +164,14 @@ export function detectStations(pieces: Piece[], accessories: Accessory[], elevat
       const v = pts.reduce((s, p) => s + (-(p.x - x) * Math.sin(r) + (p.y - y) * Math.cos(r)), 0) / (pts.length || 1);
       return v;
     };
-    const tracks = [...trackSets.values()]
-      .map((set) => ({ set, v: lateral(set) }))
+    const tracks = [...trackSets]
+      .map(([g, set]) => ({
+        set,
+        v: lateral(set),
+        platformLength: [...(trackPlatforms.get(g) ?? [])].reduce((sum, uid) => sum + (platLength.get(uid) ?? 0), 0),
+      }))
       .sort((a, b) => a.v - b.v)
-      .map((t, i) => ({ number: i + 1, pieces: [...t.set].sort() }));
+      .map((t, i) => ({ number: i + 1, pieces: [...t.set].sort(), platformLength: t.platformLength }));
     stations.push({ id: ref.uid, platforms: members.map((a) => a.uid).sort(), tracks, x, y });
   }
   // 駅の並びは左上から（x、同じくらいなら y）

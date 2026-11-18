@@ -9,6 +9,7 @@ import type { Piece } from "../geometry";
 import { getPart, type PartDef } from "../parts";
 import { routeSamples } from "../shapes";
 import type { OperationPlan, Train, TrainStop } from "./model";
+import { carsFitting } from "./consist";
 import { trackIndex, type Station } from "./stations";
 
 export type StopEvent = {
@@ -313,6 +314,16 @@ function scheduleTrain(
     }
   }
 
+  /** ホームより編成が長ければ知らせる。知らせたら true */
+  const checkPlatform = (st: Station, track: number): boolean => {
+    const pl = st.tracks.find((x) => x.number === track)?.platformLength;
+    if (pl === undefined || pl + 1 >= len) return false;
+    const w = `${stationName(st.id)} ${track}番線のホーム（約${Math.round(pl)}mm・${carsFitting(pl)}両まで）より編成（${train.cars}両・約${Math.round(len)}mm）が長く、はみ出します`;
+    if (!result.warnings.includes(w)) result.warnings.push(w);
+    return true;
+  };
+  checkPlatform(origin, start.track);
+
   let pos = start.pos;
   let t = train.departSec;
   let s = 0;
@@ -350,7 +361,7 @@ function scheduleTrain(
       traversals.push({ uid: leg.path[k - 1].uid, routeIndex: leg.path[k - 1].routeIndex, from: curFrom, to: boundary });
       curFrom = boundary;
     }
-    if (leg.trackLength + 1 < len && !stop.pass) {
+    if (!stop.pass && !checkPlatform(st, leg.track) && leg.trackLength + 1 < len) {
       const w = `${stationName(st.id)} ${leg.track}番線は編成（${train.cars}両・約${Math.round(len)}mm）より短い線路です（約${Math.round(leg.trackLength)}mm）`;
       if (!result.warnings.includes(w)) result.warnings.push(w);
     }
