@@ -6,7 +6,7 @@ import { hashPassword } from "./password";
 import { openSecret, sealSecret } from "./secretBox";
 
 /**
- * サーバーに保存するデータ（ユーザー・AI設定・お知らせ）。
+ * サーバーに保存するデータ（ユーザー・AI設定・お知らせ・改善リクエスト）。
  * 件数が少ないので、全体を JSON にして SQLite の1行に保存する（db.ts）。保存先は NINEGAGE_DATA_DIR（既定 ./data）の store.sqlite。
  */
 
@@ -60,6 +60,38 @@ export type StoredNotice = {
   createdAt: string;
 };
 
+/** 改善リクエスト（feedback.ts）。だれが送ったかはここにだけ残し、公開の Issue には載せない */
+export type StoredFeedback = {
+  id: string;
+  userId: string;
+  category: "feature" | "bug" | "other";
+  /** 機能区分（.github/features.json の id） */
+  feature?: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  /** GitHub に作った Issue */
+  issue?: { number: number; url: string };
+  /** GitHub に登録できなかった理由（設定なし・通信の失敗など） */
+  error?: string;
+};
+
+const FEEDBACK_CATEGORY_IDS = ["feature", "bug", "other"];
+
+function feedbackOf(raw: unknown): StoredFeedback[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (f): f is StoredFeedback =>
+      !!f &&
+      typeof f.id === "string" &&
+      typeof f.userId === "string" &&
+      FEEDBACK_CATEGORY_IDS.includes(f.category) &&
+      typeof f.title === "string" &&
+      typeof f.body === "string" &&
+      typeof f.createdAt === "string",
+  );
+}
+
 /** apiKey はメモリ上では平文。ファイルには secretBox.ts の形式で暗号化して書く */
 export type ProviderSettings = { model?: string; apiKey?: string; baseUrl?: string };
 
@@ -91,6 +123,7 @@ export type StoreData = {
   ai: StoredAi;
   notices: StoredNotice[];
   aiCost: StoredAiCost;
+  feedback: StoredFeedback[];
 };
 
 export type Env = Record<string, string | undefined>;
@@ -172,6 +205,7 @@ function normalize(raw: unknown, env: Env = process.env): StoreData {
         )
       : [],
     aiCost: { usdJpy: typeof usdJpy === "number" && usdJpy > 0 && usdJpy < 10000 ? usdJpy : DEFAULT_USD_JPY },
+    feedback: feedbackOf(d.feedback),
   };
 }
 

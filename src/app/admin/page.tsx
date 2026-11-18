@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminAiPanel } from "@/components/AdminAiPanel";
 import { AdminAiUsagePanel } from "@/components/AdminAiUsagePanel";
+import { AdminFeedbackPanel } from "@/components/AdminFeedbackPanel";
 import { AdminNoticesPanel } from "@/components/AdminNoticesPanel";
 import { AdminUsersPanel } from "@/components/AdminUsersPanel";
 import { UserMenu } from "@/components/UserMenu";
@@ -30,6 +31,7 @@ export default async function AdminPage() {
         <AdminAiUsagePanel />
         <AdminUsersPanel currentUserId={user.id} />
         <AdminNoticesPanel />
+        <AdminFeedbackPanel />
       </main>
     </div>
   );

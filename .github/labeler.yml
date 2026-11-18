@@ -150,6 +150,17 @@
           - "src/app/share/**"
           - "tests/modules.test.ts"
           - "tests/share.test.ts"
+"feature:feedback":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/lib/feedback.ts"
+          - "src/lib/server/feedback.ts"
+          - "src/app/feedback/**"
+          - "src/app/api/feedback/**"
+          - "src/app/api/admin/feedback/**"
+          - "src/components/FeedbackForm.tsx"
+          - "src/components/AdminFeedbackPanel.tsx"
+          - "tests/feedback.test.ts"
 "feature:platform":
   - changed-files:
       - any-glob-to-any-file:

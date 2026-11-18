@@ -255,6 +255,23 @@
       ]
     },
     {
+      "id": "feedback",
+      "name": "改善リクエスト",
+      "color": "fbca04",
+      "description": "利用者がアプリから送る改善リクエストと、GitHub の Issue への自動登録、管理画面の一覧",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/src/lib/feedback.ts",
+        "/src/lib/server/feedback.ts",
+        "/src/app/feedback/",
+        "/src/app/api/feedback/",
+        "/src/app/api/admin/feedback/",
+        "/src/components/FeedbackForm.tsx",
+        "/src/components/AdminFeedbackPanel.tsx",
+        "/tests/feedback.test.ts"
+      ]
+    },
+    {
       "id": "platform",
       "name": "基盤・運用",
       "color": "555555",
