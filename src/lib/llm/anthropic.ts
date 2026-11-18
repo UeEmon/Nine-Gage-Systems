@@ -25,11 +25,45 @@ export function usageFromAnthropic(u: Anthropic.Beta.BetaUsage | undefined): Tok
 }
 
 /**
- * 1回の応答の出力上限。思考（effort: high）もここに含まれる。
+ * 1回の応答の出力上限（モデルの上限が分からないとき）。思考（effort: high）もここに含まれる。
  * 「再現してみた」の忠実モードなど部品が多い案では 16000 で切れることがあったため広げた。
  * 上限は使った分だけ課金されるので、広げても普段の費用は変わらない。
  */
 export const MAX_TOKENS = 32000;
+/**
+ * モデルが受け付ける出力上限がこれより大きくても、ここまでにとどめる。
+ * 忠実モードの駅などは 32000 でも思考と出力の合計が切れることがあるため、モデルが許す限り広げる。
+ */
+export const MAX_TOKENS_CAP = 128000;
+
+/** モデルごとの出力上限（Models API の max_tokens）。分からなければ null */
+const modelLimitCache = new Map<string, Promise<number | null>>();
+
+export function modelMaxTokens(client: Anthropic, model: string, cacheKey = model): Promise<number | null> {
+  let p = modelLimitCache.get(cacheKey);
+  if (!p) {
+    p = (async () => {
+      try {
+        const info = (await client.models.retrieve(model)) as { max_tokens?: number | null };
+        return typeof info.max_tokens === "number" && info.max_tokens > 0 ? info.max_tokens : null;
+      } catch {
+        return null;
+      }
+    })();
+    modelLimitCache.set(cacheKey, p);
+    // 失敗（null）はキャッシュに残さず、次の依頼で聞き直す
+    void p.then((v) => {
+      if (v === null) modelLimitCache.delete(cacheKey);
+    });
+  }
+  return p;
+}
+
+/** 1回の応答に指定する max_tokens。モデルの上限が分かればそこまで広げる */
+export function maxTokensFor(modelLimit: number | null): number {
+  if (!modelLimit) return MAX_TOKENS;
+  return Math.max(Math.min(modelLimit, MAX_TOKENS_CAP), Math.min(MAX_TOKENS, modelLimit));
+}
 
 function parseJson(text: string): unknown | null {
   if (!text.trim()) return null;
@@ -68,20 +102,23 @@ export function createAnthropicSession(
   const { parse: _parse, ...format } = betaZodOutputFormat(opts.zodSchema);
   // 途中で切れた応答は履歴に残さず、その依頼を次の依頼の前に付けて送り直す
   let carryOver = "";
+  // 出力が上限で切れたあとは思考を控えめにして、出力（部品の並び）に回す
+  let effort: "high" | "medium" = "high";
 
   return {
     async ask(userText: string): Promise<AskResult> {
       const content = carryOver ? `${carryOver}\n\n${userText}` : userText;
       carryOver = "";
+      const maxTokens = maxTokensFor(await modelMaxTokens(client, settings.model, `${settings.baseUrl ?? ""}|${settings.model}`));
       messages.push({ role: "user", content });
       // ストリーミングで受け取り、応答の開始（＝キャッシュが読めるようになった時点）を知らせる
       const stream = client.beta.messages.stream({
         model: settings.model,
-        max_tokens: MAX_TOKENS,
+        max_tokens: maxTokens,
         ...(supportsFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
         cache_control: { type: "ephemeral" },
         system,
-        output_config: { effort: "high", format },
+        output_config: { effort, format },
         messages,
       });
       let started = false;
@@ -98,6 +135,7 @@ export function createAnthropicSession(
         // 途中で切れた思考・出力を履歴に戻すと次の呼び出しが拒否されることがあり、入力も無駄に増える
         messages.pop();
         carryOver = content;
+        effort = "medium";
       } else {
         messages.push({ role: "assistant", content: response.content });
       }

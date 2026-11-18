@@ -23,9 +23,9 @@ export const maxDuration = 300;
 const TIME_BUDGET_MS = 230_000;
 /**
  * バックグラウンドで作るとき（画面は background: true で頼み、状態を問い合わせる）の持ち時間(ms)。
- * 忠実モードは1回の応答だけで数分かかることがあり、出し直しの分も含めて待てるようにする。
+ * 忠実モードは1回の応答だけで10分以上かかることがあり（出力上限をモデルの上限まで広げているため）、出し直しの分も含めて待てるようにする。
  */
-const BACKGROUND_TIME_BUDGET_MS = 15 * 60 * 1000;
+const BACKGROUND_TIME_BUDGET_MS = 30 * 60 * 1000;
 
 const BodySchema = z.object({
   board: z.object({

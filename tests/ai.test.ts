@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import { proposeLayout, sessionOptions } from "../src/lib/ai";
 import { resolveSettings, serverAiInfo, toLlmError } from "../src/lib/llm";
-import { createAnthropicSession } from "../src/lib/llm/anthropic";
+import { createAnthropicSession, maxTokensFor, MAX_TOKENS, MAX_TOKENS_CAP } from "../src/lib/llm/anthropic";
 import { createGeminiSession } from "../src/lib/llm/gemini";
 import { extractJson } from "../src/lib/llm/json";
 import { createOpenAiSession } from "../src/lib/llm/openai";
@@ -215,6 +215,22 @@ describe("Claude adapter", () => {
     const req = (stream.mock.calls[0] as unknown as [Record<string, unknown>])[0];
     expect((req.system as { cache_control: unknown }[])[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
     expect(req.cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("uses the model's output limit for max_tokens, within bounds", () => {
+    expect(maxTokensFor(null)).toBe(MAX_TOKENS);
+    expect(maxTokensFor(64000)).toBe(64000);
+    expect(maxTokensFor(1_000_000)).toBe(MAX_TOKENS_CAP);
+    // 上限が小さいモデルでは、その上限を超えて頼まない
+    expect(maxTokensFor(8192)).toBe(8192);
+  });
+
+  it("falls back to the default max_tokens when the model limit is unknown", async () => {
+    const { stream, client } = fakeClient();
+    const session = createAnthropicSession({ provider: "anthropic", model: "claude-opus-5-5" }, sessionOptions(), client, {});
+    await session.ask("1");
+    const req = (stream.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(req.max_tokens).toBe(MAX_TOKENS);
   });
 
   it("reports token usage and when the response started", async () => {
