@@ -15,6 +15,8 @@ import { LIMITS, newTrainId, TRAIN_KINDS, type OperationPlan, type Train, type T
 import { carsFitting, fitCarsToPlatforms } from "./consist";
 import { computeSchedule, type ScheduleResult } from "./schedule";
 import { detectStations, type Station } from "./stations";
+import { layoutLines, stationLines, trackLines, type LineSource } from "./lines";
+import { canonicalLine } from "../replica";
 
 const MAX_ATTEMPTS = 4;
 const MAX_TRAINS = 12;
@@ -33,6 +35,7 @@ const AiStopSchema = z.object({
 
 const AiTrainSchema = z.object({
   name: z.string().describe("列車名（例: 101M、特急1号）"),
+  line: z.string().default("").describe("走る路線の名前。「## 路線」の一覧があればその書き方で書く。一覧がなければ空文字"),
   kind: z.enum(KIND_VALUES).describe("種別。local=普通, rapid=快速, express=特急, freight=貨物, deadhead=回送"),
   cars: z.number().int().describe("両数（1〜16）。停車するすべての駅の番線のホームの長さを基準に、いちばん短いホームに収まる両数にする"),
   speedKmh: z.number().describe("縮尺の最高速度(km/h)。普通60〜90、特急100〜130、貨物50〜80くらい"),
@@ -45,7 +48,7 @@ export const OperationProposalSchema = z.object({
   summary: z.string().describe("運行計画の説明（どんな運転が楽しめるか、行き違い・待避の見どころ）。2〜4文"),
   trains: z.array(AiTrainSchema),
 });
-export type OperationProposal = z.infer<typeof OperationProposalSchema>;
+export type OperationProposal = z.input<typeof OperationProposalSchema>;
 
 export function operationSystemPrompt(): string {
   return `あなたはNゲージ（1/150）の鉄道模型レイアウトの運行計画（ダイヤ）を考える専門家です。
@@ -70,7 +73,13 @@ export function operationSystemPrompt(): string {
 - 長い編成を走らせたいときは、長いホームのある番線を指定して停車させ、短いホームの駅は通過にします。
 - ホームからはみ出す両数にすると、アプリが自動でホームに収まる両数まで減らします。
 - 列車の本数は、要望になければ駅や番線の数に合わせて2〜5本くらい、全体で数分〜10分くらいの運転にします。最大${MAX_TRAINS}本。
-- 列車名は日本の鉄道らしく（例: 普通 101M・102M、特急「〇〇」1号）。`;
+- 列車名は日本の鉄道らしく（例: 普通 101M・102M、特急「〇〇」1号）。
+
+## 路線（実在の路線を再現したレイアウト）
+- 「## 路線」の一覧があるときは、各列車の line にその列車が走る路線の名前を書きます。番線の後ろの［］がその番線の路線です。
+- 列車は、その路線の番線に停車させます（直通運転でほかの路線の番線を使うときは、主に走る路線を line にします）。
+- 複数の路線があるときは、路線ごとに列車を走らせ、summary にどの路線にどんな列車を走らせたかを書きます。
+- 列車名もその路線らしくします（例: 山手線なら 普通 501G、東海道線なら 快速アクティー・普通 1520E）。鉄道会社のロゴ・商標は使いません。`;
 }
 
 let optsCache: SessionOptions | null = null;
@@ -115,14 +124,31 @@ function probeTrain(stops: { stationId: string; turnback?: boolean }[], laps = 1
 }
 
 /** AIに渡すレイアウトの説明（駅・番線・所要時間） */
-export function describeLayout(pieces: Piece[], stations: Station[], stationNames: Record<string, string>): string {
+export function describeLayout(
+  pieces: Piece[],
+  stations: Station[],
+  stationNames: Record<string, string>,
+  replica?: LineSource["replica"],
+): string {
   const byUid = new Map(pieces.map((p) => [p.uid, p]));
   const name = (s: Station) => stationNames[s.id] || s.defaultName;
-  const lines: string[] = ["## 駅と番線（ホームの長さと、そのホームに収まる両数）"];
+  const routeNames = layoutLines({ pieces, replica });
+  const tl = trackLines(stations, { pieces, replica });
+  const lines: string[] = [];
+  if (routeNames.length) {
+    lines.push("## 路線（実在の路線を再現したレイアウト。列車の line はこの書き方で）");
+    for (const l of routeNames) {
+      const at = stations.filter((s) => stationLines(s.id, tl).includes(l)).map((s) => `${code(stations.indexOf(s))} ${name(s)}`);
+      lines.push(`- ${l}${at.length ? `（駅: ${at.join("、")}）` : ""}`);
+    }
+    lines.push("");
+  }
+  lines.push("## 駅と番線（ホームの長さと、そのホームに収まる両数）");
   stations.forEach((s, i) => {
     const tracks = s.tracks.map((t) => {
       const len = trackLengthMm(byUid, t.pieces);
-      return `${t.number}番線（ホーム約${Math.round(t.platformLength)}mm・${carsFitting(t.platformLength)}両まで／線路約${Math.round(len)}mm）`;
+      const line = tl.get(s.id)?.[t.number - 1];
+      return `${t.number}番線${line ? `［${line}］` : ""}（ホーム約${Math.round(t.platformLength)}mm・${carsFitting(t.platformLength)}両まで／線路約${Math.round(len)}mm）`;
     });
     lines.push(`- ${code(i)} ${name(s)}: ${tracks.join("、")}`);
   });
@@ -161,7 +187,12 @@ export function describeLayout(pieces: Piece[], stations: Station[], stationName
 }
 
 /** AIの出力を運行計画に。駅の記号を駅IDに直し、値を範囲内に収める */
-export function toOperationPlan(p: OperationProposal, stations: Station[], stationNames: Record<string, string>): { plan: OperationPlan; problems: string[] } {
+export function toOperationPlan(
+  p: OperationProposal,
+  stations: Station[],
+  stationNames: Record<string, string>,
+  routeNames: string[] = [],
+): { plan: OperationPlan; problems: string[] } {
   const problems: string[] = [];
   const clamp = (v: number, r: { min: number; max: number }) => Math.min(r.max, Math.max(r.min, Math.round(v)));
   const trains: Train[] = p.trains.slice(0, MAX_TRAINS).map((t, ti) => {
@@ -180,9 +211,15 @@ export function toOperationPlan(p: OperationProposal, stations: Station[], stati
       }
       return [{ stationId: st.id, track, pass: si === 0 ? false : s.pass, dwellSec: clamp(s.pass ? 0 : s.dwellSec, LIMITS.dwellSec), ...(s.turnback && !s.pass ? { turnback: true } : {}) }];
     });
+    let line = routeNames.length ? canonicalLine(t.line, routeNames) : undefined;
+    if (line && !routeNames.includes(line)) {
+      problems.push(`列車${ti + 1}（${t.name}）: 路線「${line}」はありません。${routeNames.join("、")} から選ぶ`);
+      line = undefined;
+    }
     return {
       id: newTrainId(),
       name: t.name.slice(0, 40) || `${ti + 1}列車`,
+      ...(line ? { line } : {}),
       kind: kind.value,
       color: kind.color,
       cars: clamp(t.cars, LIMITS.cars),
@@ -230,6 +267,8 @@ export type OperationProposeInput = {
   pieces: Piece[];
   accessories: Accessory[];
   stationNames: Record<string, string>;
+  /** 「再現してみた」で再現した路線・駅（路線名を列車に反映する） */
+  replica?: LineSource["replica"];
   request: string;
 };
 
@@ -260,7 +299,8 @@ export async function proposeOperation(input: OperationProposeInput, session: Ch
   const stations = stationsFor(input.pieces, input.accessories);
   if (stations.length === 0) throw new OperationProposeError("駅がありません。線路の横にホームを置いてから、もう一度お試しください。");
 
-  let prompt = `${describeLayout(input.pieces, stations, input.stationNames)}
+  const routeNames = layoutLines({ pieces: input.pieces, replica: input.replica });
+  let prompt = `${describeLayout(input.pieces, stations, input.stationNames, input.replica)}
 
 ## 要望
 ${input.request.trim() || "このレイアウトで楽しく運転できる運行計画"}`;
@@ -282,7 +322,7 @@ ${input.request.trim() || "このレイアウトで楽しく運転できる運�
         : `出力が指定のJSON形式に合いませんでした。形式を守って計画全体を出し直してください。\n${z.prettifyError(parsed.error).slice(0, 1500)}`;
       continue;
     }
-    const converted = toOperationPlan(parsed.data, stations, input.stationNames);
+    const converted = toOperationPlan(parsed.data, stations, input.stationNames, routeNames);
     const problems = converted.problems;
     // 両数はホームの長さを基準にする：止まる駅のいちばん短いホームに収まるまで減らす
     let schedule = computeSchedule(input.pieces, stations, converted.plan);

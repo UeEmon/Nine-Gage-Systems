@@ -33,6 +33,8 @@ export type TrainStop = {
 export type Train = {
   id: string;
   name: string;
+  /** 走る路線の名前（「再現してみた」で作ったレイアウトの路線など）。ない列車もある */
+  line?: string;
   kind: TrainKind;
   /** ダイヤグラムの線の色 */
   color: string;
@@ -70,11 +72,12 @@ export function newTrainId(): string {
   return `t${Date.now().toString(36)}${counter.toString(36)}`;
 }
 
-export function newTrain(index: number, stationIds: string[]): Train {
+export function newTrain(index: number, stationIds: string[], line?: string): Train {
   const kind = TRAIN_KINDS[0];
   return {
     id: newTrainId(),
     name: `${index + 1}列車`,
+    ...(line ? { line } : {}),
     kind: kind.value,
     color: kind.color,
     cars: 4,
@@ -99,6 +102,7 @@ export function normalizeOperation(v: unknown): OperationPlan | undefined {
     .map((t) => ({
       id: t.id,
       name: typeof t.name === "string" ? t.name.slice(0, 40) : "列車",
+      ...(typeof t.line === "string" && t.line.trim() ? { line: t.line.trim().slice(0, 40) } : {}),
       kind: TRAIN_KINDS.some((k) => k.value === t.kind) ? t.kind : "local",
       color: typeof t.color === "string" && /^#[0-9a-fA-F]{6}$/.test(t.color) ? t.color : "#2f6fb5",
       cars: Math.round(clamp(num(t.cars, 4), LIMITS.cars)),

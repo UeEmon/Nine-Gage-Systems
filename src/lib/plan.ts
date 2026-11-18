@@ -3,7 +3,7 @@ import { analyze, findConnections, placeAt, worldJoints, type Analysis, type Boa
 import { getPart, hasPart, partIdsFor, partKey, type Maker } from "./parts";
 import { accessoryIdsFor, getAccessory, hasAccessory, placeOnPiece, type Accessory } from "./accessories";
 import { computeElevation } from "./elevation";
-import { PlanReplicaSchema, placeSimOnPiece, type PlanReplica, type SimObject } from "./replica";
+import { canonicalLine, PlanReplicaSchema, placeSimOnPiece, type PlanReplica, type SimObject } from "./replica";
 
 /**
  * AIが出力する「線路の並び」。座標ではなく部品の順番で表し、
@@ -123,10 +123,15 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
   const index: string[][] = [];
   const errors: string[] = [];
   const byUid = new Map<string, Piece>();
+  // 「再現してみた」の路線名。区間の line が空なら、分岐元の区間の路線を受け継ぐ
+  const knownLines = plan.replica?.lines ?? [];
+  const segLines: (string | undefined)[] = [];
 
   plan.segments.forEach((seg, si) => {
     const uids: string[] = [];
     index.push(uids);
+    const line = plan.replica ? (canonicalLine(seg.line, knownLines) ?? (seg.from ? segLines[seg.from.segment] : undefined)) : undefined;
+    segLines.push(line);
     let cursor: { x: number; y: number; deg: number } | null = null;
 
     if (seg.from === null) {
@@ -170,7 +175,8 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
       }
       const placed = placeAt(key, pp.dir === "R", pp.enter, cursor, `s${si}p${pi}`);
       const h = pp.height === undefined ? 0 : pp.height;
-      const piece: Piece = h === null ? { ...placed, ramp: true } : h ? { ...placed, z: h } : placed;
+      const base: Piece = line ? { ...placed, line } : placed;
+      const piece: Piece = h === null ? { ...base, ramp: true } : h ? { ...base, z: h } : base;
       pieces.push(piece);
       uids.push(piece.uid);
       byUid.set(piece.uid, piece);
