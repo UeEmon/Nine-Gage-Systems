@@ -130,6 +130,16 @@
 /src/components/AdminNoticesPanel.tsx @UeEmon
 /tests/notices.test.ts @UeEmon
 
+# ── みんなのレイアウト（共有サイト）（feature:share）
+/share/ @UeEmon
+/src/lib/modules.ts @UeEmon
+/src/lib/shareLink.ts @UeEmon
+/src/lib/server/share.ts @UeEmon
+/src/app/api/share/ @UeEmon
+/src/app/share/ @UeEmon
+/tests/modules.test.ts @UeEmon
+/tests/share.test.ts @UeEmon
+
 # ── 基盤・運用（feature:platform）
 /src/lib/server/db.ts @UeEmon
 /src/lib/server/store.ts @UeEmon
@@ -172,3 +182,8 @@
 /src/app/api/ @UeEmon
 /src/lib/llm/ @UeEmon
 /scripts/ @UeEmon
+/share/Dockerfile @UeEmon
+/share/next.config.ts @UeEmon
+/share/src/app/api/ @UeEmon
+/share/src/app/auth/ @UeEmon
+/share/src/lib/ @UeEmon

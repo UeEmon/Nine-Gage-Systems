@@ -29,9 +29,10 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 | アカウント・ログイン・ロール | `feature:auth` | @UeEmon | ユーザー登録とメール確認、ログイン、パスワード、ロール（管理者・プレミアム・一般） |
 | 管理画面 | `feature:admin` | @UeEmon | 管理画面の枠とユーザー管理（AI設定・お知らせの管理画面はそれぞれの機能の担当） |
 | お知らせ・リリースノート | `feature:notices` | @UeEmon | ベルの未読通知、更新履歴（/news）、管理者からのお知らせ、リリースノート |
+| みんなのレイアウト（共有サイト） | `feature:share` | @UeEmon | レイアウトの投稿・共有と、投稿どうしをボードの端の線路でつなぐ仕組み（別コンテナの share/）、本体からのログインの受け渡し |
 | 基盤・運用 | `feature:platform` | @UeEmon | データの保存（SQLite）・暗号化・バックアップ・死活確認、画面の共通部分とブランド、ビルド・CI・デプロイ、文書 |
 
-保護する場所の担当: @UeEmon（`/.github/`、`/Dockerfile`、`/.dockerignore`、`/package.json`、`/package-lock.json`、`/next.config.ts`、`/src/lib/server/`、`/src/app/api/`、`/src/lib/llm/`、`/scripts/`）
+保護する場所の担当: @UeEmon（`/.github/`、`/Dockerfile`、`/.dockerignore`、`/package.json`、`/package-lock.json`、`/next.config.ts`、`/src/lib/server/`、`/src/app/api/`、`/src/lib/llm/`、`/scripts/`、`/share/Dockerfile`、`/share/next.config.ts`、`/share/src/app/api/`、`/share/src/app/auth/`、`/share/src/lib/`）
 
 ## 機能ごとのファイル
 
@@ -172,6 +173,17 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/components/NoticeList.tsx`
 - `/src/components/AdminNoticesPanel.tsx`
 - `/tests/notices.test.ts`
+
+### みんなのレイアウト（共有サイト）（`feature:share`）
+
+- `/share/`
+- `/src/lib/modules.ts`
+- `/src/lib/shareLink.ts`
+- `/src/lib/server/share.ts`
+- `/src/app/api/share/`
+- `/src/app/share/`
+- `/tests/modules.test.ts`
+- `/tests/share.test.ts`
 
 ### 基盤・運用（`feature:platform`）
 

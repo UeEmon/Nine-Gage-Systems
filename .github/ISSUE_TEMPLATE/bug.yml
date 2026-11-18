@@ -21,6 +21,7 @@ body:
         - "アカウント・ログイン・ロール（feature:auth）"
         - "管理画面（feature:admin）"
         - "お知らせ・リリースノート（feature:notices）"
+        - "みんなのレイアウト（共有サイト）（feature:share）"
         - "基盤・運用（feature:platform）"
         - "わからない・複数にまたがる"
     validations:

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/roles";
 
-export function LoginForm({ signup }: { signup: boolean }) {
+/** next: ログイン後に移る、このサイトの中のパス（サーバーで確かめたもの） */
+export function LoginForm({ signup, next = "/" }: { signup: boolean; next?: string }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [state, setState] = useState<{ busy: boolean; error?: string }>({ busy: false });
@@ -14,7 +15,7 @@ export function LoginForm({ signup }: { signup: boolean }) {
     setState({ busy: true });
     try {
       await api("/api/auth/login", "POST", { username, password });
-      window.location.href = "/";
+      window.location.href = next;
     } catch (err) {
       setState({ busy: false, error: err instanceof Error ? err.message : String(err) });
     }

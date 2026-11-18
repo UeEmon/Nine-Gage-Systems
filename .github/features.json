@@ -18,7 +18,12 @@
       "/src/lib/server/",
       "/src/app/api/",
       "/src/lib/llm/",
-      "/scripts/"
+      "/scripts/",
+      "/share/Dockerfile",
+      "/share/next.config.ts",
+      "/share/src/app/api/",
+      "/share/src/app/auth/",
+      "/share/src/lib/"
     ]
   },
   "features": [
@@ -230,6 +235,23 @@
         "/src/components/NoticeList.tsx",
         "/src/components/AdminNoticesPanel.tsx",
         "/tests/notices.test.ts"
+      ]
+    },
+    {
+      "id": "share",
+      "name": "みんなのレイアウト（共有サイト）",
+      "color": "2fbf71",
+      "description": "レイアウトの投稿・共有と、投稿どうしをボードの端の線路でつなぐ仕組み（別コンテナの share/）、本体からのログインの受け渡し",
+      "owners": ["@UeEmon"],
+      "paths": [
+        "/share/",
+        "/src/lib/modules.ts",
+        "/src/lib/shareLink.ts",
+        "/src/lib/server/share.ts",
+        "/src/app/api/share/",
+        "/src/app/share/",
+        "/tests/modules.test.ts",
+        "/tests/share.test.ts"
       ]
     },
     {
