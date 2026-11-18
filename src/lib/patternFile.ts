@@ -31,7 +31,8 @@ export function toPatternFile(patterns: SavedPattern[]): PatternFile {
   return { format: PATTERN_FILE_FORMAT, version: PATTERN_FILE_VERSION, exportedAt: new Date().toISOString(), patterns };
 }
 
-function validLayout(l: unknown): l is Layout {
+/** 保存・読み込み・共有サイトの投稿で受け付けるレイアウトか（部品やパーツがカタログにあるか） */
+export function validLayout(l: unknown): l is Layout {
   const x = l as Layout;
   return (
     !!x &&
