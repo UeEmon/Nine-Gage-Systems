@@ -11,7 +11,7 @@ import { isPierKey } from "./elevation";
 import { PIER_SYSTEMS } from "../data/piers";
 import { accessoriesFor, isAccessoryKey, type Accessory } from "./accessories";
 import type { AccessoryMount } from "../data/accessories";
-import { REPLICA_LEVEL_LABELS, replicaGuide, replicaRequest, type ReplicaInfo, type ReplicaTarget, type SimObject } from "./replica";
+import { lineKey, REPLICA_LEVEL_LABELS, replicaGuide, replicaRequest, type ReplicaInfo, type ReplicaTarget, type SimObject } from "./replica";
 
 const MOUNT_PROMPT: Record<AccessoryMount, string> = {
   onTrack: "線路の上",
@@ -503,9 +503,6 @@ export function fitBoard(pieces: Piece[], accessories: Accessory[], sims: SimObj
     board: { width: round10(maxX - minX + FIT_MARGIN_MM * 2), height: round10(maxY - minY + FIT_MARGIN_MM * 2) },
   };
 }
-
-/** 路線名を比べるための形（空白と「線」の有無の違いを無視する） */
-const lineKey = (name: string) => name.normalize("NFKC").replace(/\s+/g, "").replace(/線$/, "");
 
 /**
  * 「再現してみた」の駅で、乗り入れる路線をまとめずに、路線ごとに線路を分けたかを確かめる。

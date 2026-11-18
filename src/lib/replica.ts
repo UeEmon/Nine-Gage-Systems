@@ -29,6 +29,16 @@ export const REPLICA_LEVEL_HELP: Record<ReplicaLevel, string> = {
     "線路の配置・駅の配線・構造物の並びをできるだけ実物どおりにし、縮めるのは長さだけにします。ボードの大きさは、出来上がったレイアウトに合わせます。部品とAIのトークン消費が多くなります。",
 };
 
+/** 路線名を比べるための形（空白と「線」の有無の違いを無視する） */
+export const lineKey = (name: string) => name.normalize("NFKC").replace(/\s+/g, "").replace(/線$/, "");
+
+/** 路線名を、known の中の同じ路線の書き方にそろえる（なければ前後の空白を除いたもの。空なら undefined） */
+export function canonicalLine(name: string | undefined, known: readonly string[]): string | undefined {
+  const t = (name ?? "").trim().slice(0, 40);
+  if (!t) return undefined;
+  return known.find((k) => lineKey(k) === lineKey(t)) ?? t;
+}
+
 export type ReplicaTarget = { kind: ReplicaKind; name: string; level?: ReplicaLevel };
 
 export const SIM_KINDS = [

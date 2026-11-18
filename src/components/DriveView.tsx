@@ -26,6 +26,8 @@ import {
   formatTime,
   kindLabel,
   normalizeOperation,
+  trackLines,
+  trainLine,
   TrainPlayback,
   type StopEvent,
   type Train,
@@ -52,7 +54,13 @@ type PlanHud = {
 };
 
 /** 運行計画で走らせる列車 */
-type PlanTrain = { train: Train; events: StopEvent[]; playback: TrainPlayback };
+type PlanTrain = {
+  train: Train;
+  /** 走る路線（「再現してみた」で作ったレイアウトの路線名） */
+  line?: string;
+  events: StopEvent[];
+  playback: TrainPlayback;
+};
 
 /** 時刻を進める速さ（倍） */
 const RATES = [1, 2, 5, 10, 30];
@@ -92,15 +100,17 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
     const plan = normalizeOperation(layout.operation) ?? EMPTY_OPERATION;
     const stations = detectStations(layout.pieces, layout.accessories ?? [], graph.elevation);
     const result = computeSchedule(layout.pieces, stations, plan);
+    const lines = trackLines(stations, { pieces: layout.pieces, replica: layout.replica });
     const trains: PlanTrain[] = plan.trains.flatMap((train) => {
       const sch = result.trains.find((x) => x.trainId === train.id);
-      return sch?.motion ? [{ train, events: sch.events, playback: new TrainPlayback(graph, sch.motion) }] : [];
+      const line = trainLine(train, sch?.events, lines);
+      return sch?.motion ? [{ train, ...(line ? { line } : {}), events: sch.events, playback: new TrainPlayback(graph, sch.motion) }] : [];
     });
     const startT = trains.length ? Math.max(0, Math.min(...trains.map((x) => x.playback.appearT))) : 0;
     const endT = trains.length ? Math.max(...trains.map((x) => x.playback.endT)) + 10 : 0;
     const stationName = (id: string) => plan.stationNames[id] || stations.find((x) => x.id === id)?.defaultName || "駅";
     return { trains, startT, endT, stationName };
-  }, [layout.operation, layout.pieces, layout.accessories, graph]);
+  }, [layout.operation, layout.pieces, layout.accessories, layout.replica, graph]);
 
   const [mode, setMode] = useState<RunMode>(planTrainId && op.trains.length ? "plan" : "free");
   const [rideId, setRideId] = useState<string>(
@@ -343,7 +353,7 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
         setPlanHud({
           t: c.t,
           kmh: st.kmh,
-          train: `${ride.train.name}（${kindLabel(ride.train.kind)}・${ride.train.cars}両）`,
+          train: `${ride.train.name}（${ride.line ? `${ride.line}・` : ""}${kindLabel(ride.train.kind)}・${ride.train.cars}両）`,
           status: planStatus(ride, c.t, st.hidden, st.stopped, op.stationName),
         });
         const part = piece ? getPart(piece.partId) : null;
@@ -549,7 +559,8 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
               <select value={rideId} onChange={(e) => setRideId(e.target.value)}>
                 {op.trains.map((x) => (
                   <option key={x.train.id} value={x.train.id}>
-                    {x.train.name}（{kindLabel(x.train.kind)}）
+                    {x.train.name}（{x.line ? `${x.line}・` : ""}
+                    {kindLabel(x.train.kind)}）
                   </option>
                 ))}
               </select>

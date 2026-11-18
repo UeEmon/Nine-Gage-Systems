@@ -10,13 +10,17 @@ import {
   EMPTY_OPERATION,
   formatTime,
   kindLabel,
+  layoutLines,
   LIMITS,
   newTrain,
   newTrainId,
   normalizeOperation,
   parseTime,
   platformLimit,
+  stationLines,
+  trackLines,
   TRAIN_KINDS,
+  trainLine,
   type PlatformLimit,
   type OperationPlan,
   type Train,
@@ -42,6 +46,10 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
   const stations = useMemo(() => detectStations(layout.pieces, accessories, elevation), [layout.pieces, accessories, elevation]);
   const result = useMemo(() => computeSchedule(layout.pieces, stations, plan), [layout.pieces, stations, plan]);
+  // 「再現してみた」で作ったレイアウトの路線名
+  const routeNames = useMemo(() => layoutLines({ pieces: layout.pieces, replica: layout.replica }), [layout.pieces, layout.replica]);
+  const lines = useMemo(() => trackLines(stations, { pieces: layout.pieces, replica: layout.replica }), [stations, layout.pieces, layout.replica]);
+  const lineOf = (t: Train) => trainLine(t, result.trains.find((s) => s.trainId === t.id)?.events, lines);
   const [selectedId, setSelectedId] = useState<string | null>(plan.trains[0]?.id ?? null);
   const selected = plan.trains.find((t) => t.id === selectedId) ?? null;
   const selectedSchedule = result.trains.find((s) => s.trainId === selectedId);
@@ -61,6 +69,7 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
           pieces: layout.pieces,
           accessories,
           stationNames: plan.stationNames,
+          ...(layout.replica ? { replica: { kind: layout.replica.kind, target: layout.replica.target, lines: layout.replica.lines } } : {}),
           request: aiRequest,
         }),
       });
@@ -112,7 +121,7 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
       <header className="op-head">
         <h2>運行計画（ダイヤ）</h2>
         <span className="muted">
-          駅 {stations.length} ・ 列車 {plan.trains.length} 本
+          {routeNames.length > 0 && `${routeNames.join("・")} ・ `}駅 {stations.length} ・ 列車 {plan.trains.length} 本
         </span>
         {onRide && (
           <button
@@ -146,7 +155,10 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
                       onChange={(e) => onChange({ ...plan, stationNames: { ...plan.stationNames, [s.id]: e.target.value } })}
                       aria-label={`${s.defaultName}の名前`}
                     />
-                    <span className="muted">{s.tracks.length}線</span>
+                    <span className="muted">
+                      {s.tracks.length}線
+                      {stationLines(s.id, lines).length > 0 && ` ${stationLines(s.id, lines).join("・")}`}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -200,6 +212,7 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
               {plan.trains.map((t) => {
                 const sch = result.trains.find((s) => s.trainId === t.id);
                 const bad = (sch?.errors.length ?? 0) > 0;
+                const line = lineOf(t);
                 return (
                   <li key={t.id}>
                     <button className={t.id === selectedId ? "on" : ""} onClick={() => setSelectedId(t.id)}>
@@ -207,6 +220,7 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
                       {t.name}
                       <span className="muted">
                         {" "}
+                        {line && `${line} `}
                         {kindLabel(t.kind)} {t.cars}両 {formatTime(t.departSec)}発
                       </span>
                       {bad && <span className="error"> ⚠</span>}
@@ -224,6 +238,8 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
             <TrainEditor
               key={selected.id}
               train={selected}
+              routeNames={routeNames}
+              autoLine={selectedSchedule ? trainLine({}, selectedSchedule.events, lines) : undefined}
               stations={stations.map((s) => ({ id: s.id, name: stationName(s.id), tracks: s.tracks.length }))}
               platform={selectedSchedule && !selectedSchedule.errors.length ? platformLimit(selectedSchedule, stations) : null}
               stationName={stationName}
@@ -269,7 +285,8 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
                 <section className="op-timetable">
                   <h3>
                     <span className="op-swatch" style={{ background: selected.color }} />
-                    {selected.name}（{kindLabel(selected.kind)}・{selected.cars}両）の時刻表
+                    {selected.name}（{lineOf(selected) ? `${lineOf(selected)}・` : ""}
+                    {kindLabel(selected.kind)}・{selected.cars}両）の時刻表
                   </h3>
                   {selectedSchedule.errors.map((e) => (
                     <p key={e} className="error">
@@ -327,6 +344,8 @@ type StationOption = { id: string; name: string; tracks: number };
 
 function TrainEditor({
   train,
+  routeNames,
+  autoLine,
   stations,
   platform,
   stationName,
@@ -336,6 +355,10 @@ function TrainEditor({
   onRemove,
 }: {
   train: Train;
+  /** レイアウトの路線（「再現してみた」で作ったとき） */
+  routeNames: string[];
+  /** 路線を「自動」にしたときの路線（使う番線から決めたもの） */
+  autoLine: string | undefined;
   stations: StationOption[];
   /** 止まる駅のうち、いちばん短いホーム */
   platform: PlatformLimit | null;
@@ -371,6 +394,20 @@ function TrainEditor({
           列車名
           <input value={train.name} maxLength={40} onChange={(e) => onChange({ name: e.target.value })} />
         </label>
+        {(routeNames.length > 0 || train.line) && (
+          <label title="運行計画やダイヤ、運転席に出す路線名。自動にすると、停車する番線の路線になります">
+            路線
+            <select value={train.line ?? ""} onChange={(e) => onChange({ line: e.target.value || undefined })}>
+              <option value="">自動（{autoLine ?? "なし"}）</option>
+              {train.line && !routeNames.includes(train.line) && <option value={train.line}>{train.line}</option>}
+              {routeNames.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           種別
           <select value={train.kind} onChange={(e) => setKind(e.target.value as TrainKind)}>

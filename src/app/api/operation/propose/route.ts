@@ -25,6 +25,7 @@ const BodySchema = z.object({
         rot: num,
         z: num.optional(),
         ramp: z.boolean().optional(),
+        line: z.string().max(40).optional(),
       }),
     )
     .min(1)
@@ -45,6 +46,14 @@ const BodySchema = z.object({
     .max(1000)
     .default([]),
   stationNames: z.record(z.string().max(64), z.string().max(40)).default({}),
+  /** 「再現してみた」で再現した路線・駅（列車の路線名に使う） */
+  replica: z
+    .object({
+      kind: z.enum(["line", "station"]),
+      target: z.string().max(200),
+      lines: z.array(z.string().max(100)).max(20).optional(),
+    })
+    .nullish(),
   request: z.string().max(2000).default(""),
 });
 
@@ -59,7 +68,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: "入力が正しくありません（レイアウトの線路が読めないか、要望が2000文字を超えています）" }, { status: 400 });
   }
-  const { maker, pieces, accessories, stationNames, request } = parsed.data;
+  const { maker, pieces, accessories, stationNames, replica, request } = parsed.data;
 
   let settings: ResolvedAiSettings;
   let keySource: KeySource;
@@ -87,7 +96,7 @@ export async function POST(req: Request) {
 
   try {
     const session = createSession(settings, operationSessionOptions());
-    const result = await proposeOperation({ pieces, accessories, stationNames, request }, session, settings.model);
+    const result = await proposeOperation({ pieces, accessories, stationNames, replica, request }, session, settings.model);
     await record({ attempts: result.attempts, resultCached: false, ok: true, usage: result.usage });
     return Response.json({ provider: settings.provider, keySource, ...result });
   } catch (err) {

@@ -19,6 +19,8 @@ export type Piece = {
   z?: number;
   /** true で勾配区間（前後の部品の高さの間を自動で上り下りする。z は使わない） */
   ramp?: boolean;
+  /** この線路がどの路線か（「再現してみた」で作ったとき。運行計画の路線名に使う） */
+  line?: string;
 };
 
 export type Board = { width: number; height: number };
