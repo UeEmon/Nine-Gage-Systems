@@ -140,6 +140,16 @@
 /tests/modules.test.ts @UeEmon
 /tests/share.test.ts @UeEmon
 
+# ── 改善リクエスト（feature:feedback）
+/src/lib/feedback.ts @UeEmon
+/src/lib/server/feedback.ts @UeEmon
+/src/app/feedback/ @UeEmon
+/src/app/api/feedback/ @UeEmon
+/src/app/api/admin/feedback/ @UeEmon
+/src/components/FeedbackForm.tsx @UeEmon
+/src/components/AdminFeedbackPanel.tsx @UeEmon
+/tests/feedback.test.ts @UeEmon
+
 # ── 基盤・運用（feature:platform）
 /src/lib/server/db.ts @UeEmon
 /src/lib/server/store.ts @UeEmon
