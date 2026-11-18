@@ -1436,7 +1436,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <button className="primary" onClick={() => runAi()} disabled={ai.status === "loading"}>
             {ai.status === "loading"
               ? aiMode === "replica" && replicaLevel === "faithful"
-                ? "設計中…（忠実は5〜15分かかることがあります）"
+                ? "設計中…（忠実は数分〜30分ほどかかることがあります）"
                 : "設計中…（1〜3分かかります）"
               : "提案してもらう"}
           </button>

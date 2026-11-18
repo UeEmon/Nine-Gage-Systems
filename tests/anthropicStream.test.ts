@@ -11,9 +11,21 @@ let baseURL = "";
 const bodies: Record<string, unknown>[] = [];
 // 次の応答を差し替える（空なら正常な計画を返す）
 const nextResponses: { text: string; stopReason: string }[] = [];
+// Models API が返すモデルの出力上限（null なら 404 を返す）
+let modelLimit: number | null = 64000;
 
 beforeAll(async () => {
   server = createServer(async (req, res) => {
+    if (req.method === "GET" && req.url?.startsWith("/v1/models/")) {
+      if (modelLimit === null) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ type: "error", error: { type: "not_found_error", message: "no" } }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "claude-opus-5-5", type: "model", display_name: "x", created_at: "2026-01-01T00:00:00Z", max_tokens: modelLimit }));
+      return;
+    }
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
     bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
@@ -85,6 +97,22 @@ describe("Claude adapter over HTTP streaming", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toContain("待避線のあるレイアウト");
     expect(messages[0].content).toContain("出力が長すぎて途中で切れました。");
+    // 切れたあとは思考を控えめにして、出力に回す
+    expect((bodies[0].output_config as { effort: string }).effort).toBe("high");
+    expect((bodies[1].output_config as { effort: string }).effort).toBe("medium");
+  });
+
+  it("widens max_tokens up to the model's limit", async () => {
+    bodies.length = 0;
+    modelLimit = 64000;
+    const session = createAnthropicSession(
+      { provider: "anthropic", model: "claude-opus-5-5", apiKey: "test", baseUrl: baseURL },
+      sessionOptions(),
+      undefined,
+      {},
+    );
+    await session.ask("1");
+    expect(bodies[0].max_tokens).toBe(64000);
   });
 
   it("returns null for an empty answer instead of throwing", async () => {
