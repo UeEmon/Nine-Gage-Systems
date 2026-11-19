@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, ROLE_LABELS } from "@/lib/roles";
+import { ModelSelect } from "./ModelSelect";
 import { DEFAULT_LOCAL_BASE_URL, PROVIDER_LABELS, PROVIDERS, type ProviderId } from "@/lib/llm/types";
 
 type ProviderView = {
@@ -123,17 +124,12 @@ export function AdminAiPanel() {
       <label>
         モデル
         <div className="input-row">
-          <input list="admin-models" value={d.model} placeholder={pv.defaultModel} onChange={(e) => set({ model: e.target.value })} />
+          <input value={d.model} placeholder={pv.defaultModel} onChange={(e) => set({ model: e.target.value })} />
           <button type="button" onClick={fetchModels} disabled={!!state.busy}>
             {state.busy === "models" ? "取得中…" : "一覧"}
           </button>
         </div>
-        <datalist id="admin-models">
-          {models.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
-        {models.length > 0 && <span className="muted">{models.length}件のモデルから選べます</span>}
+        <ModelSelect models={models} value={d.model} onPick={(m) => set({ model: m })} />
       </label>
       <label>
         APIキー
@@ -276,7 +272,6 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
             モデル（空欄なら {fallbackModel}）
             <div className="input-row">
               <input
-                list="premium-models"
                 value={model}
                 placeholder={fallbackModel}
                 onChange={(e) => {
@@ -288,12 +283,14 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
                 {state.busy === "models" ? "取得中…" : "一覧"}
               </button>
             </div>
-            <datalist id="premium-models">
-              {models.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-            {models.length > 0 && <span className="muted">{models.length}件のモデルから選べます</span>}
+            <ModelSelect
+              models={models}
+              value={model}
+              onPick={(m) => {
+                setModel(m);
+                setState({});
+              }}
+            />
           </label>
           <label>
             APIキー（{ROLE_LABELS.ai}専用・任意）

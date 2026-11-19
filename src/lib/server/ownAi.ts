@@ -86,6 +86,16 @@ export function ownSettings(user: StoredUser, env: Env = process.env): ResolvedA
   return resolveSettings({ provider: o.provider, model: o.model, apiKey }, { NODE_ENV: env.NODE_ENV });
 }
 
+/** 「一覧」用。入力中のキーがあればそれ、なければ同じプロバイダの保存済みのキーで、モデルの一覧を取る設定を作る */
+export function previewOwnSettings(user: StoredUser, provider: OwnAiProvider, apiKey: string | undefined, env: Env = process.env): ResolvedAiSettings {
+  if (!canSetOwnKey(user.role)) {
+    throw new OwnAiError("このアカウントは管理者が設定したAIを使います。自分のAPIキーは設定できません。", 403);
+  }
+  const key = apiKey || (user.ownAi?.provider === provider ? ownApiKey(user, env) : null);
+  if (!key) throw new LlmError("モデルの一覧を取るには、先にAPIキーを入力してください。", 400);
+  return resolveSettings({ provider, apiKey: key }, { NODE_ENV: env.NODE_ENV });
+}
+
 export type KeySource = "server" | "own";
 
 /** どちらのキーを使うか。一般は自分のキー、プレミアムユーザーは自分のキーを登録していればそれ、管理者はサーバーのキー */

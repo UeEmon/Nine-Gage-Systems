@@ -629,3 +629,5 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .guide-provider[open] summary { margin-bottom: 8px; }
 .guide-faq dt { font-weight: 600; margin-top: 10px; }
 .guide-faq dd { margin: 4px 0 0 0; font-size: 13px; line-height: 1.6; }
+/* 「一覧」で取ったモデルから選ぶ */
+.model-select { margin-top: 4px; }

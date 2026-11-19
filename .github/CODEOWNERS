@@ -83,6 +83,7 @@
 /src/components/AiStatus.tsx @UeEmon
 /src/components/AiHistoryPanel.tsx @UeEmon
 /src/components/OwnAiForm.tsx @UeEmon
+/src/components/ModelSelect.tsx @UeEmon
 /src/app/guide/api-key/ @UeEmon
 /src/components/AdminAiPanel.tsx @UeEmon
 /src/components/AdminAiUsagePanel.tsx @UeEmon

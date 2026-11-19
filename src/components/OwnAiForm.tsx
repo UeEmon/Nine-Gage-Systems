@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { PROVIDER_LABELS } from "@/lib/llm/types";
 import Link from "next/link";
 import { api, API_KEY_GUIDE_PATH, ROLE_LABELS } from "@/lib/roles";
+import { ModelSelect } from "./ModelSelect";
 
 const PROVIDERS = ["anthropic", "openai", "gemini"] as const;
 type Provider = (typeof PROVIDERS)[number];
@@ -38,7 +39,19 @@ export function OwnAiForm({ premium = false }: { premium?: boolean }) {
   const [provider, setProvider] = useState<Provider>("anthropic");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [models, setModels] = useState<string[]>([]);
   const [state, setState] = useState<{ busy: boolean; error?: string; done?: string }>({ busy: false });
+
+  const fetchModels = async () => {
+    setState({ busy: true });
+    try {
+      const r = await api<{ models: string[] }>("/api/account/ai/models", "POST", { provider, ...(apiKey ? { apiKey } : {}) });
+      setModels(r.models);
+      setState({ busy: false });
+    } catch (err) {
+      setState({ busy: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  };
 
   const apply = (v: View) => {
     setView(v);
@@ -113,7 +126,13 @@ export function OwnAiForm({ premium = false }: { premium?: boolean }) {
       )}
       <label>
         AI
-        <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
+        <select
+          value={provider}
+          onChange={(e) => {
+            setProvider(e.target.value as Provider);
+            setModels([]);
+          }}
+        >
           {PROVIDERS.map((p) => (
             <option key={p} value={p}>
               {PROVIDER_LABELS[p]}
@@ -123,7 +142,14 @@ export function OwnAiForm({ premium = false }: { premium?: boolean }) {
       </label>
       <label>
         モデル（空欄なら {view.defaultModels[provider]}）
-        <input value={model} onChange={(e) => setModel(e.target.value)} placeholder={view.defaultModels[provider]} autoComplete="off" />
+        <div className="input-row">
+          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder={view.defaultModels[provider]} autoComplete="off" />
+          <button type="button" onClick={fetchModels} disabled={state.busy}>
+            一覧
+          </button>
+        </div>
+        <ModelSelect models={models} value={model} onPick={setModel} />
+        <span className="muted">「一覧」は、下に入力したキー（なければ保存済みのキー）で使えるモデルを取り出します。</span>
       </label>
       <label>
         APIキー
