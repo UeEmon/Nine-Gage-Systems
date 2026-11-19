@@ -26,11 +26,14 @@ export function settingsForUse(
   ai: StoredAi,
   env: Env = process.env,
   provider = activeProvider(ai, env),
-  model?: string,
+  override: { model?: string; apiKey?: string } = {},
 ): ResolvedAiSettings {
   const s = ai.byProvider[provider] ?? {};
   try {
-    return resolveSettings({ provider, ...s, ...(model ? { model } : {}) }, { ...env, AI_ALLOW_CUSTOM_BASE_URL: "true" });
+    return resolveSettings(
+      { provider, ...s, ...(override.model ? { model: override.model } : {}), ...(override.apiKey ? { apiKey: override.apiKey } : {}) },
+      { ...env, AI_ALLOW_CUSTOM_BASE_URL: "true" },
+    );
   } catch (err) {
     if (err instanceof LlmError && /APIキーがありません/.test(err.message)) {
       throw new LlmError("AIのAPIキーが設定されていません。管理者に「管理」画面のAI設定を依頼してください。", 503);
@@ -39,10 +42,13 @@ export function settingsForUse(
   }
 }
 
-/** ロールに合わせたサーバーのAI。プレミアムユーザーは「プレミアムユーザー用」の設定（なければ管理者用と同じ）を使う */
+/**
+ * ロールに合わせたサーバーのAI。プレミアムユーザーは「プレミアムユーザー用」の設定（なければ管理者用と同じ）を使う。
+ * プレミアムユーザー用のAPIキーがあればそれを、なければそのプロバイダの共通のキーを使う
+ */
 export function settingsForRole(ai: StoredAi, role: ServerAiRole, env: Env = process.env): ResolvedAiSettings {
   if (role === "admin" || !ai.premium?.provider) return settingsForUse(ai, env);
-  return settingsForUse(ai, env, ai.premium.provider, ai.premium.model);
+  return settingsForUse(ai, env, ai.premium.provider, { model: ai.premium.model, apiKey: ai.premium.apiKey });
 }
 
 function mask(key?: string) {
@@ -56,7 +62,7 @@ export function adminAiView(ai: StoredAi, env: Env = process.env) {
   return {
     provider: activeProvider(ai, env),
     /** プレミアムユーザー用。provider が null なら管理者用と同じ */
-    premium: { provider: ai.premium?.provider ?? null, model: ai.premium?.model ?? "" },
+    premium: { provider: ai.premium?.provider ?? null, model: ai.premium?.model ?? "", savedKey: mask(ai.premium?.apiKey) },
     providers: Object.fromEntries(
       PROVIDERS.map((p) => {
         const s = ai.byProvider[p] ?? {};
@@ -107,11 +113,13 @@ export const ProviderPatch = z.object({
 export const AiPatchSchema = z.object({
   provider: z.enum(PROVIDERS).optional(),
   byProvider: z.partialRecord(z.enum(PROVIDERS), ProviderPatch).optional(),
-  /** プレミアムユーザー用。provider: null で「管理者用と同じ」に戻す（モデルも消す） */
+  /** プレミアムユーザー用。provider: null で「管理者用と同じ」に戻す（モデル・キーも消す） */
   premium: z
     .object({
       provider: z.enum(PROVIDERS).nullable(),
       model: z.string().trim().max(200).optional(),
+      /** 省略=変えない、空文字=消す（共通のキーを使う） */
+      apiKey: z.string().trim().max(500).optional(),
     })
     .optional(),
 });
@@ -121,12 +129,16 @@ export type AiPatch = z.infer<typeof AiPatchSchema>;
 export function applyAiPatch(ai: StoredAi, patch: AiPatch) {
   if (patch.provider) ai.provider = patch.provider;
   if (patch.premium) {
-    const { provider, model } = patch.premium;
+    const { provider, model, apiKey } = patch.premium;
     if (!provider) delete ai.premium;
     else {
-      // 別のプロバイダに変えたのにモデルの指定がなければ、前のモデル名は引き継がない
-      const keep = ai.premium?.provider === provider ? ai.premium.model : undefined;
-      ai.premium = { provider, model: model !== undefined ? model || undefined : keep };
+      // 別のプロバイダに変えたのに指定がなければ、前のモデル名・キーは引き継がない（別の会社にキーを送らない）
+      const same = ai.premium?.provider === provider;
+      ai.premium = {
+        provider,
+        model: model !== undefined ? model || undefined : same ? ai.premium?.model : undefined,
+        apiKey: apiKey !== undefined ? apiKey || undefined : same ? ai.premium?.apiKey : undefined,
+      };
     }
   }
   for (const p of PROVIDERS) {
@@ -147,4 +159,11 @@ export function previewSettings(ai: StoredAi, provider: ProviderId, change: Prov
   const copy: StoredAi = structuredClone(ai);
   applyAiPatch(copy, { byProvider: { [provider]: change ?? {} } });
   return settingsForUse(copy, env, provider);
+}
+
+/** プレミアムユーザー用の「一覧」。保存前のキーを保存済みの設定に重ねて使う */
+export function previewPremiumSettings(ai: StoredAi, provider: ProviderId, apiKey: string | undefined, env: Env = process.env) {
+  const copy: StoredAi = structuredClone(ai);
+  applyAiPatch(copy, { premium: { provider, ...(apiKey ? { apiKey } : {}) } });
+  return settingsForRole(copy, "ai", env);
 }

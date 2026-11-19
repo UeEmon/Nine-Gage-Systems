@@ -15,7 +15,7 @@ type ProviderView = {
 type View = {
   provider: ProviderId;
   /** プレミアムユーザー用。provider が null なら管理者用と同じ */
-  premium: { provider: ProviderId | null; model: string };
+  premium: { provider: ProviderId | null; model: string; savedKey: string | null };
   providers: Record<ProviderId, ProviderView>;
 };
 
@@ -100,7 +100,7 @@ export function AdminAiPanel() {
     <section className="card form">
       <h2>AI設定（サーバーのAIとAPIキー）</h2>
       <p className="hint">
-        管理者用のAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。ここで選んだプロバイダとモデルを管理者のAI提案に使います。APIキーと接続先URLはプロバイダごとに保存し、下の「{ROLE_LABELS.ai}用のAI」でも同じものを使います（「一般」のユーザーと、自分のキーを登録した{ROLE_LABELS.ai}は自分のAPIキー）。ほかのユーザーにはキーやURLは見えません。
+        管理者用のAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。ここで選んだプロバイダとモデルを管理者のAI提案に使います。APIキーと接続先URLはプロバイダごとに保存し、下の「{ROLE_LABELS.ai}用のAI」で専用のキーを入れなければ同じものを使います（「一般」のユーザーと、自分のキーを登録した{ROLE_LABELS.ai}は自分のAPIキー）。ほかのユーザーにはキーやURLは見えません。
       </p>
       <label>
         プロバイダ
@@ -176,26 +176,38 @@ export function AdminAiPanel() {
   );
 }
 
-/** プレミアムユーザーが使うプロバイダとモデル。キーと接続先URLは上の設定（プロバイダごと）を使う */
+/**
+ * プレミアムユーザーが使うプロバイダ・モデル・APIキー。
+ * キーを入れなければ上の設定（プロバイダごとの共通のキー）を使う。接続先URLは上の設定を使う
+ */
 function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) => void }) {
   const [provider, setProvider] = useState<ProviderId | "">(view.premium.provider ?? "");
   const [model, setModel] = useState(view.premium.model);
+  const [apiKey, setApiKey] = useState("");
+  const [clearKey, setClearKey] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [state, setState] = useState<{ busy?: string; error?: string; saved?: boolean }>({});
 
   useEffect(() => {
     setProvider(view.premium.provider ?? "");
     setModel(view.premium.model);
-  }, [view.premium.provider, view.premium.model]);
+    setApiKey("");
+    setClearKey(false);
+  }, [view.premium.provider, view.premium.model, view.premium.savedKey]);
 
   const effective = provider || view.provider;
   const pv = view.providers[effective];
   const fallbackModel = pv.model || pv.defaultModel;
+  /** 保存済みの専用キーは、同じプロバイダのあいだだけ使う */
+  const savedKey = provider && provider === view.premium.provider ? view.premium.savedKey : null;
 
   const save = async () => {
     setState({ busy: "save" });
     try {
-      const v = await api<View>("/api/admin/ai", "PUT", { premium: provider ? { provider, model } : { provider: null } });
+      const premium = provider
+        ? { provider, model, ...(clearKey ? { apiKey: "" } : apiKey ? { apiKey } : {}) }
+        : { provider: null };
+      const v = await api<View>("/api/admin/ai", "PUT", { premium });
       onSaved(v);
       setState({ saved: true });
     } catch (err) {
@@ -206,7 +218,10 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
   const fetchModels = async () => {
     setState({ busy: "models" });
     try {
-      const r = await api<{ models: string[] }>("/api/models", "POST", { provider: effective });
+      const r = await api<{ models: string[] }>("/api/models", "POST", {
+        provider: effective,
+        premium: { ...(apiKey && !clearKey ? { apiKey } : {}) },
+      });
       setModels(r.models);
       setState({});
     } catch (err) {
@@ -214,16 +229,21 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
     }
   };
 
-  const keyReady = !!pv.savedKey || pv.envKey || effective === "local";
+  const sharedKeyReady = !!pv.savedKey || pv.envKey || effective === "local";
+  const keyNote = savedKey && !clearKey
+    ? `${ROLE_LABELS.ai}専用のキー ${savedKey} を使用中`
+    : sharedKeyReady
+      ? "空欄なら、上で保存したこのプロバイダの共通のキーを使います"
+      : "このプロバイダのキーがまだありません。ここに入力してください";
 
   return (
     <div className="form sub-section">
       <h3>{ROLE_LABELS.ai}用のAI</h3>
       <p className="hint">
-        {ROLE_LABELS.ai}のAI提案に使うプロバイダとモデルを、管理者用とは別に選べます。いまの設定:{" "}
+        {ROLE_LABELS.ai}のAI提案に使うプロバイダ・モデル・APIキーを、管理者用とは別に設定できます。いまの設定:{" "}
         <strong>
           {view.premium.provider
-            ? `${PROVIDER_LABELS[view.premium.provider]} / ${view.premium.model || fallbackModel}`
+            ? `${PROVIDER_LABELS[view.premium.provider]} / ${view.premium.model || view.providers[view.premium.provider].model || view.providers[view.premium.provider].defaultModel}（${view.premium.savedKey ? `専用のキー ${view.premium.savedKey}` : "共通のキー"}）`
             : `管理者用と同じ（${PROVIDER_LABELS[view.provider]}）`}
         </strong>
         。自分のAPIキーを登録した{ROLE_LABELS.ai}は、自分のキーとモデルを使います。
@@ -235,6 +255,8 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
           onChange={(e) => {
             setProvider(e.target.value as ProviderId | "");
             setModel("");
+            setApiKey("");
+            setClearKey(false);
             setModels([]);
             setState({});
           }}
@@ -246,32 +268,62 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
             </option>
           ))}
         </select>
+        {!provider && <span className="muted">専用のモデルやAPIキーを使うときは、プロバイダを選んでください。</span>}
       </label>
       {provider && (
-        <label>
-          モデル（空欄なら {fallbackModel}）
-          <div className="input-row">
+        <>
+          <label>
+            モデル（空欄なら {fallbackModel}）
+            <div className="input-row">
+              <input
+                list="premium-models"
+                value={model}
+                placeholder={fallbackModel}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setState({});
+                }}
+              />
+              <button type="button" onClick={fetchModels} disabled={!!state.busy}>
+                {state.busy === "models" ? "取得中…" : "一覧"}
+              </button>
+            </div>
+            <datalist id="premium-models">
+              {models.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            {models.length > 0 && <span className="muted">{models.length}件のモデルから選べます</span>}
+          </label>
+          <label>
+            APIキー（{ROLE_LABELS.ai}専用・任意）
             <input
-              list="premium-models"
-              value={model}
-              placeholder={fallbackModel}
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              disabled={clearKey}
+              placeholder={savedKey ? "変えないときは空欄" : sharedKeyReady ? "空欄なら共通のキー" : "キーを入力"}
               onChange={(e) => {
-                setModel(e.target.value);
+                setApiKey(e.target.value);
                 setState({});
               }}
             />
-            <button type="button" onClick={fetchModels} disabled={!!state.busy}>
-              {state.busy === "models" ? "取得中…" : "一覧"}
-            </button>
-          </div>
-          <datalist id="premium-models">
-            {models.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-          {models.length > 0 && <span className="muted">{models.length}件のモデルから選べます</span>}
-          {!keyReady && <span className="warn-text">このプロバイダのAPIキーが未設定です。上でプロバイダを選んでキーを保存してください。</span>}
-        </label>
+            <span className={!savedKey && !sharedKeyReady && !apiKey ? "warn-text" : "muted"}>{keyNote}</span>
+            {savedKey && (
+              <span className="check">
+                <input
+                  type="checkbox"
+                  checked={clearKey}
+                  onChange={(e) => {
+                    setClearKey(e.target.checked);
+                    setApiKey("");
+                  }}
+                />
+                専用のキーを削除して、共通のキーに戻す
+              </span>
+            )}
+          </label>
+        </>
       )}
       {state.error && <p className="error">{state.error}</p>}
       {state.saved && <p className="ok-text">保存しました。{ROLE_LABELS.ai}のAI提案にこの設定を使います。</p>}

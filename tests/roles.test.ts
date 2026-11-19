@@ -294,7 +294,7 @@ describe("管理者用とプレミアムユーザー用のモデル", () => {
     const { e, data, premium, owner } = await setup();
     expect(settingsForUser(data, premium, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin" });
     expect(settingsForUser(data, owner, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin" });
-    expect(adminAiView(data.ai, e).premium).toEqual({ provider: null, model: "" });
+    expect(adminAiView(data.ai, e).premium).toEqual({ provider: null, model: "", savedKey: null });
   });
 
   it("プレミアムユーザー用に別のプロバイダとモデルを選べる。キーはプロバイダごとに共通", async () => {
@@ -329,6 +329,36 @@ describe("管理者用とプレミアムユーザー用のモデル", () => {
     applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "gemini", model: "gem-x" } }));
     expect(() => settingsForUser(data, premium, e)).toThrow(/管理者/);
     expect(aiStatusFor(data, premium, e)).toMatchObject({ provider: "gemini", model: "gem-x", ready: false });
+  });
+
+  it("プレミアムユーザー専用のAPIキーを設定でき、なければ共通のキーを使う", async () => {
+    const { e, data, premium, owner } = await setup();
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "anthropic", apiKey: "ant-premium-9876" } }));
+    expect(settingsForUser(data, premium, e).settings).toMatchObject({ provider: "anthropic", apiKey: "ant-premium-9876", model: "claude-admin" });
+    expect(settingsForUser(data, owner, e).settings.apiKey).toBe("ant-server-0000");
+    const view = adminAiView(data.ai, e);
+    expect(view.premium).toEqual({ provider: "anthropic", model: "", savedKey: "••••9876" });
+    expect(JSON.stringify(view)).not.toContain("ant-premium");
+    // モデルだけ変えてもキーは据え置き
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "anthropic", model: "claude-premium" } }));
+    expect(settingsForUser(data, premium, e).settings.apiKey).toBe("ant-premium-9876");
+    // 別のプロバイダにするとキーは引き継がない（共通のキーになる）
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "openai" } }));
+    expect(settingsForUser(data, premium, e).settings.apiKey).toBe("oa-server-1111");
+    // 共通のキーがないプロバイダでも、専用のキーがあれば使える
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "gemini", apiKey: "gem-premium-5555" } }));
+    expect(settingsForUser(data, premium, e).settings).toMatchObject({ provider: "gemini", apiKey: "gem-premium-5555" });
+    // 空文字で削除
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "gemini", apiKey: "" } }));
+    expect(() => settingsForUser(data, premium, e)).toThrow(/管理者/);
+  });
+
+  it("専用のキーは暗号化して保存し、読み直しても使える", async () => {
+    const e = env(ADMIN);
+    await loadStore(e);
+    await updateStore((d) => applyAiPatch(d.ai, AiPatchSchema.parse({ premium: { provider: "openai", apiKey: "sk-premium-secret-1234" } })), e);
+    expect(storedText(e.NINEGAGE_DATA_DIR)).not.toContain("sk-premium-secret");
+    expect((await loadStore(e)).ai.premium?.apiKey).toBe("sk-premium-secret-1234");
   });
 
   it("保存して読み直しても残る", async () => {
