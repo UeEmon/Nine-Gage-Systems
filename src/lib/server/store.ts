@@ -100,8 +100,11 @@ export type StoredAi = {
   /** 管理者が使うプロバイダ（モデルは byProvider の model） */
   provider?: ProviderId;
   byProvider: Partial<Record<ProviderId, ProviderSettings>>;
-  /** プレミアムユーザーが使うプロバイダとモデル。なければ管理者と同じ。キー・接続先URLは byProvider を使う */
-  premium?: { provider: ProviderId; model?: string };
+  /**
+   * プレミアムユーザーが使うプロバイダ・モデル・APIキー。なければ管理者と同じ。
+   * apiKey がなければ byProvider のキーを使う（メモリ上では平文、ファイルには暗号化して書く）。接続先URLは byProvider を使う
+   */
+  premium?: { provider: ProviderId; model?: string; apiKey?: string };
 };
 
 /** 管理画面の料金表示の設定 */
@@ -175,8 +178,10 @@ function apiKeyOf(v: unknown, env: Env): string | undefined {
 
 /** 管理者のAPIキーが平文のまま保存されているか（以前の版のファイル） */
 function hasPlainApiKey(raw: unknown): boolean {
-  const byProvider = (raw as { ai?: { byProvider?: Record<string, { apiKey?: unknown } | undefined> } } | null)?.ai?.byProvider;
-  return Object.values(byProvider ?? {}).some((s) => typeof s?.apiKey === "string" && s.apiKey !== "" && !s.apiKey.startsWith("v1."));
+  const ai = (raw as { ai?: { byProvider?: Record<string, { apiKey?: unknown } | undefined>; premium?: { apiKey?: unknown } } } | null)?.ai;
+  return [...Object.values(ai?.byProvider ?? {}), ai?.premium].some(
+    (s) => typeof s?.apiKey === "string" && s.apiKey !== "" && !s.apiKey.startsWith("v1."),
+  );
 }
 
 function normalize(raw: unknown, env: Env = process.env): StoreData {
@@ -199,7 +204,7 @@ function normalize(raw: unknown, env: Env = process.env): StoreData {
       provider: ai.provider && PROVIDERS.includes(ai.provider) ? ai.provider : undefined,
       byProvider,
       ...(ai.premium && PROVIDERS.includes(ai.premium.provider)
-        ? { premium: { provider: ai.premium.provider, model: str(ai.premium.model, 200) } }
+        ? { premium: { provider: ai.premium.provider, model: str(ai.premium.model, 200), apiKey: apiKeyOf(ai.premium.apiKey, env) } }
         : {}),
     },
     notices: Array.isArray(d.notices)
@@ -229,7 +234,9 @@ function writeRaw(dir: string, data: StoreData, env: Env) {
   const byProvider = Object.fromEntries(
     Object.entries(data.ai.byProvider).map(([p, s]) => [p, s && { ...s, apiKey: s.apiKey ? sealSecret(s.apiKey, env) : undefined }]),
   );
-  writeDocument(openDb(dir), JSON.stringify({ ...data, ai: { ...data.ai, byProvider } }));
+  const pr = data.ai.premium;
+  const premium = pr && { ...pr, apiKey: pr.apiKey ? sealSecret(pr.apiKey, env) : undefined };
+  writeDocument(openDb(dir), JSON.stringify({ ...data, ai: { ...data.ai, byProvider, premium } }));
 }
 
 export function newUser(username: string, role: Role, passwordHash: string, selfRegistered = false): StoredUser {
