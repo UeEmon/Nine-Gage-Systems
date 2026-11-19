@@ -6,7 +6,7 @@ import { aiAccessOf, canSetOwnKey } from "../src/lib/roles";
 import { AiPatchSchema, adminAiView, applyAiPatch } from "../src/lib/server/aiSettings";
 import { recordSignup, signupBlocked } from "../src/lib/server/auth";
 import { usageView, type UsageRecord } from "../src/lib/server/aiUsage";
-import { aiStatusFor, applyOwnAi, ownAiView, OwnAiPatchSchema, ownSettings, settingsForUser } from "../src/lib/server/ownAi";
+import { aiStatusFor, applyOwnAi, ownAiView, OwnAiPatchSchema, ownSettings, previewOwnSettings, settingsForUser } from "../src/lib/server/ownAi";
 import { storedText } from "../src/lib/server/db";
 import { openSecret, sealSecret } from "../src/lib/server/secretBox";
 import { loadStore, updateStore } from "../src/lib/server/store";
@@ -247,6 +247,18 @@ describe("自分のAPIキー", () => {
     applyOwnAi(trusted, { provider: "openai", apiKey: "" }, e);
     expect(settingsForUser(data, trusted, e)).toMatchObject({ keySource: "server", settings: { apiKey: "server-key-0000" } });
     expect(aiStatusFor(data, trusted, e)).toMatchObject({ source: "server", ready: true });
+  });
+
+  it("モデルの一覧は、入力中のキーか同じプロバイダの保存済みのキーで取る", async () => {
+    const { e, data, general, trusted } = await setup();
+    expect(() => previewOwnSettings(general, "openai", undefined, e)).toThrow(/APIキーを入力/);
+    expect(previewOwnSettings(general, "openai", "sk-typed-1111", e)).toMatchObject({ provider: "openai", apiKey: "sk-typed-1111" });
+    applyOwnAi(trusted, { provider: "gemini", apiKey: "g-saved-2222" }, e);
+    expect(previewOwnSettings(trusted, "gemini", undefined, e).apiKey).toBe("g-saved-2222");
+    // 別のプロバイダには保存済みのキーを送らない
+    expect(() => previewOwnSettings(trusted, "anthropic", undefined, e)).toThrow(/APIキーを入力/);
+    const owner = data.users.find((u) => u.role === "admin")!;
+    expect(() => previewOwnSettings(owner, "openai", "x", e)).toThrow(/管理者が設定したAI/);
   });
 
   it("管理者は自分のキーを設定できない", async () => {
