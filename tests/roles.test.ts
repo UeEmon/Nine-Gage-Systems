@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { aiAccessOf } from "../src/lib/roles";
-import { applyAiPatch } from "../src/lib/server/aiSettings";
+import { aiAccessOf, canSetOwnKey } from "../src/lib/roles";
+import { AiPatchSchema, adminAiView, applyAiPatch } from "../src/lib/server/aiSettings";
 import { recordSignup, signupBlocked } from "../src/lib/server/auth";
 import { usageView, type UsageRecord } from "../src/lib/server/aiUsage";
 import { aiStatusFor, applyOwnAi, ownAiView, OwnAiPatchSchema, ownSettings, settingsForUser } from "../src/lib/server/ownAi";
@@ -231,9 +231,28 @@ describe("自分のAPIキー", () => {
     expect(OwnAiPatchSchema.safeParse({ provider: "openai", baseUrl: "http://x" }).data).not.toHaveProperty("baseUrl");
   });
 
-  it("管理者・AI利用可能は自分のキーを設定できない", async () => {
-    const { e, trusted } = await setup();
-    expect(() => applyOwnAi(trusted, { provider: "anthropic", apiKey: "x" }, e)).toThrow(/管理者が設定したAI/);
+  it("プレミアムユーザーも自分のキーを登録でき、登録したときだけそれを使う", async () => {
+    const { e, data, trusted } = await setup();
+    expect(canSetOwnKey("ai")).toBe(true);
+    expect(canSetOwnKey("user")).toBe(true);
+    expect(canSetOwnKey("admin")).toBe(false);
+    expect(canSetOwnKey(null)).toBe(false);
+    applyOwnAi(trusted, OwnAiPatchSchema.parse({ provider: "openai", apiKey: "sk-premium-own-4321", model: "gpt-x" }), e);
+    expect(settingsForUser(data, trusted, e)).toMatchObject({
+      keySource: "own",
+      settings: { provider: "openai", apiKey: "sk-premium-own-4321", model: "gpt-x" },
+    });
+    expect(aiStatusFor(data, trusted, e)).toMatchObject({ source: "own", ready: true, provider: "openai", model: "gpt-x" });
+    // 削除するとサーバーのAIに戻る
+    applyOwnAi(trusted, { provider: "openai", apiKey: "" }, e);
+    expect(settingsForUser(data, trusted, e)).toMatchObject({ keySource: "server", settings: { apiKey: "server-key-0000" } });
+    expect(aiStatusFor(data, trusted, e)).toMatchObject({ source: "server", ready: true });
+  });
+
+  it("管理者は自分のキーを設定できない", async () => {
+    const { e, data } = await setup();
+    const owner = data.users.find((u) => u.role === "admin")!;
+    expect(() => applyOwnAi(owner, { provider: "anthropic", apiKey: "x" }, e)).toThrow(/管理者が設定したAI/);
   });
 
   it("鍵が変わって読めないキーは、入れ直しを促す", async () => {
@@ -250,6 +269,73 @@ describe("自分のAPIキー", () => {
     const { e, data, general } = await setup();
     await updateUser(data, general.id, { role: "ai" });
     expect(settingsForUser(data, general, e).keySource).toBe("server");
+  });
+});
+
+describe("管理者用とプレミアムユーザー用のモデル", () => {
+  async function setup() {
+    const e = env(ADMIN);
+    const data = await loadStore(e);
+    const t = await createUser(data, { username: "premium", password: "premium-pass-1", role: "user" });
+    await updateUser(data, t.id, { role: "ai" });
+    const premium = data.users.find((u) => u.username === "premium")!;
+    const owner = data.users.find((u) => u.role === "admin")!;
+    applyAiPatch(
+      data.ai,
+      AiPatchSchema.parse({
+        provider: "anthropic",
+        byProvider: { anthropic: { apiKey: "ant-server-0000", model: "claude-admin" }, openai: { apiKey: "oa-server-1111" } },
+      }),
+    );
+    return { e, data, premium, owner };
+  }
+
+  it("決めていなければ、プレミアムユーザーも管理者と同じAIを使う", async () => {
+    const { e, data, premium, owner } = await setup();
+    expect(settingsForUser(data, premium, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin" });
+    expect(settingsForUser(data, owner, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin" });
+    expect(adminAiView(data.ai, e).premium).toEqual({ provider: null, model: "" });
+  });
+
+  it("プレミアムユーザー用に別のプロバイダとモデルを選べる。キーはプロバイダごとに共通", async () => {
+    const { e, data, premium, owner } = await setup();
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "openai", model: "gpt-premium" } }));
+    expect(settingsForUser(data, premium, e)).toMatchObject({
+      keySource: "server",
+      settings: { provider: "openai", model: "gpt-premium", apiKey: "oa-server-1111" },
+    });
+    expect(settingsForUser(data, owner, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin" });
+    expect(aiStatusFor(data, premium, e)).toMatchObject({ provider: "openai", model: "gpt-premium", ready: true, source: "server" });
+    expect(aiStatusFor(data, owner, e)).toMatchObject({ provider: "anthropic", model: "claude-admin" });
+
+    // 同じプロバイダでモデルが空なら、そのプロバイダの管理者用のモデル（なければ既定）
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "anthropic", model: "" } }));
+    expect(settingsForUser(data, premium, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin" });
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "anthropic", model: "claude-premium" } }));
+    expect(settingsForUser(data, premium, e).settings.model).toBe("claude-premium");
+
+    // プロバイダだけ変えたら、前のモデル名は引き継がない
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "openai" } }));
+    expect(settingsForUser(data, premium, e).settings).toMatchObject({ provider: "openai", model: "gpt-5" });
+
+    // null で「管理者用と同じ」に戻す
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: null } }));
+    expect(data.ai.premium).toBeUndefined();
+    expect(settingsForUser(data, premium, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin" });
+  });
+
+  it("プレミアムユーザー用のプロバイダのキーがなければ、使えない状態として出す", async () => {
+    const { e, data, premium } = await setup();
+    applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "gemini", model: "gem-x" } }));
+    expect(() => settingsForUser(data, premium, e)).toThrow(/管理者/);
+    expect(aiStatusFor(data, premium, e)).toMatchObject({ provider: "gemini", model: "gem-x", ready: false });
+  });
+
+  it("保存して読み直しても残る", async () => {
+    const e = env(ADMIN);
+    await loadStore(e);
+    await updateStore((d) => applyAiPatch(d.ai, AiPatchSchema.parse({ premium: { provider: "openai", model: "gpt-premium" } })), e);
+    expect((await loadStore(e)).ai.premium).toEqual({ provider: "openai", model: "gpt-premium" });
   });
 });
 

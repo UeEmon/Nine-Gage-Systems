@@ -14,7 +14,7 @@ export const ROLE_ORDER: RoleId[] = ["admin", "ai", "user"];
 
 export const ROLE_HELP: Record<RoleId, string> = {
   admin: "AI（サーバーのAPIキー）・AI設定・ユーザー管理・お知らせ・使用量",
-  ai: "AI（サーバーのAPIキー）を使える",
+  ai: "AI（管理者が選んだモデルとサーバーのAPIキー）を使える。自分のAPIキーを登録すれば、そちらを使うこともできる",
   user: "自分で設定したAPIキーでAIを使える",
 };
 
@@ -29,6 +29,14 @@ export function aiAccessOf(role: RoleId | null | undefined): AiAccess {
   if (role === "user") return "own";
   return "none";
 }
+
+/** 自分のAPIキーを登録できるロール（一般とプレミアムユーザー）。プレミアムユーザーは登録したときだけ自分のキーを使う */
+export function canSetOwnKey(role: RoleId | null | undefined): boolean {
+  return role === "ai" || role === "user";
+}
+
+/** APIキー登録のチュートリアル */
+export const API_KEY_GUIDE_PATH = "/guide/api-key";
 
 /** JSON を送って、失敗なら error を投げる */
 export async function api<T>(url: string, method: string, body?: unknown): Promise<T> {

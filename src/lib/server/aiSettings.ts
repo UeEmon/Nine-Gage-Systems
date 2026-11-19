@@ -6,23 +6,43 @@ import type { Env, ProviderSettings, StoredAi } from "./store";
 /**
  * AIの設定は管理者が画面で決め、サーバーに保存する。
  * 項目が空なら環境変数（ANTHROPIC_API_KEY など）を使う。一般ユーザーは設定を見たり変えたりできない。
+ * 使うプロバイダとモデルは「管理者用」と「プレミアムユーザー用」で別々に決められる（キー・接続先URLはプロバイダごとに共通）。
  */
+
+/** サーバーのAIを使うロール */
+export type ServerAiRole = "admin" | "ai";
 
 export function activeProvider(ai: StoredAi, env: Env = process.env): ProviderId {
   return ai.provider ?? defaultProvider(env);
 }
 
+/** プレミアムユーザー用のプロバイダ。決めていなければ管理者用と同じ */
+export function premiumProvider(ai: StoredAi, env: Env = process.env): ProviderId {
+  return ai.premium?.provider ?? activeProvider(ai, env);
+}
+
 /** 保存した設定と環境変数から、実際に使う設定を決める。接続先URLは管理者が決めたものなので許可する */
-export function settingsForUse(ai: StoredAi, env: Env = process.env, provider = activeProvider(ai, env)): ResolvedAiSettings {
+export function settingsForUse(
+  ai: StoredAi,
+  env: Env = process.env,
+  provider = activeProvider(ai, env),
+  model?: string,
+): ResolvedAiSettings {
   const s = ai.byProvider[provider] ?? {};
   try {
-    return resolveSettings({ provider, ...s }, { ...env, AI_ALLOW_CUSTOM_BASE_URL: "true" });
+    return resolveSettings({ provider, ...s, ...(model ? { model } : {}) }, { ...env, AI_ALLOW_CUSTOM_BASE_URL: "true" });
   } catch (err) {
     if (err instanceof LlmError && /APIキーがありません/.test(err.message)) {
       throw new LlmError("AIのAPIキーが設定されていません。管理者に「管理」画面のAI設定を依頼してください。", 503);
     }
     throw err;
   }
+}
+
+/** ロールに合わせたサーバーのAI。プレミアムユーザーは「プレミアムユーザー用」の設定（なければ管理者用と同じ）を使う */
+export function settingsForRole(ai: StoredAi, role: ServerAiRole, env: Env = process.env): ResolvedAiSettings {
+  if (role === "admin" || !ai.premium?.provider) return settingsForUse(ai, env);
+  return settingsForUse(ai, env, ai.premium.provider, ai.premium.model);
 }
 
 function mask(key?: string) {
@@ -35,6 +55,8 @@ export function adminAiView(ai: StoredAi, env: Env = process.env) {
   const info = serverAiInfo(env);
   return {
     provider: activeProvider(ai, env),
+    /** プレミアムユーザー用。provider が null なら管理者用と同じ */
+    premium: { provider: ai.premium?.provider ?? null, model: ai.premium?.model ?? "" },
     providers: Object.fromEntries(
       PROVIDERS.map((p) => {
         const s = ai.byProvider[p] ?? {};
@@ -57,14 +79,16 @@ export function adminAiView(ai: StoredAi, env: Env = process.env) {
   };
 }
 
-/** 全員向け。どのAIを使うかと、使える状態かだけ */
-export function publicAiView(ai: StoredAi, env: Env = process.env) {
-  const provider = activeProvider(ai, env);
+/** 全員向け。そのロールがどのAIを使うかと、使える状態かだけ */
+export function publicAiView(ai: StoredAi, env: Env = process.env, role: ServerAiRole = "admin") {
+  const premium = role === "ai" && !!ai.premium?.provider;
+  const provider = premium ? premiumProvider(ai, env) : activeProvider(ai, env);
   try {
-    const s = settingsForUse(ai, env, provider);
+    const s = settingsForRole(ai, role, env);
     return { provider, model: s.model, ready: true };
   } catch {
-    return { provider, model: ai.byProvider[provider]?.model || serverAiInfo(env).providers[provider].defaultModel, ready: false };
+    const model = (premium ? ai.premium?.model : undefined) || ai.byProvider[provider]?.model || serverAiInfo(env).providers[provider].defaultModel;
+    return { provider, model, ready: false };
   }
 }
 
@@ -83,12 +107,28 @@ export const ProviderPatch = z.object({
 export const AiPatchSchema = z.object({
   provider: z.enum(PROVIDERS).optional(),
   byProvider: z.partialRecord(z.enum(PROVIDERS), ProviderPatch).optional(),
+  /** プレミアムユーザー用。provider: null で「管理者用と同じ」に戻す（モデルも消す） */
+  premium: z
+    .object({
+      provider: z.enum(PROVIDERS).nullable(),
+      model: z.string().trim().max(200).optional(),
+    })
+    .optional(),
 });
 
 export type AiPatch = z.infer<typeof AiPatchSchema>;
 
 export function applyAiPatch(ai: StoredAi, patch: AiPatch) {
   if (patch.provider) ai.provider = patch.provider;
+  if (patch.premium) {
+    const { provider, model } = patch.premium;
+    if (!provider) delete ai.premium;
+    else {
+      // 別のプロバイダに変えたのにモデルの指定がなければ、前のモデル名は引き継がない
+      const keep = ai.premium?.provider === provider ? ai.premium.model : undefined;
+      ai.premium = { provider, model: model !== undefined ? model || undefined : keep };
+    }
+  }
   for (const p of PROVIDERS) {
     const change = patch.byProvider?.[p];
     if (!change) continue;

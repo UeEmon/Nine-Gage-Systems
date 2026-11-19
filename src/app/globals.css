@@ -613,3 +613,19 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .feedback-list .hint a, .card .hint a { color: var(--accent); }
 .feedback-body { white-space: pre-wrap; font-size: 13px; margin: 6px 0 0; }
 .notice-table button.link-button { padding: 0; text-align: left; color: inherit; text-decoration: none; }
+/* 管理画面: プレミアムユーザー用のAI */
+.sub-section { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 4px; }
+/* APIキー登録のチュートリアル */
+.page.guide { max-width: 720px; }
+.guide a { color: var(--accent); }
+.guide a.button { color: inherit; }
+.guide a.button.primary { color: #fff; }
+.guide .steps li { margin: 4px 0; line-height: 1.6; }
+.guide-toc { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 10px; }
+.guide-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.guide-table th, .guide-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.guide-provider { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 10px; }
+.guide-provider summary { cursor: pointer; font-weight: 600; }
+.guide-provider[open] summary { margin-bottom: 8px; }
+.guide-faq dt { font-weight: 600; margin-top: 10px; }
+.guide-faq dd { margin: 4px 0 0 0; font-size: 13px; line-height: 1.6; }

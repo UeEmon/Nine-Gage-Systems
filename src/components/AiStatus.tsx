@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PROVIDER_LABELS, type ProviderId } from "@/lib/llm/types";
-import { api, type SessionUser } from "@/lib/roles";
+import { api, API_KEY_GUIDE_PATH, type SessionUser } from "@/lib/roles";
 
 type Info = { provider: ProviderId; model: string; ready: boolean; source: "server" | "own" };
 
 /**
  * 使うAIの表示。
- * 管理者・プレミアムユーザーは管理者が設定したAI、一般ユーザーは自分で設定したAPIキー（「アカウント」画面）
+ * 管理者・プレミアムユーザーは管理者が設定したAI（それぞれ別のモデルにできる）、一般ユーザーは自分で設定したAPIキー（「アカウント」画面）。
+ * プレミアムユーザーも自分のAPIキーを登録すれば、そちらを使う
  */
 export function AiStatus({ user }: { user: SessionUser }) {
   const [info, setInfo] = useState<Info | null>(null);
@@ -25,10 +26,10 @@ export function AiStatus({ user }: { user: SessionUser }) {
       AI: <strong>{PROVIDER_LABELS[info.provider]}</strong>
       <span className="muted"> / {info.model}</span>
       {own && <span className="muted">（自分のAPIキー）</span>}
-      {(user.role === "admin" || own) && (
+      {(user.role === "admin" || user.role === "ai" || own) && (
         <>
           {" "}
-          <Link href={own ? "/account" : "/admin"}>設定</Link>
+          <Link href={user.role === "admin" ? "/admin" : "/account"}>設定</Link>
         </>
       )}
       {!info.ready && own && (
@@ -36,7 +37,8 @@ export function AiStatus({ user }: { user: SessionUser }) {
           <p>AI提案を使うには、自分のAPIキー（Claude・OpenAI・Gemini）を登録してください。料金はキーの持ち主に請求されます。</p>
           <Link className="button primary" href="/account">
             APIキーを登録する
-          </Link>
+          </Link>{" "}
+          <Link href={API_KEY_GUIDE_PATH}>登録のしかた（チュートリアル）</Link>
         </div>
       )}
       {!info.ready && !own && (
