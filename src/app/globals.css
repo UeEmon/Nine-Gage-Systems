@@ -19,6 +19,8 @@
   --elevated-strong: #3f6aa8;
   --ramp: #d9b56b;
   --ramp-strong: #b7862a;
+  --underground: #9b8a9e;
+  --underground-strong: #6b4f73;
   --pier: #7a8796;
   font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
 }
@@ -42,6 +44,8 @@
     --elevated-strong: #8fb4ec;
     --ramp: #8f7440;
     --ramp-strong: #e0b65c;
+    --underground: #5e5063;
+    --underground-strong: #c3a2cc;
     --pier: #a7b3c2;
   }
 }
@@ -165,6 +169,9 @@ button.danger { color: var(--danger); }
 /* 階層（高さ）ごとの色。高架は道床を青灰色にして影を付け、勾配は黄土色 */
 .piece.lv-elevated .ballast { stroke: var(--elevated); filter: drop-shadow(4px 6px 3px rgba(0, 0, 0, 0.35)); }
 .piece.lv-ramp .ballast { stroke: var(--ramp); }
+/* 地下は道床を紫がかった灰色にし、地面の下にあることがわかるよう全体を薄く、縁を破線にする */
+.piece.lv-underground { opacity: 0.55; }
+.piece.lv-underground .ballast { stroke: var(--underground); stroke-dasharray: 14 8; }
 .piece.is-warn .ballast { stroke: #f2a5a5; }
 .piece.is-selected .ballast { stroke: var(--accent); }
 .piece.is-dim { opacity: 0.18; pointer-events: none; }
@@ -182,6 +189,7 @@ button.danger { color: var(--danger); }
 .profile .p-track.lv-ground { stroke: var(--rail); }
 .profile .p-track.lv-ramp { stroke: var(--ramp-strong); }
 .profile .p-track.lv-elevated { stroke: var(--elevated-strong); }
+.profile .p-track.lv-underground { stroke: var(--underground-strong); }
 .profile .p-track.is-selected { stroke: var(--accent); stroke-width: 5; }
 .profile .p-pier { stroke: var(--pier); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .profile .p-ground { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -321,6 +329,7 @@ button.link:hover { text-decoration: underline; }
 .swatch.lv-ground { background: var(--sleeper); }
 .swatch.lv-ramp { background: var(--ramp); }
 .swatch.lv-elevated { background: var(--elevated); }
+.swatch.lv-underground { background: var(--underground); }
 h3.sub { font-size: 13px; margin: 12px 0 6px; }
 .bom tr.pier-row td { color: var(--muted); }
 

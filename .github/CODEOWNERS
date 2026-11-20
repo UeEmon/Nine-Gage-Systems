@@ -32,6 +32,7 @@
 /src/data/piers.ts @UeEmon
 /src/components/LevelProfile.tsx @UeEmon
 /tests/elevation.test.ts @UeEmon
+/tests/underground.test.ts @UeEmon
 
 # ── 線路以外のパーツ（feature:accessories）
 /src/data/accessories.ts @UeEmon

@@ -3,11 +3,11 @@ import { worldSamples, type Board, type Piece } from "./geometry";
 import { sanitizeSchema } from "./llm/json";
 import { addUsage, emptyUsage, type ChatSession, type SessionOptions, type TokenUsage } from "./llm/types";
 import { MAKER_INFO, partsFor, type Maker } from "./parts";
-import { evaluatePlan, planSchemaFor, type LayoutPlan } from "./plan";
+import { evaluatePlan, planSchemaFor, type BuildResult, type LayoutPlan } from "./plan";
 import { usageOf } from "./bom";
 import { getPart } from "./parts";
 import { shortfall, stockKeyName, stockKeyOf, stockLabel, unitPriceOf } from "./productDb";
-import { isPierKey } from "./elevation";
+import { isPierKey, levelOf, type Elevation } from "./elevation";
 import { PIER_SYSTEMS } from "../data/piers";
 import { accessoriesFor, isAccessoryKey, type Accessory } from "./accessories";
 import type { AccessoryMount } from "../data/accessories";
@@ -104,8 +104,10 @@ const MAKER_GUIDE: Record<Maker, { example: LayoutPlan; tips: string; overpass?:
 function elevationGuide(maker: Maker): string {
   const sys = PIER_SYSTEMS[maker];
   const minRamp = Math.ceil((sys.standardHeight / sys.maxGradePct) * 100);
-  return `## 高さ（高架・立体交差）
+  return `## 高さ（高架・立体交差・地下）
 - 各部品の height は線路面の高さ(mm)で、0=地上です。高架の標準は ${sys.standardHeight}mm（${sys.note}）。高架の部品はすべて同じ height にそろえます。
+- 地下の線路は height をマイナスにします。地下の標準は -${sys.clearance}mm（上を地上の線路が立体交差で通れる深さ）。地下の部品はすべて同じ height にそろえ、橋脚は立ちません。地上から地下へ入る所（トンネルの坑口）は、高架と同じく勾配区間（height=null）で下ります。0mmから-${sys.clearance}mmへ下るにも、勾配区間が${Math.ceil((sys.clearance / sys.maxGradePct) * 100)}mm以上必要です。
+- 地下にするのは実際に地下を通る区間だけにします。駅の前後だけが地下の路線は、地下区間の両端に勾配区間を入れて地上へ出し、エンドレスの残りは地上にします。地上の線路と立体交差する所は、地下（または高架）の区間の中に入れます。
 - height=null の部品は勾配区間です。前後の高さの決まった部品の間を、長さに比例して自動で上り下りします。勾配にできるのは直線・曲線・複線・鉄橋だけで、ポイント・交差・車止めは平らな高さ（数値）にします。
 - 勾配は${sys.maxGradePct}%以内（${sys.gradeRunMm}mm進むごとに${sys.gradeStepMm}mmが目安）。0mmから${sys.standardHeight}mmへ上るには、勾配区間（height=null の部品の長さの合計）が${minRamp}mm以上必要です。
 - 高さの違う部品を直接つなぐと段差になります。高さを変えるところには必ず勾配区間を入れます。
@@ -304,7 +306,7 @@ export type ProposeResult = {
 function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
   const result = evaluatePlan(plan, input.unboundedBoard ? UNBOUNDED_BOARD : input.board, maker);
   const over = input.stock?.mode === "owned" ? overStock(result.build.pieces, input.stock.counts, result.build.accessories) : [];
-  if (input.replica) over.push(...lineProblems(plan, input.replica));
+  if (input.replica) over.push(...lineProblems(plan, input.replica), ...undergroundProblems(plan, result.build, result.analysis.elevation));
   const budget = overBudget(result.build.pieces, result.build.accessories, input);
   if (budget) over.push(budget);
   if (!over.length) return result;
@@ -531,6 +533,33 @@ export function lineProblems(plan: LayoutPlan, target: ReplicaTarget): string[] 
     if (extra.length) {
       problems.push(`乗り入れ路線: 区間の line（${extra.join("、")}）が replica.lines にありません。名前をそろえてください`);
     }
+  }
+  return problems;
+}
+
+/**
+ * 「再現してみた」で、路線全体を地下にしていないかを確かめる。
+ * 一部だけが地下の路線をエンドレスごと地下にすると、地上との出入り（坑口）と立体交差が再現されない。
+ * 全線が地下の路線（地下鉄など）は replica.undergroundLines に書いてあればよい。
+ */
+export function undergroundProblems(plan: LayoutPlan, build: BuildResult, elevation: Elevation): string[] {
+  if (!plan.replica) return [];
+  const declared = new Set((plan.replica.undergroundLines ?? []).map(lineKey));
+  const byLine = new Map<string, { name: string; pieces: Piece[] }>();
+  for (const p of build.pieces) {
+    if (!p.line) continue;
+    const k = lineKey(p.line);
+    const g = byLine.get(k) ?? { name: p.line, pieces: [] };
+    g.pieces.push(p);
+    byLine.set(k, g);
+  }
+  const problems: string[] = [];
+  for (const [k, g] of byLine) {
+    if (declared.has(k)) continue;
+    if (!g.pieces.every((p) => levelOf(p, elevation) === "underground")) continue;
+    problems.push(
+      `地下の路線: 「${g.name}」の線路がすべて地下です。実物で地下なのが駅の前後など一部の区間なら、その区間だけを地下にし、両端に勾配区間（height=null）を入れて地上に出してください。全線が地下で地上に出ない路線（地下鉄など）なら replica.undergroundLines にその路線名を書いてください`,
+    );
   }
   return problems;
 }

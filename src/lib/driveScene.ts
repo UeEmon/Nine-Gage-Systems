@@ -18,6 +18,21 @@ const RAIL_BOTTOM = -1.6;
 const SLEEPER_TOP = -1.5;
 const SLEEPER_BOTTOM = -2.4;
 
+// ---- 地下（掘割とトンネル） ----
+/** 地下の線路のトンネル・掘割の内のり幅の半分(mm) */
+const TUNNEL_HALF_WIDTH = 15;
+/** トンネルの天井のレール面からの高さ(mm)。運転席の目の高さ（18mm）と車両の屋根より上 */
+const TUNNEL_CLEAR = 30;
+/** レール面がこれより低いと、ボードの面より下（掘割かトンネル）を走る */
+const BELOW_BOARD_Z = -2;
+/** レール面がこれ以下ならトンネル（天井がボードの面の下に収まる）。これより上は屋根のない掘割 */
+export const COVERED_Z = BOARD_Y - 1 - TUNNEL_CLEAR;
+
+/** レール面の高さ z の点が、屋根のない掘割か（ボードに穴を開ける所） */
+export const isCutting = (z: number) => z < BELOW_BOARD_Z && z > COVERED_Z;
+/** レール面の高さ z の点が、トンネルの中か */
+export const isCovered = (z: number) => z <= COVERED_Z;
+
 type Profile = [number, number][]; // [横方向(右が正), 高さ]
 
 type BedStyle = {
@@ -96,6 +111,87 @@ const box = (w: number, h: number): Profile => [
 
 type Built = { group: THREE.Group; dispose: () => void };
 
+type XY = { x: number; y: number };
+
+/**
+ * 掘割の中心線（部品ごとの切れ端）を、端どうしがつながるものはつないで長い線にする。
+ * ボードの穴が部品の境目で接して三角形分割が崩れないようにするため。
+ */
+export function joinRuns(runs: XY[][], tol = 0.8): XY[][] {
+  const out = runs.filter((r) => r.length >= 2).map((r) => r.slice());
+  const close = (a: XY, b: XY) => Math.hypot(a.x - b.x, a.y - b.y) <= tol;
+  for (let merged = true; merged; ) {
+    merged = false;
+    outer: for (let i = 0; i < out.length; i++) {
+      for (let k = 0; k < out.length; k++) {
+        if (i === k) continue;
+        const a = out[i];
+        let b = out[k];
+        if (close(a[a.length - 1], b[b.length - 1])) b = b.slice().reverse();
+        else if (close(a[0], b[0])) out[i] = a.slice().reverse();
+        else if (close(a[0], b[b.length - 1])) {
+          out[i] = b.concat(a.slice(1));
+          out.splice(k, 1);
+          merged = true;
+          break outer;
+        }
+        const a2 = out[i];
+        if (close(a2[a2.length - 1], b[0])) {
+          out[i] = a2.concat(b.slice(1));
+          out.splice(k, 1);
+          merged = true;
+          break outer;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** 中心線の左右に half ずつ広げた輪郭（左の縁を前へ、右の縁を後ろへ） */
+export function stripOutline(line: XY[], half: number): XY[] {
+  const left: XY[] = [];
+  const right: XY[] = [];
+  line.forEach((p, i) => {
+    const a = line[Math.max(0, i - 1)];
+    const b = line[Math.min(line.length - 1, i + 1)];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const nx = -(b.y - a.y) / len;
+    const ny = (b.x - a.x) / len;
+    left.push({ x: p.x - nx * half, y: p.y - ny * half });
+    right.push({ x: p.x + nx * half, y: p.y + ny * half });
+  });
+  return [...left, ...right.reverse()];
+}
+
+/**
+ * 地下の線路のうち、屋根のない掘割の所（ボードに開ける穴の輪郭）と、いちばん低いレール面の高さ。
+ * 穴は部品の境目でつないで1つにする（接した穴どうしで三角形分割が崩れないように）。
+ */
+export function undergroundOf(graph: DriveGraph, pieces: Piece[]): { holes: XY[][]; lowest: number } {
+  const runs: XY[][] = [];
+  let lowest = 0;
+  for (const piece of pieces) {
+    const part = getPart(piece.partId);
+    // ポイント・交差は経路が重なるので直進側だけ
+    const routeCount = part.category === "turnout" || part.category === "crossing" ? 1 : part.routes.length;
+    for (let r = 0; r < routeCount; r++) {
+      const seg = makeSegment(graph, { uid: piece.uid, routeIndex: r, reverse: false }, 4);
+      let run: XY[] = [];
+      for (const p of seg.points) {
+        lowest = Math.min(lowest, p.z);
+        if (isCutting(p.z)) run.push({ x: p.x, y: p.y });
+        else if (run.length) {
+          runs.push(run);
+          run = [];
+        }
+      }
+      if (run.length) runs.push(run);
+    }
+  }
+  return { holes: joinRuns(runs).map((line) => stripOutline(line, TUNNEL_HALF_WIDTH)), lowest };
+}
+
 /** 乱数（同じレイアウトなら同じ情景にする） */
 function seeded(seed: number) {
   let s = seed >>> 0 || 1;
@@ -144,18 +240,31 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
   // ボード（芝）とまわりの床
   const grass = grassTexture();
   disposables.push(grass);
-  grass.repeat.set(board.width / 300, board.height / 300);
-  const boardMesh = add(new THREE.PlaneGeometry(board.width, board.height), mat(0xffffff, { map: grass }));
+  // 地下の線路があれば、掘割の所はボードに穴を開け、床と枠をその下まで下げる
+  const { holes, lowest } = undergroundOf(graph, pieces);
+  const boardShape = new THREE.Shape([
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(board.width, 0),
+    new THREE.Vector2(board.width, -board.height),
+    new THREE.Vector2(0, -board.height),
+  ]);
+  for (const hole of holes) {
+    // 画面の y は下向きなので、Shape の平面では -y にする（下で x 軸まわりに -90° 回して戻す）
+    boardShape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x, -p.y))));
+  }
+  grass.repeat.set(1 / 300, 1 / 300);
+  const boardMesh = add(new THREE.ShapeGeometry(boardShape), mat(0xffffff, { map: grass }));
   boardMesh.rotation.x = -Math.PI / 2;
-  boardMesh.position.set(board.width / 2, BOARD_Y, board.height / 2);
+  boardMesh.position.set(0, BOARD_Y, 0);
+  const frameDepth = Math.max(40, BOARD_Y - lowest + 10);
   const floor = add(new THREE.PlaneGeometry(40000, 40000), mat(0x6b5a48));
   floor.rotation.x = -Math.PI / 2;
-  floor.position.set(board.width / 2, BOARD_Y - 40, board.height / 2);
+  floor.position.set(board.width / 2, BOARD_Y - frameDepth, board.height / 2);
   // ボードの縁（木の枠）
   const frameMat = mat(0x8a6a48);
   const edge = (w: number, d: number, x: number, z: number) => {
-    const m = add(new THREE.BoxGeometry(w, 40, d), frameMat);
-    m.position.set(x, BOARD_Y - 19.5, z);
+    const m = add(new THREE.BoxGeometry(w, frameDepth, d), frameMat);
+    m.position.set(x, BOARD_Y + 0.5 - frameDepth / 2, z);
   };
   edge(board.width + 20, 10, board.width / 2, -5);
   edge(board.width + 20, 10, board.width / 2, board.height + 5);
@@ -164,6 +273,8 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
 
   const railMat = mat(0x8a8f96, { metalness: 0.7, roughness: 0.35 });
   const deckMat = mat(0xb9b8b2);
+  const tunnelMat = mat(0x77736b, { emissive: 0x2e2c28 });
+  const portalMat = mat(0xa8a49a);
   const sleeperMats = new Map<number, THREE.Material>();
   const ballastMats = new Map<number, THREE.Material>();
   const sleeperBoxes = new Map<number, THREE.Matrix4[]>();
@@ -184,7 +295,7 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
       if (!ballastMats.has(style.ballastColor)) ballastMats.set(style.ballastColor, mat(style.ballastColor));
       add(
         sweep(frames, (i) => {
-          const bottom = elevated(i) ? -3.2 : groundDepth(i);
+          const bottom = elevated(i) ? -3.2 : Math.min(groundDepth(i), -3.2);
           const top = style.slab ? -1.9 : -2.1;
           return [
             [-style.ballastTop / 2, top],
@@ -215,6 +326,53 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
           }),
           deckMat,
         );
+      }
+      // 地下: 掘割は両側の壁、トンネルは壁と天井。坑口には地上に出る面を立てる
+      const below = (i: number) => seg.points[i].z < BELOW_BOARD_Z;
+      if (seg.points.some((_, i) => below(i))) {
+        add(
+          sweep(
+            frames,
+            (i) => {
+              const z = seg.points[i].z;
+              const w = below(i) ? TUNNEL_HALF_WIDTH : 0.01;
+              const top = below(i) ? Math.min(BOARD_Y - z, TUNNEL_CLEAR) : -3;
+              return [
+                [-w, top],
+                [-w, -3.5],
+                [w, -3.5],
+                [w, top],
+              ];
+            },
+            false,
+          ),
+          tunnelMat,
+        );
+        add(
+          sweep(frames, (i) => {
+            const on = isCovered(seg.points[i].z);
+            const w = on ? TUNNEL_HALF_WIDTH + 1 : 0.01;
+            const v = on ? TUNNEL_CLEAR : -3;
+            return [
+              [-w, v + 2],
+              [w, v + 2],
+              [w, v],
+              [-w, v],
+            ];
+          }),
+          tunnelMat,
+        );
+        // 坑口: 掘割とトンネルの境目に、天井からボードの面の少し上までの壁
+        for (let i = 1; i < seg.points.length; i++) {
+          const a = seg.points[i - 1];
+          const b = seg.points[i];
+          if (isCovered(a.z) === isCovered(b.z) || !(below(i - 1) && below(i))) continue;
+          const at = isCovered(a.z) ? a : b;
+          const h = BOARD_Y + 4 - (at.z + TUNNEL_CLEAR);
+          const m = add(new THREE.BoxGeometry(3, h, TUNNEL_HALF_WIDTH * 2 + 8), portalMat);
+          m.position.set(at.x, at.z + TUNNEL_CLEAR + h / 2, at.y);
+          m.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
+        }
       }
       // レール
       for (const side of [-1, 1]) {
@@ -438,7 +596,8 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
     const W = def.width;
     // 進行方向の左は -Z
     const sgn = a.side === "R" ? 1 : -1;
-    const base = (a.z ?? 0) >= PIER_MIN_MM ? -3 : BOARD_Y - (a.z ?? 0);
+    // 高架と地下はボードの面まで下ろさず、線路の高さに置く
+    const base = (a.z ?? 0) >= PIER_MIN_MM || (a.z ?? 0) < BELOW_BOARD_Z ? -3 : BOARD_Y - (a.z ?? 0);
     switch (def.kind) {
       case "crossing": {
         // 道路（線路と直角）と遮断機・警報機
