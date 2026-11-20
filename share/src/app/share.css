@@ -76,3 +76,16 @@ textarea { width: 100%; min-height: 90px; padding: 6px 8px; border: 1px solid va
 .share-header .who a { color: inherit; }
 .share-header .who button { background: transparent; color: inherit; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 6px; cursor: pointer; }
 .share-header .who button:hover { border-color: #fff; }
+.operation-card { display: flex; flex-direction: column; gap: 8px; }
+.operation-card .op-diagram { max-width: 100%; }
+.table-wrap { overflow-x: auto; }
+.op-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.op-table th, .op-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.op-table th { color: var(--muted); font-weight: normal; }
+.op-table tr { cursor: pointer; }
+.op-table tr.on td { background: var(--accent-weak); }
+.op-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.tag.train { border-color: #2f6fb5; color: #2f6fb5; }
+.detail-wide { grid-column: 1 / -1; }
+.operation-card h2 { margin: 0; }
+.op-lead { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }

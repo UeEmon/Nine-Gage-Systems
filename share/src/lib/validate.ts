@@ -1,6 +1,7 @@
 // 投稿・つないだレイアウトの入力の確かめ
 import type { Layout } from "../../../src/lib/geometry";
 import { validLayout } from "../../../src/lib/patternFile";
+import { normalizeOperation } from "../../../src/lib/operation/model";
 import type { SetModule } from "./store";
 
 export const LIMITS = {
@@ -12,6 +13,8 @@ export const LIMITS = {
   modules: 30,
   postsPerDay: 20,
   setsPerDay: 20,
+  trains: 200,
+  stopsPerTrain: 200,
 };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -45,7 +48,14 @@ export function parsePostInput(body: unknown): Result<{ title: string; descripti
   if (layout.pieces.length > LIMITS.pieces) return { ok: false, error: `線路は${LIMITS.pieces}本までです。` };
   const finite = layout.pieces.every((p) => [p.x, p.y, p.rot, p.z ?? 0].every(Number.isFinite));
   if (!finite) return { ok: false, error: "線路の位置が正しくありません。" };
-  return { ok: true, value: { ...meta.value, layout } };
+  // 運行計画（ダイヤ）は、読み込める形にそろえてから一緒に保存する。列車がなければ載せない
+  const { operation: rawOperation, ...rest } = layout;
+  const operation = normalizeOperation(rawOperation);
+  if (operation && operation.trains.length > LIMITS.trains) return { ok: false, error: `運行計画の列車は${LIMITS.trains}本までです。` };
+  if (operation?.trains.some((t) => t.stops.length > LIMITS.stopsPerTrain)) {
+    return { ok: false, error: `運行計画の停車駅は1列車${LIMITS.stopsPerTrain}駅までです。` };
+  }
+  return { ok: true, value: { ...meta.value, layout: operation?.trains.length ? { ...rest, operation } : rest } };
 }
 
 export function parseModules(v: unknown): Result<SetModule[]> {

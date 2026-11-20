@@ -6,10 +6,12 @@
 // - 2つのレイアウトは、ボードの端どうしを突き合わせ、端子の線路が一直線にそろう位置でつなぐ。ボードは90°単位でしか回さない。
 // - 端子がボードの端からへこんでいる分（両方の奥行きの合計）は、同じメーカーの直線線路で埋める（埋め草線路）。
 // - つないだ結果は、ふつうのレイアウト（Layout）1つに合成でき、SenroLab のエディタでそのまま開ける。
+//   ボードごとの運行計画（列車と駅の名前）も引き継ぐ。
 
 import { findConnections, placeAt, worldJoints, type Layout, type Piece } from "./geometry";
 import { computeElevation } from "./elevation";
 import { getPart, hasPart, normDeg, partKey, type Maker } from "./parts";
+import type { OperationPlan } from "./operation/model";
 
 /** 端子とみなす、線路の端からボードの端までの距離の上限（mm） */
 export const MAX_INSET_MM = 300;
@@ -377,6 +379,8 @@ export function mergeAssembly(
   const pieces: Piece[] = [];
   const accessories: NonNullable<Layout["accessories"]> = [];
   const sims: NonNullable<Layout["sims"]> = [];
+  // 運行計画は、ボードごとの列車をそのまま引き継ぐ（駅のIDはホームの uid なので、uid と同じ接頭辞を付ける）
+  const operation: OperationPlan = { stationNames: {}, trains: [] };
   items.forEach(({ m, src }, i) => {
     const pl = shift(m.placement);
     const prefix = `m${i}_`;
@@ -391,6 +395,13 @@ export function mergeAssembly(
     for (const s of src.layout.sims ?? []) {
       const q = applyPlacement(pl, s);
       sims.push({ ...s, uid: prefix + s.uid, host: s.host && prefix + s.host, x: q.x, y: q.y, rot: normDeg(s.rot + pl.rot) });
+    }
+    const op = src.layout.operation;
+    if (op) {
+      for (const [id, name] of Object.entries(op.stationNames ?? {})) operation.stationNames[prefix + id] = name;
+      for (const t of op.trains ?? []) {
+        operation.trains.push({ ...t, id: prefix + t.id, stops: t.stops.map((st) => ({ ...st, stationId: prefix + st.stationId })) });
+      }
     }
   });
 
@@ -419,6 +430,7 @@ export function mergeAssembly(
     pieces,
     ...(accessories.length ? { accessories } : {}),
     ...(sims.length ? { sims } : {}),
+    ...(operation.trains.length ? { operation } : {}),
   };
   // offset: 合成したレイアウトの原点が、置き方の座標でどこにあるか
   return { layout, check, offset: { x: minX, y: minY } };

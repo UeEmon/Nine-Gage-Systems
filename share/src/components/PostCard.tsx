@@ -15,6 +15,7 @@ export function PostCard({ post }: { post: Post }) {
         <span>
           <span className="tag">{MAKER_INFO[post.maker].label}</span>
           {post.connectors.length > 0 && <span className="tag connect">端子 {post.connectors.length}</span>}
+          {post.trainCount > 0 && <span className="tag train">ダイヤ {post.trainCount}本</span>}
           {post.width}×{post.height}mm
         </span>
         <span>

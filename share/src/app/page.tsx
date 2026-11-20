@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const PAGE = 24;
 
-type Search = { q?: string; maker?: string; connectable?: string; by?: string; page?: string };
+type Search = { q?: string; maker?: string; connectable?: string; operation?: string; by?: string; page?: string };
 
 export default async function Home({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
@@ -21,6 +21,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     q: sp.q,
     maker,
     connectable: sp.connectable === "1",
+    withOperation: sp.operation === "1",
     owner: sp.by,
     limit: PAGE,
     offset: (page - 1) * PAGE,
@@ -40,7 +41,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
         <p className="lead">
           SenroLab で作ったレイアウトを投稿して見せ合えます。ボードの端まで延びた線路（
           <span className="num">1</span>
-          の印の「端子」）があるレイアウトは、ほかの人のレイアウトと端どうしでつないで、大きなレイアウトにできます。
+          の印の「端子」）があるレイアウトは、ほかの人のレイアウトと端どうしでつないで、大きなレイアウトにできます。運行計画（ダイヤ）を作ったレイアウトは、ダイヤも一緒に見られます。
         </p>
         <form className="filters" action="/" method="get">
           <input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="題名・説明・投稿者で探す" aria-label="検索" />
@@ -56,9 +57,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
             <input type="checkbox" name="connectable" value="1" defaultChecked={sp.connectable === "1"} />
             つなげる端子があるものだけ
           </label>
+          <label>
+            <input type="checkbox" name="operation" value="1" defaultChecked={sp.operation === "1"} />
+            運行計画があるものだけ
+          </label>
           {sp.by && <input type="hidden" name="by" value={sp.by} />}
           <button type="submit">探す</button>
-          {(sp.q || maker || sp.connectable || sp.by) && <Link href="/">条件を消す</Link>}
+          {(sp.q || maker || sp.connectable || sp.operation || sp.by) && <Link href="/">条件を消す</Link>}
         </form>
         {sp.by && <p className="lead">{posts[0]?.ownerName ?? "この人"}さんの投稿</p>}
         {full.length ? (
