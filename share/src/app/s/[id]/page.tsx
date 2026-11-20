@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Header, formatDate } from "../../../components/Header";
 import { AssemblySvg } from "../../../components/LayoutSvg";
 import { OwnerActions } from "../../../components/OwnerActions";
+import { OperationSummary } from "../../../components/OperationSummary";
 import { getPart } from "../../../../../src/lib/parts";
 import { assemble } from "../../../lib/assembly";
 import { canEdit, currentUser, db } from "../../../lib/server";
@@ -64,7 +65,7 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
                   全体をファイルに保存
                 </a>
               </div>
-              <p className="notice">全体を1つのレイアウトにしたファイルです（すき間を埋める線路も入ります）。SenroLab の「パターンの保存」→「読み込む」で開けます。</p>
+              <p className="notice">全体を1つのレイアウトにしたファイルです（すき間を埋める線路と、ボードごとの運行計画も入ります）。SenroLab の「パターンの保存」→「読み込む」で開けます。</p>
               {canEdit(user, set.ownerId) && <OwnerActions kind="set" id={set.id} title={set.title} description={set.description} />}
             </div>
             <div className="card">
@@ -98,6 +99,11 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
               ))}
             </div>
           </div>
+          {layout.operation && (
+            <div className="detail-wide">
+              <OperationSummary layout={layout} />
+            </div>
+          )}
         </div>
       </main>
     </div>

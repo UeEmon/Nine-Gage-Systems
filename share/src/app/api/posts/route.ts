@@ -13,6 +13,7 @@ export async function GET(req: Request) {
       q: u.get("q") ?? undefined,
       maker: MAKERS.includes(maker as Maker) ? (maker as Maker) : undefined,
       connectable: u.get("connectable") === "1",
+      withOperation: u.get("operation") === "1",
       limit: Number(u.get("limit")) || 24,
       offset: Number(u.get("offset")) || 0,
     }),

@@ -5,15 +5,26 @@ import { findConnectors } from "../../../src/lib/modules";
 import { parsePatternFile, type SavedPattern } from "../../../src/lib/patternFile";
 import { EDGE_LABELS } from "../../../src/lib/modules";
 import { LayoutSvg } from "./LayoutSvg";
+import type { Layout } from "../../../src/lib/geometry";
+
+/** 運行計画を載せないときは外して送る */
+function postedLayout(layout: Layout, withOperation: boolean): Layout {
+  if (withOperation) return layout;
+  const { operation: _omit, ...rest } = layout;
+  void _omit;
+  return rest;
+}
 
 export function PostForm() {
   const [patterns, setPatterns] = useState<SavedPattern[]>([]);
   const [index, setIndex] = useState(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [withOperation, setWithOperation] = useState(true);
   const [state, setState] = useState<{ busy: boolean; error?: string }>({ busy: false });
   const chosen = patterns[index];
   const connectors = useMemo(() => (chosen ? findConnectors(chosen.layout) : []), [chosen]);
+  const trains = chosen?.layout.operation?.trains.length ?? 0;
   const bounded = chosen && Number.isFinite(chosen.layout.board.width) && Number.isFinite(chosen.layout.board.height);
 
   const pick = (list: SavedPattern[], i: number) => {
@@ -21,6 +32,7 @@ export function PostForm() {
     setIndex(i);
     setTitle(list[i]?.name ?? "");
     setDescription(list[i]?.layout.description ?? "");
+    setWithOperation(true);
   };
 
   const onFile = async (file: File | undefined) => {
@@ -42,7 +54,7 @@ export function PostForm() {
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, layout: chosen.layout }),
+        body: JSON.stringify({ title, description, layout: postedLayout(chosen.layout, withOperation) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `エラー（${res.status}）`);
@@ -56,7 +68,7 @@ export function PostForm() {
     <form className="card form" onSubmit={submit}>
       <h2>レイアウトを投稿する</h2>
       <p className="notice">
-        SenroLab の「パターンの保存」で書き出したファイル（.json）を選んでください。「JSONで保存」で作った1つだけのファイルも使えます。
+        SenroLab の「パターンの保存」で書き出したファイル（.json）を選んでください。「JSONで保存」で作った1つだけのファイルも使えます。運行計画（ダイヤ）を作ってあれば、一緒に投稿できます。
       </p>
       <label>
         ファイル
@@ -88,6 +100,14 @@ export function PostForm() {
             <p className="notice">
               ボードの端に向かう線路の端がないので、ほかのレイアウトとはつなげません（見せるだけの投稿になります）。線路の端をボードの端と直角に、300mm以内まで延ばすと端子になります。
             </p>
+          )}
+          {trains > 0 ? (
+            <label className="check">
+              <input type="checkbox" checked={withOperation} onChange={(e) => setWithOperation(e.target.checked)} />
+              運行計画（列車 {trains}本）も一緒に投稿する
+            </label>
+          ) : (
+            <p className="notice">このレイアウトには運行計画がありません。SenroLab の「運行計画」で列車を作ってから書き出すと、ダイヤも一緒に投稿できます。</p>
           )}
           <label>
             題名

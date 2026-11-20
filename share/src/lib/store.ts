@@ -19,6 +19,8 @@ export type PostSummary = {
   width: number;
   height: number;
   pieceCount: number;
+  /** 運行計画の列車の本数（0 は運行計画なし） */
+  trainCount: number;
   connectors: Connector[];
   createdAt: string;
   updatedAt: string;
@@ -84,8 +86,18 @@ export function openStore(dir: string): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS set_posts_post ON set_posts (post_id);
   `);
+  migrate(db);
   dbs.set(file, db);
   return db;
+}
+
+/** 前の版で作ったデータベースに、足した列を加える */
+function migrate(db: DatabaseSync) {
+  const cols = new Set((db.prepare("PRAGMA table_info(posts)").all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has("train_count")) {
+    db.exec("ALTER TABLE posts ADD COLUMN train_count INTEGER NOT NULL DEFAULT 0");
+    db.exec("UPDATE posts SET train_count = COALESCE(json_array_length(json_extract(layout, '$.operation.trains')), 0)");
+  }
 }
 
 export function closeStore(dir: string) {
@@ -108,6 +120,7 @@ type PostRow = {
   width: number;
   height: number;
   piece_count: number;
+  train_count: number;
   connectors: string;
   layout?: string;
   created_at: string;
@@ -125,13 +138,14 @@ function toSummary(r: PostRow): PostSummary {
     width: r.width,
     height: r.height,
     pieceCount: r.piece_count,
+    trainCount: r.train_count,
     connectors: JSON.parse(r.connectors),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
-const SUMMARY_COLS = "id, owner_id, owner_name, title, description, maker, width, height, piece_count, connectors, created_at, updated_at";
+const SUMMARY_COLS = "id, owner_id, owner_name, title, description, maker, width, height, piece_count, train_count, connectors, created_at, updated_at";
 
 export function createPost(
   db: DatabaseSync,
@@ -152,14 +166,15 @@ export function createPost(
     width: layout.board.width,
     height: layout.board.height,
     pieceCount: layout.pieces.length,
+    trainCount: layout.operation?.trains.length ?? 0,
     connectors,
     createdAt: at,
     updatedAt: at,
     layout,
   };
   db.prepare(
-    `INSERT INTO posts (id, owner_id, owner_name, title, description, maker, width, height, piece_count, connector_count, connectors, layout, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO posts (id, owner_id, owner_name, title, description, maker, width, height, piece_count, train_count, connector_count, connectors, layout, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     post.id,
     post.ownerId,
@@ -170,6 +185,7 @@ export function createPost(
     post.width,
     post.height,
     post.pieceCount,
+    post.trainCount,
     connectors.length,
     JSON.stringify(connectors),
     JSON.stringify(layout),
@@ -189,7 +205,7 @@ export function getPosts(db: DatabaseSync, ids: string[]): Post[] {
   return [...new Set(ids)].map((id) => getPost(db, id)).filter((p): p is Post => !!p);
 }
 
-export type PostQuery = { q?: string; maker?: Maker; connectable?: boolean; owner?: string; limit?: number; offset?: number };
+export type PostQuery = { q?: string; maker?: Maker; connectable?: boolean; withOperation?: boolean; owner?: string; limit?: number; offset?: number };
 
 export function listPosts(db: DatabaseSync, query: PostQuery = {}): { posts: PostSummary[]; total: number } {
   const where: string[] = [];
@@ -206,6 +222,7 @@ export function listPosts(db: DatabaseSync, query: PostQuery = {}): { posts: Pos
     args.push(query.maker);
   }
   if (query.connectable) where.push("connector_count > 0");
+  if (query.withOperation) where.push("train_count > 0");
   if (query.owner) {
     where.push("owner_id = ?");
     args.push(query.owner);

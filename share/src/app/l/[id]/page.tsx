@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Header, formatDate } from "../../../components/Header";
 import { LayoutSvg } from "../../../components/LayoutSvg";
 import { OwnerActions } from "../../../components/OwnerActions";
+import { OperationSummary } from "../../../components/OperationSummary";
 import { analyze } from "../../../../../src/lib/geometry";
 import { EDGE_LABELS, findCandidates } from "../../../../../src/lib/modules";
 import { MAKER_INFO } from "../../../../../src/lib/parts";
@@ -59,6 +60,8 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
                 <dd>
                   {post.pieceCount}本・線路延長 {(an.totalLengthMm / 1000).toFixed(2)}m
                 </dd>
+                <dt>運行計画</dt>
+                <dd>{post.trainCount ? `列車 ${post.trainCount}本（下に表示）` : "なし"}</dd>
               </dl>
               {post.description && <p className="desc">{post.description}</p>}
               <div className="actions">
@@ -71,7 +74,9 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
                   </Link>
                 )}
               </div>
-              <p className="notice">保存したファイルは、SenroLab の「パターンの保存」→「読み込む」で開けます。</p>
+              <p className="notice">
+                保存したファイルは、SenroLab の「パターンの保存」→「読み込む」で開けます{post.trainCount ? "（運行計画も入っています）" : ""}。
+              </p>
               {canEdit(user, post.ownerId) && <OwnerActions kind="post" id={post.id} title={post.title} description={post.description} />}
             </div>
             <div className="card">
@@ -116,6 +121,11 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
               </div>
             )}
           </div>
+          {post.trainCount > 0 && (
+            <div className="detail-wide">
+              <OperationSummary layout={post.layout} />
+            </div>
+          )}
         </div>
       </main>
     </div>

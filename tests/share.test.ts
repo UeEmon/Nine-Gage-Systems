@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { placeAt, worldJoints, type Layout, type Piece } from "../src/lib/geometry";
+import { findConnectors } from "../src/lib/modules";
 import { signHandoff, verifyHandoff } from "../src/lib/shareLink";
 import { safeNext } from "../src/lib/server/share";
 import { assemble, assemblyProblems } from "../share/src/lib/assembly";
@@ -104,6 +106,53 @@ describe("share: input", () => {
   });
 });
 
+const withOperation = (layout: Layout): Layout => ({
+  ...layout,
+  operation: {
+    stationNames: { plat1: "東駅" },
+    trains: [
+      { id: "t1", name: "1列車", kind: "local", color: "#2f6fb5", cars: 40, speedKmh: 80, departSec: 0, laps: 1, stops: [{ stationId: "plat1", track: null, pass: false, dwellSec: 20 }] },
+    ],
+  },
+});
+
+describe("share: operation plans", () => {
+  it("keeps the operation plan with the post, normalized", () => {
+    const r = parsePostInput({ title: "ダイヤつき", layout: withOperation(moduleLayout()) });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.layout.operation?.trains).toHaveLength(1);
+    // 両数は上限（16両）にそろえる
+    expect(r.value.layout.operation?.trains[0].cars).toBe(16);
+    expect(r.value.layout.operation?.stationNames).toEqual({ plat1: "東駅" });
+  });
+
+  it("drops an empty or broken operation plan", () => {
+    const empty = parsePostInput({ title: "x", layout: { ...moduleLayout(), operation: { stationNames: {}, trains: [] } } });
+    expect(empty.ok && empty.value.layout.operation).toBe(undefined);
+    const broken = parsePostInput({ title: "x", layout: { ...moduleLayout(), operation: "nope" } });
+    expect(broken.ok && broken.value.layout.operation).toBe(undefined);
+  });
+
+  it("merges each board's trains with their stations renamed like the platforms", () => {
+    const posts = [
+      { id: "A", title: "A", ownerName: "a", layout: withOperation(moduleLayout()), connectors: [] },
+      { id: "B", title: "B", ownerName: "b", layout: withOperation(moduleLayout()), connectors: [] },
+    ].map((p) => ({ ...p, connectors: findConnectors(p.layout) }));
+    const merged = assemble(
+      "つないだ",
+      [
+        { postId: "A", placement: { x: 0, y: 0, rot: 0 } },
+        { postId: "B", placement: { x: 682, y: 0, rot: 0 } },
+      ],
+      posts,
+    );
+    expect(merged.layout.operation?.trains.map((t) => t.id)).toEqual(["m0_t1", "m1_t1"]);
+    expect(merged.layout.operation?.trains[1].stops[0].stationId).toBe("m1_plat1");
+    expect(merged.layout.operation?.stationNames).toEqual({ m0_plat1: "東駅", m1_plat1: "東駅" });
+  });
+});
+
 describe("share: store", () => {
   let dir: string;
   beforeEach(() => {
@@ -127,6 +176,24 @@ describe("share: store", () => {
     expect(listPosts(db, { connectable: true }).posts.map((p) => p.id)).toEqual([a.id]);
     expect(connectablePosts(db, "kato").map((p) => p.id)).toEqual([a.id]);
     expect(recentCount(db, "posts", "u1")).toBe(1);
+  });
+
+  it("counts trains, filters by them, and adds the column to an older database", () => {
+    const db = openStore(dir);
+    const parsed = parsePostInput({ title: "ダイヤつき", layout: withOperation(moduleLayout()) });
+    if (!parsed.ok) throw new Error(parsed.error);
+    const a = createPost(db, { id: "u1", name: "taro" }, parsed.value);
+    createPost(db, { id: "u1", name: "taro" }, { title: "なし", description: "", layout: moduleLayout() });
+    expect(getPost(db, a.id)?.trainCount).toBe(1);
+    expect(listPosts(db, { withOperation: true }).posts.map((p) => p.id)).toEqual([a.id]);
+    closeStore(dir);
+    // 列を消した古い形にして開き直すと、レイアウトの中から数え直す
+    const raw = new DatabaseSync(path.join(dir, "share.sqlite"));
+    raw.exec("ALTER TABLE posts DROP COLUMN train_count");
+    raw.close();
+    const again = openStore(dir);
+    expect(getPost(again, a.id)?.trainCount).toBe(1);
+    expect(listPosts(again, { withOperation: true }).total).toBe(1);
   });
 
   it("saves a set of connected posts and merges it into one layout", () => {
