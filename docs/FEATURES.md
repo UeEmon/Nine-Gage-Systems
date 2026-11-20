@@ -68,6 +68,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/data/piers.ts`
 - `/src/components/LevelProfile.tsx`
 - `/tests/elevation.test.ts`
+- `/tests/underground.test.ts`
 
 ### 線路以外のパーツ（`feature:accessories`）
 

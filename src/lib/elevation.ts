@@ -12,6 +12,8 @@ import { routeLength, routeSamples } from "./shapes";
 
 /** これより低いところには橋脚を立てない（地上・勾配の上り始め） */
 export const PIER_MIN_MM = 8;
+/** 高さがこれ以下（負）の線路は地下（地上の線路のレール面より下） */
+export const UNDERGROUND_MAX_MM = -PIER_MIN_MM;
 /** つながったジョイントの高さの差がこれより大きいと段差 */
 export const STEP_TOLERANCE_MM = 1;
 /** 橋脚の高さの合わせ誤差（これより離れた高さしかないと「合う橋脚がない」） */
@@ -109,6 +111,23 @@ export function computeElevation(pieces: Piece[], connections: Connection[]): El
   }
 
   return { joints, grades };
+}
+
+/** 高さの階層。地上・勾配・高架・地下 */
+export type Level = "ground" | "ramp" | "elevated" | "underground";
+
+/** 部品の階層（色分け・絞り込みに使う） */
+export function levelOf(piece: Piece, elev: Elevation): Level {
+  if (isRamp(piece)) return "ramp";
+  const { min, max } = zRange(elev, piece.uid);
+  if (max >= PIER_MIN_MM) return "elevated";
+  if (min <= UNDERGROUND_MAX_MM) return "underground";
+  return "ground";
+}
+
+/** 地下の標準の深さ(mm, 正の値)。上を地上の線路が通れるよう、立体交差に必要な高さの差と同じにする */
+export function standardDepth(maker: Maker): number {
+  return PIER_SYSTEMS[maker].clearance;
 }
 
 /** 部品の高さの範囲 */

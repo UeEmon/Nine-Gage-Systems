@@ -1,7 +1,8 @@
 import { localPaths, type Piece } from "@/lib/geometry";
 import { getPart } from "@/lib/parts";
+import type { Level } from "@/lib/elevation";
 
-export type Level = "ground" | "ramp" | "elevated";
+export type { Level };
 
 type Props = {
   piece: Piece;

@@ -18,7 +18,7 @@ import { shortfall, stockFromInventory, type Inventory, type Shortfall } from "@
 import type { SavedPattern } from "@/lib/patternFile";
 import { CATALOG_SOURCES } from "@/data/trackCatalog";
 import { heightText, PIER_SYSTEMS } from "@/data/piers";
-import { isRamp, PIER_MIN_MM, zRange } from "@/lib/elevation";
+import { isRamp, levelOf as pieceLevel, PIER_MIN_MM, standardDepth, zRange } from "@/lib/elevation";
 import { BED_INFO, bedVariantsOf, CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import type { BedType, PartCategory } from "@/data/trackCatalog";
 import type { SessionUser } from "@/lib/roles";
@@ -108,9 +108,10 @@ const LEVEL_FILTERS: { value: LevelFilter; label: string }[] = [
   { value: "ground", label: "地上" },
   { value: "ramp", label: "勾配" },
   { value: "elevated", label: "高架" },
+  { value: "underground", label: "地下" },
 ];
 /** 新しく置く部品の高さ。auto はつなぐ先の部品に合わせる */
-type PlaceHeight = "auto" | "ground" | "elevated" | "ramp";
+type PlaceHeight = "auto" | "ground" | "elevated" | "underground" | "ramp";
 
 type AiMode = "free" | "owned" | "expand" | "replica";
 const AI_MODES: { mode: AiMode; label: string; help: string }[] = [
@@ -369,18 +370,17 @@ export function Editor({ user }: { user: SessionUser | null }) {
     [analysis],
   );
   const standardHeight = PIER_SYSTEMS[maker].standardHeight;
-  // 部品ごとの階層（地上・勾配・高架）
+  const depth = standardDepth(maker);
+  // 部品ごとの階層（地上・勾配・高架・地下）
   const levels = useMemo(() => {
     const m = new Map<string, Level>();
-    for (const p of layout.pieces) {
-      m.set(p.uid, isRamp(p) ? "ramp" : zRange(analysis.elevation, p.uid).max >= PIER_MIN_MM ? "elevated" : "ground");
-    }
+    for (const p of layout.pieces) m.set(p.uid, pieceLevel(p, analysis.elevation));
     return m;
   }, [layout.pieces, analysis]);
   const levelOf = (uid: string): Level => levels.get(uid) ?? "ground";
   const isVisible = (uid: string) => levelFilter === "all" || levelOf(uid) === levelFilter;
   const levelCounts = useMemo(() => {
-    const c: Record<Level, number> = { ground: 0, ramp: 0, elevated: 0 };
+    const c: Record<Level, number> = { ground: 0, ramp: 0, elevated: 0, underground: 0 };
     for (const l of levels.values()) c[l] += 1;
     return c;
   }, [levels]);
@@ -451,6 +451,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
     let height: Pick<Piece, "z" | "ramp"> = {};
     const src = selection?.kind === "joint" ? layout.pieces.find((q) => q.uid === selection.uid) : undefined;
     if (placeHeight === "elevated") height = { z: standardHeight };
+    else if (placeHeight === "underground") height = { z: -depth };
     else if (placeHeight === "ramp") height = { ramp: true };
     else if (placeHeight === "auto" && src) height = isRamp(src) ? { ramp: true } : src.z ? { z: src.z } : {};
     if (height.ramp && !part.rampEnds) height = {}; // ポイントなどは勾配にできない
@@ -898,6 +899,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
                 <option value="auto">つなぐ先に合わせる</option>
                 <option value="ground">地上</option>
                 <option value="elevated">高架（{standardHeight}mm）</option>
+                <option value="underground">地下（-{depth}mm）</option>
                 <option value="ramp">勾配（前後の高さの間を自動で上り下り）</option>
               </select>
             </label>
@@ -1073,6 +1075,13 @@ export function Editor({ user }: { user: SessionUser | null }) {
                     高架
                   </button>
                   <button
+                    className={!selectedPiece.ramp && (selectedPiece.z ?? 0) < 0 ? "on" : ""}
+                    title="地上の線路の下をくぐる地下の線路にします。地上との間は勾配でつなぎます"
+                    onClick={() => setSelectedHeight({ z: -depth })}
+                  >
+                    地下
+                  </button>
+                  <button
                     className={selectedPiece.ramp ? "on" : ""}
                     disabled={!getPart(selectedPiece.partId).rampEnds}
                     title={getPart(selectedPiece.partId).rampEnds ? "前後の高さの間を自動で上り下りします" : "ポイント・交差は勾配にできません"}
@@ -1085,15 +1094,15 @@ export function Editor({ user }: { user: SessionUser | null }) {
               {!selectedPiece.ramp && (
                 <div className="row">
                   <label className="small">
-                    高さ（レール面、地上からmm）
+                    高さ（レール面、地上からmm。地下はマイナス）
                     <span className="input-row">
                       <input
                         type="number"
-                        min={0}
+                        min={-200}
                         max={300}
                         step={5}
                         value={selectedPiece.z ?? 0}
-                        onChange={(e) => setSelectedHeight({ z: Math.max(0, Math.min(300, Number(e.target.value) || 0)) })}
+                        onChange={(e) => setSelectedHeight({ z: Math.max(-200, Math.min(300, Number(e.target.value) || 0)) })}
                         aria-label="高さ"
                       />
                       <span className="unit">mm</span>

@@ -21,9 +21,12 @@ type Props = {
 export function LevelProfile({ pieces, elevation, piers, board, standardHeight, levelOf, selectedUid, onClose }: Props) {
   const [axis, setAxis] = useState<"x" | "y">("x");
   const len = axis === "x" ? board.width : board.height;
-  const maxZ = Math.max(standardHeight, ...pieces.flatMap((p) => elevation.joints.get(p.uid) ?? [0])) + 15;
-  // 高さは横の長さに比べて小さいので、縦を広げて描く（縦の範囲は -10mm〜maxZ）
-  const h = maxZ + 10;
+  const zs = pieces.flatMap((p) => elevation.joints.get(p.uid) ?? [0]);
+  const maxZ = Math.max(standardHeight, ...zs) + 15;
+  // 地下の線路があれば、地面より下も描く
+  const minZ = Math.min(0, ...zs) - 10;
+  // 高さは横の長さに比べて小さいので、縦を広げて描く（縦の範囲は minZ〜maxZ）
+  const h = maxZ - minZ;
   const pos = (pt: { x: number; y: number }) => (axis === "x" ? pt.x : pt.y);
   const lines = pieces.map((p) => ({
     uid: p.uid,
@@ -33,7 +36,8 @@ export function LevelProfile({ pieces, elevation, piers, board, standardHeight, 
       .join(" "),
   }));
   // 下の線路を先に、高い線路を後に描く
-  lines.sort((a, b) => (a.level === "elevated" ? 1 : 0) - (b.level === "elevated" ? 1 : 0));
+  const order = { underground: 0, ground: 1, ramp: 1, elevated: 2 } as const;
+  lines.sort((a, b) => order[a.level] - order[b.level]);
 
   return (
     <div className="profile" role="img" aria-label="線路の高さの断面図">
@@ -66,7 +70,7 @@ export function LevelProfile({ pieces, elevation, piers, board, standardHeight, 
         ))}
       </svg>
       <span className="hint" style={{ position: "absolute", left: 10, bottom: 4, fontSize: 11 }}>
-        破線: 標準の高架 {heightText(standardHeight)}mm ／ 縦線: 橋脚
+        破線: 標準の高架 {heightText(standardHeight)}mm ／ 縦線: 橋脚{minZ < -10 ? " ／ 横線より下: 地下" : ""}
       </span>
     </div>
   );

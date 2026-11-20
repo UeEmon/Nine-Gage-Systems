@@ -33,6 +33,7 @@
           - "src/data/piers.ts"
           - "src/components/LevelProfile.tsx"
           - "tests/elevation.test.ts"
+          - "tests/underground.test.ts"
 "feature:accessories":
   - changed-files:
       - any-glob-to-any-file:
