@@ -24,6 +24,11 @@ const ENV_KEYS: Record<ProviderId, { key: string; model: string; baseUrl: string
   local: { key: "LOCAL_LLM_API_KEY", model: "LOCAL_LLM_MODEL", baseUrl: "LOCAL_LLM_BASE_URL" },
 };
 
+/** そのプロバイダのAPIキーを入れる環境変数の名前 */
+export function envKeyName(provider: ProviderId): string {
+  return ENV_KEYS[provider].key;
+}
+
 /**
  * 画面から接続先URLを指定してよいか。
  * 公開サーバーで任意のURLへ通信させない（SSRF対策）よう、本番では明示的に許可したときだけ。

@@ -1,12 +1,13 @@
 import { z } from "zod";
-import { defaultProvider, resolveSettings, serverAiInfo, type ResolvedAiSettings } from "@/lib/llm";
+import { defaultProvider, envKeyName, resolveSettings, serverAiInfo, type ResolvedAiSettings } from "@/lib/llm";
 import { DEFAULT_LOCAL_BASE_URL, LlmError, PROVIDERS, type ProviderId } from "@/lib/llm/types";
 import type { Env, ProviderSettings, StoredAi } from "./store";
 
 /**
  * AIの設定は管理者が画面で決め、サーバーに保存する。
  * 項目が空なら環境変数（ANTHROPIC_API_KEY など）を使う。一般ユーザーは設定を見たり変えたりできない。
- * 使うプロバイダとモデルは「管理者用」と「プレミアムユーザー用」で別々に決められる（キー・接続先URLはプロバイダごとに共通）。
+ * 「管理者用」と「プレミアムユーザー用」は、プロバイダ・モデル・APIキーを別々に設定する。
+ * プレミアムユーザー用は管理者用のキー（画面で保存したもの・環境変数のどちらも）を使わない。接続先URLだけはプロバイダごとに共通。
  */
 
 /** サーバーのAIを使うロール */
@@ -16,7 +17,7 @@ export function activeProvider(ai: StoredAi, env: Env = process.env): ProviderId
   return ai.provider ?? defaultProvider(env);
 }
 
-/** プレミアムユーザー用のプロバイダ。決めていなければ管理者用と同じ */
+/** プレミアムユーザー用のプロバイダ。まだ設定していなければ、管理者用と同じプロバイダを初期値にする */
 export function premiumProvider(ai: StoredAi, env: Env = process.env): ProviderId {
   return ai.premium?.provider ?? activeProvider(ai, env);
 }
@@ -42,13 +43,29 @@ export function settingsForUse(
   }
 }
 
+/** プレミアムユーザー用のAPIキーがないときのエラー */
+export const PREMIUM_KEY_MISSING = "プレミアムユーザー用のAPIキーが設定されていません。管理者に「管理」画面のAI設定（プレミアムユーザー用のAI）を依頼してください。";
+
 /**
- * ロールに合わせたサーバーのAI。プレミアムユーザーは「プレミアムユーザー用」の設定（なければ管理者用と同じ）を使う。
- * プレミアムユーザー用のAPIキーがあればそれを、なければそのプロバイダの共通のキーを使う
+ * プレミアムユーザー用のAI。プロバイダ・モデル・APIキーはプレミアムユーザー用の設定だけを使い、
+ * 管理者用のキー（画面で保存したもの・環境変数）には頼らない。接続先URLはプロバイダごとの設定を使う
  */
+export function premiumSettings(ai: StoredAi, env: Env = process.env): ResolvedAiSettings {
+  const provider = premiumProvider(ai, env);
+  const p = ai.premium?.provider === provider ? ai.premium : undefined;
+  if (!p?.apiKey && provider !== "local") throw new LlmError(PREMIUM_KEY_MISSING, 503);
+  // 環境変数のキーを混ぜないよう、キーの変数だけ外して渡す
+  const { [envKeyName(provider)]: _serverKey, ...rest } = env;
+  void _serverKey;
+  return resolveSettings(
+    { provider, model: p?.model, apiKey: p?.apiKey, baseUrl: ai.byProvider[provider]?.baseUrl },
+    { ...rest, AI_ALLOW_CUSTOM_BASE_URL: "true" },
+  );
+}
+
+/** ロールに合わせたサーバーのAI。管理者は管理者用、プレミアムユーザーはプレミアムユーザー用の設定を使う */
 export function settingsForRole(ai: StoredAi, role: ServerAiRole, env: Env = process.env): ResolvedAiSettings {
-  if (role === "admin" || !ai.premium?.provider) return settingsForUse(ai, env);
-  return settingsForUse(ai, env, ai.premium.provider, { model: ai.premium.model, apiKey: ai.premium.apiKey });
+  return role === "admin" ? settingsForUse(ai, env) : premiumSettings(ai, env);
 }
 
 function mask(key?: string) {
@@ -62,6 +79,7 @@ export function adminAiView(ai: StoredAi, env: Env = process.env) {
   return {
     provider: activeProvider(ai, env),
     /** プレミアムユーザー用。provider が null なら管理者用と同じ */
+    /** プレミアムユーザー用。provider が null ならまだ設定していない（管理者用のプロバイダを初期値として見せる） */
     premium: { provider: ai.premium?.provider ?? null, model: ai.premium?.model ?? "", savedKey: mask(ai.premium?.apiKey) },
     providers: Object.fromEntries(
       PROVIDERS.map((p) => {
@@ -87,14 +105,14 @@ export function adminAiView(ai: StoredAi, env: Env = process.env) {
 
 /** 全員向け。そのロールがどのAIを使うかと、使える状態かだけ */
 export function publicAiView(ai: StoredAi, env: Env = process.env, role: ServerAiRole = "admin") {
-  const premium = role === "ai" && !!ai.premium?.provider;
+  const premium = role === "ai";
   const provider = premium ? premiumProvider(ai, env) : activeProvider(ai, env);
   try {
     const s = settingsForRole(ai, role, env);
     return { provider, model: s.model, ready: true };
   } catch {
-    const model = (premium ? ai.premium?.model : undefined) || ai.byProvider[provider]?.model || serverAiInfo(env).providers[provider].defaultModel;
-    return { provider, model, ready: false };
+    const own = premium ? (ai.premium?.provider === provider ? ai.premium.model : undefined) : ai.byProvider[provider]?.model;
+    return { provider, model: own || serverAiInfo(env).providers[provider].defaultModel, ready: false };
   }
 }
 
@@ -118,7 +136,7 @@ export const AiPatchSchema = z.object({
     .object({
       provider: z.enum(PROVIDERS).nullable(),
       model: z.string().trim().max(200).optional(),
-      /** 省略=変えない、空文字=消す（共通のキーを使う） */
+      /** 省略=変えない、空文字=消す */
       apiKey: z.string().trim().max(500).optional(),
     })
     .optional(),
@@ -161,7 +179,7 @@ export function previewSettings(ai: StoredAi, provider: ProviderId, change: Prov
   return settingsForUse(copy, env, provider);
 }
 
-/** プレミアムユーザー用の「一覧」。保存前のキーを保存済みの設定に重ねて使う */
+/** プレミアムユーザー用の「一覧」。保存前のキーを保存済みの設定に重ねて使う（管理者用のキーは使わない） */
 export function previewPremiumSettings(ai: StoredAi, provider: ProviderId, apiKey: string | undefined, env: Env = process.env) {
   const copy: StoredAi = structuredClone(ai);
   applyAiPatch(copy, { premium: { provider, ...(apiKey ? { apiKey } : {}) } });
