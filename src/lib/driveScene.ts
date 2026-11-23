@@ -3,6 +3,8 @@
 // 真上から見るとレイアウトの図と同じ向きになる。
 
 import * as THREE from "three";
+import type { SimObject } from "./replica";
+import { modelGeometry } from "./object3d";
 import type { BedType } from "../data/trackCatalog";
 import { PIER_MIN_MM, type Pier } from "./elevation";
 import type { Board, Piece } from "./geometry";
@@ -222,7 +224,7 @@ function grassTexture(): THREE.Texture {
 }
 
 /** レイアウト全体の情景（ボード・線路・橋脚・木と建物） */
-export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], board: Board, accessories: Accessory[] = []): Built {
+export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], board: Board, accessories: Accessory[] = [], sims: SimObject[] = []): Built {
   const group = new THREE.Group();
   const disposables: { dispose: () => void }[] = [];
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => {
@@ -445,6 +447,27 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
   // 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）
   const placed = accessories.filter((a) => hasAccessory(a.itemId));
   buildAccessories(placed, { add, mat, group, disposables });
+  for (const s of sims) {
+    let geometry: THREE.BufferGeometry;
+    const length = Math.max(0.1, s.length), width = Math.max(0.1, s.width), height = Math.max(0.1, s.height);
+    try {
+      if (s.model) {
+        geometry = modelGeometry(s.model);
+        const b = geometry.boundingBox!;
+        geometry.scale(length / (b.max.x - b.min.x), height / (b.max.y - b.min.y), width / (b.max.z - b.min.z));
+      } else {
+        geometry = new THREE.BoxGeometry(length, height, width);
+        geometry.translate(0, height / 2, 0);
+      }
+    } catch {
+      // 壊れた保存モデルがあっても線路とほかの情景は表示する。
+      geometry = new THREE.BoxGeometry(length, height, width);
+      geometry.translate(0, height / 2, 0);
+    }
+    const mesh = add(geometry, mat(s.model ? 0x9ea8b5 : 0x9b7eb5, { side: THREE.DoubleSide, transparent: !s.model, opacity: s.model ? 1 : 0.25 }));
+    mesh.position.set(s.x, s.z ?? 0, s.y);
+    mesh.rotation.y = -s.rot * Math.PI / 180;
+  }
 
   // 木と建物（線路と置いたパーツから離れた所に）
   const rand = seeded(pieces.length * 7919 + Math.round(board.width + board.height));
@@ -503,89 +526,167 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
  * 各車両のグループは車体の中心が原点で +X が前。位置と向きは carPlacements で合わせる
  */
 export function buildTrain(cars: number, color = 0x2f6fb5, vehicleType: VehicleType = "commuter"): { cars: THREE.Group[]; group: THREE.Group; dispose: () => void } {
-  const { length, width, height, floor, bogieCenters } = N_CAR;
+  const { length, width, floor, bogieCenters } = N_CAR;
   const group = new THREE.Group();
-  const mats = {
-    body: new THREE.MeshStandardMaterial({ color, roughness: 0.5 }),
-    band: new THREE.MeshStandardMaterial({ color: 0xe9eef2, roughness: 0.5 }),
-    roof: new THREE.MeshStandardMaterial({ color: 0x8e959c, roughness: 0.7 }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x1b2430, roughness: 0.2, metalness: 0.3 }),
-    under: new THREE.MeshStandardMaterial({ color: 0x2a2c2e, roughness: 0.8 }),
-  };
-  const roofH = 2.5;
-  const bodyTop = height - roofH;
   const geos: THREE.BufferGeometry[] = [];
-  const box = (w: number, h: number, d: number, x: number, y: number, z = 0) => {
-    const g = new THREE.BoxGeometry(w, h, d);
-    g.translate(x, y, z);
-    geos.push(g);
-    return g;
+  const materials: THREE.Material[] = [];
+  const material = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => {
+    const m = new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...extra });
+    materials.push(m); return m;
   };
-  const bodyGeo = box(length, bodyTop - floor, width, 0, (floor + bodyTop) / 2);
-  const roofGeo = box(length - 2, roofH, width - 3, 0, bodyTop + roofH / 2);
-  // 窓の帯（側面）と、先頭車の前面の窓
-  const sideWin = box(length - 16, 5, width + 0.2, 0, floor + 13);
-  const frontWin = box(0.6, 7, width - 4, length / 2, floor + 13);
-  const door = box(7, 14, width + 0.4, 0, floor + 7);
-  const container = box(45, 17, width - 1, 0, floor + 10);
-  const deck = box(length, 3, width, 0, floor + 1.5);
-  const streamlined = vehicleType === "express" || vehicleType === "shinkansen";
-  const noseLength = vehicleType === "shinkansen" ? 30 : 14;
-  const noseGeo = new THREE.CylinderGeometry(2, width / 2, noseLength, 4);
-  noseGeo.rotateZ(-Math.PI / 2);
-  geos.push(noseGeo);
-  const shortBody = box(length - noseLength, bodyTop - floor, width, -noseLength / 2, (floor + bodyTop) / 2);
-  const shortRoof = box(length - noseLength - 2, roofH, width - 3, -noseLength / 2, bodyTop + roofH / 2);
-  const shortWindows = box(length - noseLength - 16, 5, width + 0.2, -noseLength / 2, floor + 13);
-  const bogie = box(20, 3.5, 13, 0, 2.6);
+  const cream = material(0xf3deb0), red = material(0xa52b36);
+  const white = material(0xf3f1e7), blue = material(0x175baf);
+  const body = material(color), silver = material(0xa1a5a5), roof = material(0x777f86);
+  const glass = material(0x122635, { metalness: 0.3, roughness: 0.18 });
+  const under = material(0x30343a), rubber = material(0x17191b);
+  const light = material(0xffefb0, { emissive: 0xffd977, emissiveIntensity: 0.5 });
+  const tail = material(0xd51f2b, { emissive: 0x8b0810 });
+  const keep = <T extends THREE.BufferGeometry>(g: T): T => { geos.push(g); return g; };
+  const box = (parent: THREE.Group, name: string, w: number, h: number, d: number, x: number, y: number, z: number, m: THREE.Material) => {
+    const mesh = new THREE.Mesh(keep(new THREE.BoxGeometry(w, h, d)), m);
+    mesh.name = name; mesh.position.set(x, y, z); parent.add(mesh); return mesh;
+  };
+  const sphere = (parent: THREE.Group, name: string, x: number, y: number, z: number, radius: number, m: THREE.Material) => {
+    const mesh = new THREE.Mesh(keep(new THREE.SphereGeometry(radius, 10, 6)), m);
+    mesh.name = name; mesh.position.set(x, y, z); parent.add(mesh);
+  };
+  const rod = (parent: THREE.Group, a: THREE.Vector3, b: THREE.Vector3) => {
+    const delta = b.clone().sub(a);
+    const mesh = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.35, 0.35, delta.length(), 5)), under);
+    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+    parent.add(mesh);
+  };
+  const pantograph = (parent: THREE.Group, x: number) => {
+    const p = new THREE.Group(); p.name = "pantograph"; p.position.x = x;
+    box(p, "insulator", 9, 1, 9, 0, 27, 0, under);
+    for (const z of [-3, 3]) for (const side of [-1, 1]) {
+      rod(p, new THREE.Vector3(0, 27.5, z), new THREE.Vector3(side * 5, 31, z));
+      rod(p, new THREE.Vector3(side * 5, 31, z), new THREE.Vector3(0, 34.5, z));
+    }
+    box(p, "contact-strip", 2, 0.7, 14, 0, 35, 0, under); parent.add(p);
+  };
+  const windows = (parent: THREE.Group, from: number, to: number, y: number, spacing: number, w: number) => {
+    for (let x = from; x <= to; x += spacing) for (const side of [-1, 1]) {
+      box(parent, "passenger-window", w, 5, 0.35, x, y, side * (width / 2 + 0.1), glass);
+    }
+  };
+  // 楕円断面をつないだ曲面。先端へ半径を滑らかに絞り、0系の丸い鼻を作る。
+  const roundNose = (parent: THREE.Group) => {
+    const rings = [
+      [38, 14, 10, 9.65], [43, 13.5, 9.7, 9.4], [49, 12.5, 8.6, 8.6],
+      [55, 11.2, 6.7, 7], [60, 10.2, 4.5, 5.1], [64, 9.5, 2.3, 2.8], [66.5, 9.2, 0, 0],
+    ];
+    const pts: number[] = [], indices: number[] = [], n = 24;
+    for (const [x, y, ry, rz] of rings) for (let j = 0; j <= n; j++) {
+      const t = j / n * Math.PI * 2; pts.push(x, y + Math.cos(t) * ry, Math.sin(t) * rz);
+    }
+    for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < n; j++) {
+      const a = i * (n + 1) + j, b = a + n + 1;
+      indices.push(a, a + 1, b, b, a + 1, b + 1);
+    }
+    const g = keep(new THREE.BufferGeometry());
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    g.setIndex(indices); g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, white); mesh.name = "series-0-round-nose"; parent.add(mesh);
+  };
   const cargroups: THREE.Group[] = [];
   for (let i = 0; i < cars; i++) {
-    const car = new THREE.Group();
-    car.userData.vehicleType = vehicleType;
+    const car = new THREE.Group(); car.userData.vehicleType = vehicleType;
     const end = i === 0 || i === cars - 1;
-    if (vehicleType === "freight" && i > 0) {
-      car.add(new THREE.Mesh(deck, mats.under));
-      for (const x of [-26, 26]) {
-        const load = new THREE.Mesh(container, mats.body);
-        load.position.x = x;
-        car.add(load);
-      }
-    } else if (streamlined && end) {
-      // 最後尾の先端は後ろ向き。外形は既存の車両長に収める。
-      const shell = new THREE.Group();
-      shell.add(new THREE.Mesh(shortBody, mats.body), new THREE.Mesh(shortRoof, mats.roof), new THREE.Mesh(shortWindows, mats.glass));
-      const nose = new THREE.Mesh(noseGeo, mats.body);
-      nose.position.set((length - noseLength) / 2, floor + 9, 0);
-      shell.add(nose);
-      if (i > 0) shell.rotation.y = Math.PI;
-      car.add(shell);
-    } else {
-      car.add(new THREE.Mesh(bodyGeo, mats.body), new THREE.Mesh(roofGeo, mats.roof), new THREE.Mesh(sideWin, mats.glass));
-      if (i === 0) car.add(new THREE.Mesh(frontWin, mats.glass));
-      if (vehicleType === "commuter") {
-        for (const x of [-42, 0, 42]) {
-          const d = new THREE.Mesh(door, mats.band);
-          d.position.x = x;
-          car.add(d);
+    const shell = new THREE.Group(); car.add(shell);
+    // 最後尾は運転台を後方に向ける。台車の計算と車両長は共通。
+    if (end && i > 0 && (vehicleType === "express" || vehicleType === "shinkansen")) shell.rotation.y = Math.PI;
+    if (vehicleType === "freight") {
+      if (i === 0) {
+        car.name = "electric-locomotive";
+        box(shell, "locomotive-body", 128, 18, width, 0, 15, 0, blue);
+        box(shell, "locomotive-roof", 122, 2.5, width - 2, 0, 25.2, 0, roof);
+        box(shell, "cream-belt", 128.2, 2.2, width + 0.2, 0, 12, 0, cream);
+        for (const dir of [-1, 1]) {
+          box(shell, "cab-windscreen", 0.5, 5.5, width - 4, dir * 64.2, 20, 0, glass);
+          box(shell, "cab-divider", 0.8, 6, 0.8, dir * 64.5, 20, 0, blue);
+          for (const side of [-1, 1]) {
+            box(shell, "cab-side-window", 10, 5.5, 0.4, dir * 53, 20, side * 9.8, glass);
+            sphere(shell, "locomotive-headlamp", dir * 64.4, 12, side * 6, 1.1, light);
+          }
+          box(shell, "pilot", 1.5, 4, 15, dir * 64, 5, 0, under);
+        }
+        for (let x = -34; x <= 34; x += 4) for (const side of [-1, 1]) {
+          box(shell, "side-louver", 1, 8, 0.5, x, 19, side * 9.85, under);
+        }
+        pantograph(shell, -27); pantograph(shell, 27);
+      } else {
+        car.name = "container-wagon";
+        box(shell, "wagon-deck", length, 2.5, width, 0, 5, 0, under);
+        for (const x of [-29, 29]) {
+          box(shell, "freight-container", 53, 15, width - 1, x, 14, 0, body);
+          for (let dx = -23; dx <= 23; dx += 5) for (const side of [-1, 1]) {
+            box(shell, "container-rib", 0.7, 14, 0.5, x + dx, 14, side * 9.3, silver);
+          }
+          box(shell, "container-door", 0.4, 14, width - 2, x + 26.6, 14, 0, roof);
         }
       }
+    } else if (vehicleType === "shinkansen") {
+      car.name = end ? "series-0-cab" : "series-0-intermediate";
+      const len = end ? 104.5 : length, cx = end ? -14.25 : 0;
+      box(shell, "series-0-body", len, 19, width, cx, 14, 0, white);
+      box(shell, "series-0-roof", len - 2, 2.5, width - 2, cx, 24.5, 0, white);
+      box(shell, "blue-window-band", len + 0.1, 6.5, width + 0.2, cx, 18.5, 0, blue);
+      box(shell, "blue-lower-band", len + 0.1, 2.2, width + 0.2, cx, 7, 0, blue);
+      windows(shell, -53, end ? 26 : 53, 18.5, 12, 7);
+      if (end) {
+        roundNose(shell);
+        const windscreen = box(shell, "series-0-cockpit", 9, 0.4, 13, 42, 23, 0, glass);
+        windscreen.rotation.z = -0.35;
+        for (const side of [-1, 1]) sphere(shell, "series-0-headlamp", 57, 13, side * 5.5, 1.2, i === 0 ? light : tail);
+      } else if (i % 2 === 1) pantograph(shell, 0);
+    } else if (vehicleType === "express") {
+      car.name = end ? "series-485-bonnet-cab" : "series-485-intermediate";
+      const len = end ? 104 : length, cx = end ? -14.5 : 0;
+      box(shell, "series-485-body", len, 18, width, cx, 14, 0, cream);
+      box(shell, "series-485-roof", len - 2, 2.5, width - 2, cx, 24.5, 0, roof);
+      box(shell, "red-window-band", len + 0.2, 7, width + 0.2, cx, 18, 0, red);
+      box(shell, "red-skirt", len + 0.2, 3, width + 0.2, cx, 6, 0, red);
+      windows(shell, -52, end ? 24 : 52, 18, 12, 8);
+      for (const x of [-48, -16, 16]) box(shell, "roof-air-conditioner", 12, 2, 12, x, 27, 0, silver);
+      if (end) {
+        // 傾斜したボンネットと、その上の高い運転台。
+        box(shell, "bonnet-base", 28, 6, width - 1, 52, 8, 0, red);
+        const bonnet = box(shell, "series-485-bonnet", 27, 7, width - 2, 51, 13, 0, cream);
+        bonnet.rotation.z = -0.13;
+        box(shell, "raised-cab", 12, 11, width - 2, 35, 21, 0, cream);
+        box(shell, "series-485-windscreen", 0.5, 5, width - 4, 41.2, 23, 0, glass);
+        box(shell, "upper-headlamp-housing", 3, 3, 7, 39.5, 28, 0, cream);
+        for (const side of [-1, 1]) {
+          box(shell, "cab-side-window", 9, 5, 0.4, 34, 23, side * 8.8, glass);
+          sphere(shell, "upper-headlamp", 41, 28, side * 2, 1, i === 0 ? light : tail);
+          sphere(shell, "bonnet-marker", 65.7, 9, side * 6, 0.7, i === 0 ? light : tail);
+        }
+        box(shell, "headmark", 0.5, 3, 7, 66, 11, 0, white);
+      } else if (i % 2 === 1) pantograph(shell, 0);
+    } else {
+      car.name = "commuter-car";
+      box(shell, "commuter-body", length, 19, width, 0, 14, 0, body);
+      box(shell, "commuter-roof", length - 2, 2.5, width - 2, 0, 24.5, 0, roof);
+      windows(shell, -55, 55, 18, 12, 8);
+      for (const x of [-42, 0, 42]) box(shell, "commuter-door", 7, 14, width + 0.4, x, floor + 7, 0, silver);
+      if (end) box(shell, "commuter-windscreen", 0.5, 7, width - 4, (i === 0 ? 1 : -1) * length / 2, 18, 0, glass);
     }
     for (const sx of [-1, 1]) {
-      const b = new THREE.Mesh(bogie, mats.under);
-      b.position.x = (sx * bogieCenters) / 2;
-      car.add(b);
+      const x = sx * bogieCenters / 2;
+      box(car, "bogie", 20, 3.5, 13, x, 2.6, 0, under);
+      for (const dx of [-6, 6]) for (const side of [-1, 1]) {
+        const wheel = new THREE.Mesh(keep(new THREE.CylinderGeometry(2.2, 2.2, 1.2, 10)), rubber);
+        wheel.name = "wheel"; wheel.rotation.x = Math.PI / 2; wheel.position.set(x + dx, 2.2, side * 7.1); car.add(wheel);
+      }
     }
-    cargroups.push(car);
-    group.add(car);
+    cargroups.push(car); group.add(car);
   }
-  return {
-    cars: cargroups,
-    group,
-    dispose: () => {
-      for (const g of geos) g.dispose();
-      for (const m of Object.values(mats)) m.dispose();
-    },
-  };
+  return { cars: cargroups, group, dispose: () => {
+    for (const g of geos) g.dispose();
+    for (const m of materials) m.dispose();
+  } };
 }
 
 type SceneKit = {

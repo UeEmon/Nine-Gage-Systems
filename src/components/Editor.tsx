@@ -34,8 +34,9 @@ import { LibraryPanel } from "./LibraryPanel";
 import { OperationView } from "./operation/OperationView";
 import { TwinView } from "./twin/TwinView";
 import { AccessoryIcon, AccessoryShape } from "./AccessoryShape";
+import { SimObjectEditor } from "./SimObjectEditor";
 import { SimObjectShape } from "./SimObjectShape";
-import { REPLICA_KIND_LABELS, REPLICA_LEVEL_HELP, REPLICA_LEVEL_LABELS, REPLICA_LEVELS, SIM_DISCLAIMER, SIM_KIND_LABELS, type ReplicaInfo, type ReplicaKind, type ReplicaLevel, type SimObject } from "@/lib/replica";
+import { REPLICA_KIND_LABELS, REPLICA_LEVEL_HELP, REPLICA_LEVEL_LABELS, REPLICA_LEVELS, SIM_DISCLAIMER, type ReplicaInfo, type ReplicaKind, type ReplicaLevel, type SimObject } from "@/lib/replica";
 import {
   accessoriesFor,
   getAccessory,
@@ -1477,29 +1478,12 @@ export function Editor({ user }: { user: SessionUser | null }) {
                   )}
                 </>
               )}
-              {sims.length > 0 && (
-                <>
-                  <p className="hint">仮オブジェクト（{sims.length}個）</p>
-                  <ul>
-                    {sims.map((s) => (
-                      <li key={s.uid}>
-                        {s.name}（{SIM_KIND_LABELS[s.kind]}）{s.note && <span className="muted">: {s.note}</span>}{" "}
-                        <button
-                          type="button"
-                          className="link-button"
-                          onClick={() => setLayout((l) => ({ ...l, sims: (l.sims ?? []).filter((x) => x.uid !== s.uid) }))}
-                        >
-                          消す
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
               <p className="warn-text small-text">{SIM_DISCLAIMER}</p>
             </div>
           )}
         </section>
+
+        <SimObjectEditor sims={sims} center={{ x: layout.board.width / 2, y: layout.board.height / 2 }} onChange={(sims) => setLayout((l) => ({ ...l, sims }))} />
 
         <section>
           <h2>確認結果</h2>

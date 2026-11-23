@@ -17,7 +17,7 @@ export function SimObjectShape({ sim, fontSize, layer }: Props) {
   if (layer === "label") {
     return (
       <text x={sim.x} y={sim.y} className="sim sim-label" style={{ fontSize }}>
-        仮 {sim.name}
+        {sim.model ? "3D" : "仮"} {sim.name}
       </text>
     );
   }

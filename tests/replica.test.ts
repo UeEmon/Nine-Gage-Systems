@@ -333,3 +333,39 @@ describe("持ち時間（deadline）", () => {
     expect(prompts).toHaveLength(2);
   });
 });
+
+describe("アップロードしたSTLモデル", () => {
+  it("バイナリSTLを配置用に正規化し、JSON保存後も形を読み戻せる", async () => {
+    const { parseStl, modelGeometry } = await import("../src/lib/object3d");
+    const { isSimObject } = await import("../src/lib/replica");
+    const bytes = new Uint8Array(134);
+    const d = new DataView(bytes.buffer);
+    d.setUint32(80, 1, true);
+    [[0, 0, 0], [10, 0, 0], [0, 20, 30]].flat().forEach((v, i) => d.setFloat32(96 + i * 4, v, true));
+    const g = parseStl(bytes.buffer);
+    expect(g.boundingBox!.min.y).toBeCloseTo(0);
+    expect(g.boundingBox!.max.y).toBeCloseTo(30);
+    expect(g.boundingBox!.max.x - g.boundingBox!.min.x).toBeCloseTo(10);
+    g.dispose();
+    const model = { format: "stl" as const, data: Buffer.from(bytes).toString("base64") };
+    const obj = { uid: "upload", name: "モデル", kind: "other", x: 20, y: 30, z: 40, rot: 90, length: 10, width: 20, height: 30, note: "説明", model };
+    const { parsePatternFile } = await import("../src/lib/patternFile");
+    const saved = parsePatternFile(JSON.stringify({ title: "モデル配置", board: { width: 900, height: 600 }, pieces: [], sims: [obj] }))[0].layout.sims![0];
+    expect(saved).toEqual(obj);
+    expect(isSimObject(saved)).toBe(true);
+    expect(saved.model).toBeDefined();
+    const restored = modelGeometry(saved.model!);
+    expect(restored.getAttribute("position").count).toBe(3);
+    restored.dispose();
+    expect(isSimObject({ ...obj, model: { format: "obj", data: "bad" } })).toBe(false);
+  });
+  it("壊れたヘッダー、巨大な面数、空のモデルを拒否する", async () => {
+    const { parseStl, MODEL_MAX_BYTES } = await import("../src/lib/object3d");
+    expect(() => parseStl(new ArrayBuffer(0))).toThrow();
+    expect(() => parseStl(new ArrayBuffer(MODEL_MAX_BYTES + 1))).toThrow();
+    const broken = new ArrayBuffer(84);
+    new DataView(broken).setUint32(80, 0xffffffff, true);
+    expect(() => parseStl(broken)).toThrow();
+    expect(() => parseStl(new TextEncoder().encode("solid empty\nendsolid empty").buffer)).toThrow();
+  });
+});

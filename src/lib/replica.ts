@@ -6,6 +6,7 @@
 // 仮オブジェクトは部品リスト・費用・所有パーツには数えない。
 
 import { z } from "zod";
+import { isUploadedModel, type UploadedModel } from "./object3d";
 import type { Elevation } from "./elevation";
 import type { Piece } from "./geometry";
 import { normDeg } from "./parts";
@@ -89,6 +90,7 @@ const BESIDE_GAP_MM = 25;
 
 /** シミュレーション上だけの仮オブジェクト（実在の製品ではない） */
 export type SimObject = {
+  model?: UploadedModel;
   uid: string;
   name: string;
   kind: SimKind;
@@ -201,7 +203,8 @@ export function isSimObject(v: unknown): v is SimObject {
     typeof s.uid === "string" &&
     typeof s.name === "string" &&
     (SIM_KINDS as readonly string[]).includes(s.kind) &&
-    [s.x, s.y, s.rot, s.length, s.width, s.height].every((n) => typeof n === "number" && Number.isFinite(n))
+    [s.x, s.y, s.rot, s.length, s.width, s.height].every((n) => typeof n === "number" && Number.isFinite(n)) &&
+    (s.model === undefined || isUploadedModel(s.model))
   );
 }
 

@@ -154,7 +154,7 @@ describe("映像の車両", () => {
       for (const car of model.cars) {
         const box = new Box3().setFromObject(car);
         expect(box.getSize(new Vector3()).x).toBeLessThanOrEqual(N_CAR.length + 0.7);
-        expect(box.min.y).toBeGreaterThanOrEqual(0);
+        expect(box.min.y).toBeGreaterThanOrEqual(-1e-6); // Float32 の車輪半径の丸め誤差
       }
       model.dispose();
     }
@@ -166,5 +166,28 @@ describe("映像の車両", () => {
     expect(normalizeOperation({ trains: [{ ...source, vehicleType: "shinkansen" }] })?.trains[0].vehicleType).toBe("shinkansen");
     expect(normalizeOperation({ trains: [source] })?.trains[0].vehicleType).toBeUndefined();
     expect(normalizeOperation({ trains: [{ ...source, vehicleType: "unknown" }] })?.trains[0].vehicleType).toBeUndefined();
+  });
+  it("貨物は電気機関車1両とコンテナ貨車で編成する", async () => {
+    const { buildTrain } = await import("../src/lib/driveScene");
+    const train = buildTrain(4, 0x2f6fb5, "freight");
+    expect(train.cars.map((c) => c.name)).toEqual(["electric-locomotive", "container-wagon", "container-wagon", "container-wagon"]);
+    expect(train.cars[0].getObjectByName("pantograph")).toBeDefined();
+    for (const car of train.cars.slice(1)) {
+      expect(car.getObjectByName("freight-container")).toBeDefined();
+      expect(car.getObjectByName("passenger-window")).toBeUndefined();
+      expect(car.getObjectByName("pantograph")).toBeUndefined();
+    }
+    train.dispose();
+  });
+  it("485系と0系は先頭・中間・反対向きの最後尾を持つ", async () => {
+    const { buildTrain } = await import("../src/lib/driveScene");
+    for (const [type, feature] of [["express", "series-485-bonnet"], ["shinkansen", "series-0-round-nose"]] as const) {
+      const train = buildTrain(3, 0x2f6fb5, type);
+      expect(train.cars[0].getObjectByName(feature)).toBeDefined();
+      expect(train.cars[1].getObjectByName(feature)).toBeUndefined();
+      expect(train.cars[2].getObjectByName(feature)).toBeDefined();
+      expect(train.cars[2].children[0].rotation.y).toBeCloseTo(Math.PI);
+      train.dispose();
+    }
   });
 });
