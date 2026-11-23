@@ -140,6 +140,31 @@ describe("drive", () => {
 });
 
 describe("映像の車両", () => {
+  it("103系は片側4扉、先頭と最後尾に3枚の前面窓を持つ", async () => {
+    const { buildTrain } = await import("../src/lib/driveScene");
+    const train = buildTrain(3, 0x238c46, "commuter");
+    expect(train.cars.map((c) => c.name)).toEqual(["series-103-cab", "series-103-intermediate", "series-103-cab"]);
+    for (const [i, car] of train.cars.entries()) {
+      const doors: number[] = [], front: number[] = [];
+      car.traverse((o) => {
+        if (o.name === "series-103-double-door") doors.push(o.position.z);
+        if (o.name === "series-103-front-window") front.push(o.position.x);
+      });
+      expect(doors.filter((z) => z > 0)).toHaveLength(4);
+      expect(doors.filter((z) => z < 0)).toHaveLength(4);
+      expect(front).toHaveLength(i === 1 ? 0 : 3);
+      if (i === 0) expect(front.every((x) => x > 0)).toBe(true);
+      if (i === 2) expect(front.every((x) => x < 0)).toBe(true);
+      expect(car.getObjectByName("series-103-air-conditioner")).toBeDefined();
+    }
+    expect(train.cars[1].getObjectByName("pantograph")).toBeDefined();
+    train.dispose();
+    const single = buildTrain(1, 0x238c46, "commuter");
+    let frontWindows = 0;
+    single.group.traverse((o) => { if (o.name === "series-103-front-window") frontWindows++; });
+    expect(frontWindows).toBe(6);
+    single.dispose();
+  });
   it("車種ごとに異なる形を作り、既存の車両長に収める", async () => {
     const { buildTrain } = await import("../src/lib/driveScene");
     const { VEHICLE_TYPES } = await import("../src/lib/drive");

@@ -12,7 +12,7 @@ import { routeEnd, routeSamples, type Route } from "./shapes";
 const rad = (d: number) => (d * Math.PI) / 180;
 
 export const VEHICLE_TYPES = [
-  { value: "commuter", label: "通勤電車" },
+  { value: "commuter", label: "通勤電車（国鉄103系）" },
   { value: "express", label: "特急（国鉄485系）" },
   { value: "shinkansen", label: "新幹線（0系）" },
   { value: "freight", label: "貨物列車" },

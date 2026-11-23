@@ -526,7 +526,7 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
  * 各車両のグループは車体の中心が原点で +X が前。位置と向きは carPlacements で合わせる
  */
 export function buildTrain(cars: number, color = 0x2f6fb5, vehicleType: VehicleType = "commuter"): { cars: THREE.Group[]; group: THREE.Group; dispose: () => void } {
-  const { length, width, floor, bogieCenters } = N_CAR;
+  const { length, width, bogieCenters } = N_CAR;
   const group = new THREE.Group();
   const geos: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
@@ -666,12 +666,39 @@ export function buildTrain(cars: number, color = 0x2f6fb5, vehicleType: VehicleT
         box(shell, "headmark", 0.5, 3, 7, 66, 11, 0, white);
       } else if (i % 2 === 1) pantograph(shell, 0);
     } else {
-      car.name = "commuter-car";
-      box(shell, "commuter-body", length, 19, width, 0, 14, 0, body);
-      box(shell, "commuter-roof", length - 2, 2.5, width - 2, 0, 24.5, 0, roof);
-      windows(shell, -55, 55, 18, 12, 8);
-      for (const x of [-42, 0, 42]) box(shell, "commuter-door", 7, 14, width + 0.4, x, floor + 7, 0, silver);
-      if (end) box(shell, "commuter-windscreen", 0.5, 7, width - 4, (i === 0 ? 1 : -1) * length / 2, 18, 0, glass);
+      car.name = end ? "series-103-cab" : "series-103-intermediate";
+      box(shell, "series-103-body", length, 19, width, 0, 14, 0, body);
+      // 車体色の切妻形前面と、車体の上に丸く載る灰色の屋根。
+      const roofGeo = keep(new THREE.CylinderGeometry(width / 2 - 0.3, width / 2 - 0.3, length - 2, 24));
+      roofGeo.rotateZ(Math.PI / 2); roofGeo.scale(1, 0.25, 1);
+      const roundedRoof = new THREE.Mesh(roofGeo, roof);
+      roundedRoof.name = "series-103-rounded-roof"; roundedRoof.position.y = 23.5; shell.add(roundedRoof);
+      for (const side of [-1, 1]) {
+        for (const x of [-48, -16, 16, 48]) {
+          box(shell, "series-103-double-door", 8, 14, 0.35, x, 11, side * 9.8, body);
+          box(shell, "door-center-seam", 0.35, 14, 0.4, x, 11, side * 10, under);
+          for (const dx of [-2, 2]) box(shell, "door-window", 2.5, 4.5, 0.4, x + dx, 15, side * 10.05, glass);
+        }
+        for (const x of [-60, -36, -27, -4.5, 4.5, 27, 36, 60]) {
+          box(shell, "series-103-side-window-frame", 7.5, 6.7, 0.3, x, 17, side * 9.8, silver);
+          box(shell, "passenger-window", 6.5, 5.7, 0.4, x, 17, side * 10, glass);
+          box(shell, "window-horizontal-sash", 6.7, 0.3, 0.45, x, 17, side * 10.1, silver);
+        }
+      }
+      box(shell, "series-103-air-conditioner", 25, 2.8, 12, 0, 27, 0, silver);
+      for (const x of [-48, -28, 28, 48]) box(shell, "roof-ventilator", 7, 1.8, 7, x, 26.5, 0, roof);
+      if (!end && i % 2 === 1) pantograph(shell, 30);
+      // 低運転台の103系をイメージした、3枚窓・上部1灯・下部2灯。
+      const cabDirections = cars === 1 ? [-1, 1] : end ? [i === 0 ? 1 : -1] : [];
+      for (const dir of cabDirections) {
+        const face = dir * 66.55;
+        for (const z of [-5.7, 0, 5.7]) box(shell, "series-103-front-window", 0.3, 6, 4.7, face, 17, z, glass);
+        box(shell, "series-103-destination-display", 0.3, 2.5, 8, face, 22.2, 0, under);
+        box(shell, "destination-sign", 0.35, 1.4, 6, face, 22.2, 0, white);
+        sphere(shell, "series-103-upper-headlight", dir * 65.9, 25, 0, 0.75, dir === 1 ? light : under);
+        for (const side of [-1, 1]) sphere(shell, "series-103-marker-light", dir * 65.9, 10, side * 6.4, 0.7, dir === 1 ? light : tail);
+        box(shell, "series-103-coupler", 1, 1.5, 2, dir * 66, 4.5, 0, under);
+      }
     }
     for (const sx of [-1, 1]) {
       const x = sx * bogieCenters / 2;
