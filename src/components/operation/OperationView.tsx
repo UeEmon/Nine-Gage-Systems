@@ -148,14 +148,17 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
               <ul className="op-stations">
                 {stations.map((s) => (
                   <li key={s.id}>
-                    <input
-                      value={plan.stationNames[s.id] ?? ""}
-                      placeholder={s.defaultName}
-                      maxLength={40}
-                      onChange={(e) => onChange({ ...plan, stationNames: { ...plan.stationNames, [s.id]: e.target.value } })}
-                      aria-label={`${s.defaultName}の名前`}
-                    />
-                    <span className="muted">
+                    <label className="op-station-name-field">
+                      <span>{stationName(s.id)}</span>
+                      <input
+                        value={plan.stationNames[s.id] ?? ""}
+                        placeholder={s.defaultName}
+                        maxLength={40}
+                        onChange={(e) => onChange({ ...plan, stationNames: { ...plan.stationNames, [s.id]: e.target.value } })}
+                        aria-label={`${s.defaultName}の名前`}
+                      />
+                    </label>
+                    <span className="muted op-station-details">
                       {s.tracks.length}線
                       {stationLines(s.id, lines).length > 0 && ` ${stationLines(s.id, lines).join("・")}`}
                     </span>
