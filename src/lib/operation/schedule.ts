@@ -85,7 +85,8 @@ class SegCache {
     const k = refKey(ref);
     let s = this.m.get(k);
     if (!s) {
-      s = makeSegment(this.graph, ref, 20);
+      // 再生側と同じサンプリングで距離を測る。曲線の距離差が停車位置に累積しないようにする。
+      s = makeSegment(this.graph, ref);
       this.m.set(k, s);
     }
     return s;
@@ -126,7 +127,7 @@ type Leg = {
  * pos から、targets（番線ごとの部品 uid）のどれかの番線に入り、その番線のまんなか（編成の中心）まで走る最短の経路。
  * 出発位置がすでに目的の番線の中なら、一度そこを出てから戻ってくる経路を探す（エンドレスを一周するなど）。
  */
-function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, trainLen: number): Leg | null {
+function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, trainLen: number, station: Station): Leg | null {
   const trackOf = (uid: string) => {
     for (const [n, set] of targets) if (set.has(uid)) return n;
     return null;
@@ -180,7 +181,14 @@ function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, t
   }
   const runLen = run.reduce((s, x) => s + x.length, 0);
   // 編成の中心を番線のまんなかに。編成のほうが長ければ先頭を番線の端に
-  const stopIn = Math.min(runLen, runLen / 2 + trainLen / 2);
+  const center = station.tracks.find((t) => t.number === track)?.platformCenter ?? station;
+  let centerIn = 0, acc = 0, nearest = Infinity;
+  for (const seg of run) {
+    const p = projectCenter(seg, center);
+    if (p.distance < nearest) { nearest = p.distance; centerIn = acc + p.offset; }
+    acc += seg.length;
+  }
+  const stopIn = Math.min(runLen, centerIn + trainLen / 2);
   let rest = stopIn;
   let end: Pos = { seg: run[run.length - 1], offset: run[run.length - 1].length };
   const full = [...path];
@@ -202,8 +210,20 @@ function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, t
   };
 }
 
-/** 始発駅で列車を置く位置（駅の中心にいちばん近い、番線の部品のまんなか） */
-function originCandidates(cache: SegCache, station: Station, track: number | null): { pos: Pos; track: number }[] {
+/** 番線のホーム中央を線路上の距離に投影する */
+function projectCenter(seg: Segment, center: { x: number; y: number }): { offset: number; distance: number } {
+  let best = { offset: 0, distance: Infinity };
+  for (let i = 1; i < seg.points.length; i++) {
+    const a = seg.points[i - 1], b = seg.points[i];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const f = Math.max(0, Math.min(1, ((center.x - a.x) * dx + (center.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    const distance = Math.hypot(a.x + f * dx - center.x, a.y + f * dy - center.y);
+    if (distance < best.distance) best = { distance, offset: seg.dist[i - 1] + f * (seg.dist[i] - seg.dist[i - 1]) };
+  }
+  return best;
+}
+
+function originCandidates(cache: SegCache, station: Station, track: number | null, trainLen: number): { pos: Pos; track: number }[] {
   const out: { pos: Pos; track: number; d: number }[] = [];
   for (const t of station.tracks) {
     if (track !== null && t.number !== track) continue;
@@ -215,12 +235,19 @@ function originCandidates(cache: SegCache, station: Station, track: number | nul
       const penalty = part.routes.length > 1 ? 10_000 : 0;
       for (const reverse of [false, true]) {
         const seg = cache.get({ uid, routeIndex: 0, reverse });
-        const mid = seg.points[Math.floor(seg.points.length / 2)];
-        out.push({ pos: { seg, offset: seg.length / 2 }, track: t.number, d: Math.hypot(mid.x - station.x, mid.y - station.y) + penalty });
+        const center = projectCenter(seg, t.platformCenter ?? station);
+        let front = seg, offset = center.offset + trainLen / 2;
+        const seen = new Set([seg.uid]);
+        while (offset > front.length) {
+          const next = nextOptions(cache.graph, front).map((r) => cache.get(r)).find((s) => t.pieces.includes(s.uid) && !seen.has(s.uid));
+          if (!next) { offset = front.length; break; }
+          offset -= front.length; front = next; seen.add(front.uid);
+        }
+        out.push({ pos: { seg: front, offset }, track: t.number, d: center.distance + penalty });
       }
     }
   }
-  return out.sort((a, b) => a.d - b.d);
+  return out.filter((c) => c.d <= Math.min(...out.filter((a) => a.track === c.track).map((a) => a.d)) + 1e-6).sort((a, b) => a.d - b.d);
 }
 
 /**
@@ -294,7 +321,7 @@ function scheduleTrain(
   const len = trainLength(train.cars);
   const first = stops[0];
   const origin = stations.get(first.stop.stationId)!;
-  const cands = originCandidates(cache, origin, first.stop.track);
+  const cands = originCandidates(cache, origin, first.stop.track, len);
   if (cands.length === 0) {
     result.errors.push(`${stationName(origin.id)}に列車を置ける線路がありません`);
     return result;
@@ -306,8 +333,9 @@ function scheduleTrain(
     const next = stations.get(stops[1].stop.stationId)!;
     let bestD = Infinity;
     for (const c of cands.slice(0, 8)) {
-      const leg = findLeg(cache, c.pos, targetsFor(next, stops[1].stop.track), len);
-      if (leg && leg.distance < bestD) {
+      const leg = findLeg(cache, c.pos, targetsFor(next, stops[1].stop.track), len, next);
+      // ほぼ等距離なら候補順を維持し、微小な曲線の測長差で進行方向を反転させない。
+      if (leg && leg.distance < bestD - 0.5) {
         bestD = leg.distance;
         start = c;
       }
@@ -345,7 +373,7 @@ function scheduleTrain(
   for (let i = 1; i < stops.length; i++) {
     const { stop, lap } = stops[i];
     const st = stations.get(stop.stationId)!;
-    const leg = findLeg(cache, pos, targetsFor(st, stop.track), len);
+    const leg = findLeg(cache, pos, targetsFor(st, stop.track), len, st);
     if (!leg) {
       const prev = stationName(stops[i - 1].stop.stationId);
       result.errors.push(

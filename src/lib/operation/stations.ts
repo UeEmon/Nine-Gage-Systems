@@ -15,6 +15,8 @@ export type StationTrack = {
   pieces: string[];
   /** この番線に面したホームの長さ(mm)。ホームを縦に並べたときは合計 */
   platformLength: number;
+  /** この番線に面したホームの中央（ホームの長さで重み付け） */
+  platformCenter?: { x: number; y: number };
 };
 
 export type Station = {
@@ -168,10 +170,18 @@ export function detectStations(pieces: Piece[], accessories: Accessory[], elevat
       .map(([g, set]) => ({
         set,
         v: lateral(set),
+        platformCenter: (() => {
+          const ps = members.filter((a) => trackPlatforms.get(g)?.has(a.uid));
+          const total = ps.reduce((sum, a) => sum + getAccessory(a.itemId).length, 0);
+          return {
+            x: ps.reduce((sum, a) => sum + a.x * getAccessory(a.itemId).length, 0) / total,
+            y: ps.reduce((sum, a) => sum + a.y * getAccessory(a.itemId).length, 0) / total,
+          };
+        })(),
         platformLength: [...(trackPlatforms.get(g) ?? [])].reduce((sum, uid) => sum + (platLength.get(uid) ?? 0), 0),
       }))
       .sort((a, b) => a.v - b.v)
-      .map((t, i) => ({ number: i + 1, pieces: [...t.set].sort(), platformLength: t.platformLength }));
+      .map((t, i) => ({ number: i + 1, pieces: [...t.set].sort(), platformLength: t.platformLength, platformCenter: t.platformCenter }));
     stations.push({ id: ref.uid, platforms: members.map((a) => a.uid).sort(), tracks, x, y });
   }
   // 駅の並びは左上から（x、同じくらいなら y）

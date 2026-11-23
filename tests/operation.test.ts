@@ -219,6 +219,27 @@ describe("operation: model", () => {
 });
 
 describe("operation: playback", () => {
+  it.each([false, true])("始発・到着ともホーム中央に編成の中央を合わせる（逆順=%s）", (reverse) => {
+    const { pieces, accessories } = layout();
+    // ホームを線路部品の中心からずらして配置する。
+    const moved = accessories.map((a) => ({ ...a, x: a.x + 30 }));
+    const stations = detectStations(pieces, moved);
+    const ids = reverse ? ["accB", "accA"] : ["accA", "accB"];
+    const t = train({ id: "center", departSec: 20, cars: 1 }, ids);
+    const r = computeSchedule(pieces, stations, { stationNames: {}, trains: [t] }).trains[0];
+    expect(r.errors).toEqual([]);
+    const playback = new TrainPlayback(buildDriveGraph(pieces), r.motion!);
+    for (const [id, time] of [[ids[0], 10], [ids[1], r.events[1].arr! + 1]] as const) {
+      const platform = moved.find((a) => a.uid === id)!;
+      const station = stations.find((s) => s.id === id)!;
+      const center = playback.poseAt(time, -r.motion!.length / 2);
+      const along = (center.x - platform.x) * Math.cos(platform.rot * Math.PI / 180) +
+        (center.y - platform.y) * Math.sin(platform.rot * Math.PI / 180);
+      expect(along).toBeCloseTo(0, 1);
+      expect(station.tracks[0].pieces).toContain(center.uid);
+    }
+  });
+
   it("keeps the train at the stations at the timetable times and moves it between them", () => {
     const { pieces, accessories } = layout();
     const stations = detectStations(pieces, accessories);
