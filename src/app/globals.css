@@ -423,6 +423,9 @@ button.link-button { border: none; background: none; padding: 0 0 0 4px; color: 
 .drive-bar .seg > button:last-of-type { border-radius: 0 6px 6px 0; }
 .drive-bar .seg > button:only-of-type { border-radius: 6px; }
 .drive-speed { display: flex; gap: 6px; align-items: center; }
+.drive-position { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0; min-width: 0; border: 1px solid var(--border); border-radius: 6px; }
+.drive-position label { display: flex; gap: 6px; align-items: center; }
+.drive-position input { width: 90px; }
 .drive-speed input { width: 140px; }
 .drive-speed span { min-width: 64px; font-variant-numeric: tabular-nums; }
 .drive-help { font-size: 12px; }

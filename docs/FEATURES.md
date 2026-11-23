@@ -229,4 +229,5 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/tsconfig.json`
 - `/vitest.config.ts`
 - `/README.md`
+- `/AGENTS.md`
 - `/CLAUDE.md`

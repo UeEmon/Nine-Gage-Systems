@@ -42,7 +42,7 @@ type Props = {
   onClose: () => void;
 };
 
-type ViewMode = "cab" | "chase";
+type ViewMode = "cab" | "chase" | "fixed";
 /** free: 自分で運転する / plan: 運行計画どおりに全部の列車を走らせる */
 type RunMode = "free" | "plan";
 
@@ -123,6 +123,16 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
   const [targetKmh, setTargetKmh] = useState(80);
   const [policy, setPolicy] = useState<SwitchPolicy>("straight");
   const [view, setView] = useState<ViewMode>("cab");
+  const [fixedPosition, setFixedPosition] = useState(() => ({
+    x: layout.board.width / 2,
+    y: -200,
+    z: 200,
+  }));
+  const [positionInputs, setPositionInputs] = useState(() => ({
+    x: String(fixedPosition.x), y: String(fixedPosition.y), z: String(fixedPosition.z),
+  }));
+  const fixedPositionRef = useRef(fixedPosition);
+  fixedPositionRef.current = fixedPosition;
   const [override, setOverride] = useState<number | null>(null);
   const [hud, setHud] = useState<Hud | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -294,8 +304,8 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
         behind = drive.poseAt(-(trainLength(CARS) + CHASE_BACK_MM));
 
         // 車両は現在位置を先頭の前端にして、各車両を前後の台車の位置で線路に沿わせる
-        train.group.visible = c.view === "chase";
-        if (c.view === "chase") {
+        train.group.visible = c.view !== "cab";
+        if (c.view !== "cab") {
           carPlacements(drive, CARS).forEach((p, i) => {
             const car = train.cars[i];
             car.position.copy(v(p));
@@ -320,6 +330,17 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
         camera.up.set(0, 1, 0);
         camera.lookAt(camera.position.clone().add(dir));
         camera.rotateZ(roll);
+      } else if (c.view === "fixed") {
+        // レイアウトの X/Y は水平面、Z は高さ。位置は列車が動いても変えない。
+        camera.position.copy(v(fixedPositionRef.current));
+        const dir = v(pose, 10).sub(camera.position);
+        if (dir.lengthSq() < 1e-8) dir.set(0, 0, 1);
+        dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), c.yaw);
+        const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+        if (side.lengthSq() < 1e-8) side.set(1, 0, 0);
+        dir.applyAxisAngle(side.normalize(), c.pitch);
+        camera.up.set(0, 1, 0);
+        camera.lookAt(camera.position.clone().add(dir));
       } else {
         // 線路に沿って編成の後ろの上から、先頭の車両を見る（ドラッグで回り込む）
         const target = v(pose, 10);
@@ -607,7 +628,33 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
           <button className={view === "chase" ? "on" : ""} onClick={() => setView("chase")}>
             後ろから
           </button>
+          <button className={view === "fixed" ? "on" : ""} onClick={() => {
+            ctl.current.yaw = 0;
+            ctl.current.pitch = 0;
+            setView("fixed");
+          }}>
+            指定地点
+          </button>
         </span>
+        {view === "fixed" && (
+          <fieldset className="drive-position">
+            <legend>カメラ位置（mm）</legend>
+            {(["x", "y", "z"] as const).map((axis) => (
+              <label key={axis}>
+                {axis.toUpperCase()}{axis === "z" ? "（高さ）" : ""}
+                <input type="number" step="any" value={positionInputs[axis]}
+                  aria-invalid={positionInputs[axis] === "" || !Number.isFinite(Number(positionInputs[axis]))}
+                  onChange={(e) => {
+                    const text = e.currentTarget.value;
+                    setPositionInputs((p) => ({ ...p, [axis]: text }));
+                    const value = e.currentTarget.valueAsNumber;
+                    if (Number.isFinite(value)) setFixedPosition((p) => ({ ...p, [axis]: value }));
+                  }} />
+              </label>
+            ))}
+            <span className="muted">ボード左上が X=0・Y=0、右が +X、下が +Y。Z=0 は地上のレール面。列車を追って向きが変わります。空欄の間は直前の位置を使います。</span>
+          </fieldset>
+        )}
         {!planMode && <button onClick={turnBack}>⇄ 逆向き</button>}
         <button
           onClick={() => {
