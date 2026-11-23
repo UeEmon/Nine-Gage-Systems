@@ -91,6 +91,7 @@ const CHASE_UP_MM = 110;
 export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
+  const mapPositionRef = useRef<((fx: number, fy: number) => { x: number; y: number }) | null>(null);
   const driveRef = useRef<Drive | null>(null);
   const ctl = useRef({ playing: true, targetKmh: 80, kmh: 0, view: "cab" as ViewMode, yaw: 0, pitch: 0, t: 0, rate: 1, rideId: "" });
 
@@ -153,12 +154,27 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
     setPlanHud((h) => h && { ...h, t });
   };
 
-  /** 見取り図の列車をクリックして、その列車に乗る */
+  /** 指定地点ではカメラを置き、それ以外は運行計画の列車を選ぶ */
   const onMapClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = mapRef.current;
-    if (!canvas || !planMode) return;
+    if (!canvas) return;
     const r = canvas.getBoundingClientRect();
-    const id = canvas.dataset.hit ? hitTrain(canvas, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height) : null;
+    if (!r.width || !r.height) return;
+    const fx = (e.clientX - r.left) / r.width;
+    const fy = (e.clientY - r.top) / r.height;
+    if (view === "fixed") {
+      const p = mapPositionRef.current?.(fx, fy);
+      if (!p) return;
+      const x = Math.round(p.x * 10) / 10;
+      const y = Math.round(p.y * 10) / 10;
+      setFixedPosition((prev) => ({ ...prev, x, y }));
+      setPositionInputs((prev) => ({ ...prev, x: String(x), y: String(y) }));
+      ctl.current.yaw = 0;
+      ctl.current.pitch = 0;
+      return;
+    }
+    if (!planMode) return;
+    const id = canvas.dataset.hit ? hitTrain(canvas, fx, fy) : null;
     if (id) setRideId(id);
   };
 
@@ -218,6 +234,7 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
         })
       : [];
     const map = mapRef.current ? buildMinimap(graph, mapRef.current) : null;
+    mapPositionRef.current = map?.toWorld ?? null;
 
     const camera = new THREE.PerspectiveCamera(62, 1, 1, 20000);
     const resize = () => {
@@ -364,6 +381,7 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
                   ride: x === ride,
                 }))
             : [{ id: "", color: "#2f6fb5", points: bodyPoints((o) => drive.poseAt(o), trainLength(CARS)), ride: true }],
+          c.view === "fixed" ? fixedPositionRef.current : null,
         );
       }
       renderer.render(scene, camera);
@@ -410,6 +428,7 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      mapPositionRef.current = null;
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
@@ -514,7 +533,8 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
           ref={mapRef}
           className="drive-map"
           onClick={onMapClick}
-          title={planMode ? "レイアウトの見取り図。列車をクリックすると、その列車に乗り換えます" : "レイアウトの見取り図"}
+          aria-label={view === "fixed" ? "カメラ位置を選ぶ見取り図" : "レイアウトの見取り図"}
+          title={view === "fixed" ? "クリックでカメラの X・Y を設定（高さ Z は維持）。黄色の印がカメラ位置です" : planMode ? "レイアウトの見取り図。列車をクリックすると、その列車に乗り換えます" : "レイアウトの見取り図"}
         />
         {!planMode && hud && (
           <div className="drive-hud">
@@ -639,6 +659,7 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
         {view === "fixed" && (
           <fieldset className="drive-position">
             <legend>カメラ位置（mm）</legend>
+            <span>MAP をクリックして位置を選択（高さ Z はそのまま）</span>
             {(["x", "y", "z"] as const).map((axis) => (
               <label key={axis}>
                 {axis.toUpperCase()}{axis === "z" ? "（高さ）" : ""}
@@ -761,7 +782,9 @@ function buildMinimap(graph: DriveGraph, canvas: HTMLCanvasElement) {
   });
   canvas.dataset.hit = "1";
   return {
-    draw(trains: MapTrain[]) {
+    // CSS で縮小された MAP でも、クリック位置の割合から mm に戻す。
+    toWorld: (fx: number, fy: number) => ({ x: minX + (fx * w - pad) / scale, y: minY + (fy * h - pad) / scale }),
+    draw(trains: MapTrain[], cameraPosition: { x: number; y: number } | null) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(base, 0, 0);
@@ -792,6 +815,24 @@ function buildMinimap(graph: DriveGraph, canvas: HTMLCanvasElement) {
         ctx.arc(pts[0].x, pts[0].y, t.ride ? 3.5 : 2.5, 0, Math.PI * 2);
         ctx.fillStyle = "#ffffff";
         ctx.fill();
+      }
+      if (cameraPosition) {
+        // 数値指定で図の外にあるときは、端に印を寄せる。
+        const x = Math.max(8, Math.min(w - 8, X(cameraPosition.x)));
+        const y = Math.max(8, Math.min(h - 8, Y(cameraPosition.y)));
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffcf33";
+        ctx.fill();
+        ctx.strokeStyle = "#171717";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x - 3, y);
+        ctx.lineTo(x + 3, y);
+        ctx.moveTo(x, y - 3);
+        ctx.lineTo(x, y + 3);
+        ctx.stroke();
       }
     },
   };

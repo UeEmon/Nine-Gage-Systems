@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-23-map-camera-position",
+    date: "2026-11-23T09:00:00+09:00",
+    title: "MAP からカメラの位置を選べるようになりました",
+    body: "運転映像の「指定地点」で、MAP をクリックするとその地点にカメラを置けます。高さ Z はそのままに X・Y が変わり、黄色の印でカメラの位置を確認できます。座標の数値入力も引き続き使えます。",
+  },
+  {
     id: "2026-11-23-remove-papercraft",
     date: "2026-11-23T09:00:00+09:00",
     title: "SenroLab での展開図作成を終了しました",
