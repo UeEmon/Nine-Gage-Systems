@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-23-operation-station-names",
+    date: "2026-11-23T09:00:00+09:00",
+    title: "運行計画の駅名を見やすくしました",
+    body: "運行計画の駅一覧で、名前を設定していない駅も A駅・B駅などの名前を常に表示するようにしました。路線名が長くても駅名の入力欄が縮まないよう、路線情報を別の行に表示します。",
+  },
+  {
     id: "2026-11-23-map-camera-position",
     date: "2026-11-23T09:00:00+09:00",
     title: "MAP からカメラの位置を選べるようになりました",

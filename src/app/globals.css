@@ -507,8 +507,10 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .op-side h3, .op-main h3 { margin: 0 0 8px; font-size: 14px; }
 .op-side h4 { margin: 12px 0 6px; font-size: 13px; }
 .op-stations, .op-trains { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.op-stations li { display: flex; gap: 8px; align-items: center; }
-.op-stations input { flex: 1; min-width: 0; }
+.op-stations li { display: grid; gap: 4px; min-width: 0; padding: 4px 0; }
+.op-station-name-field { display: grid; gap: 4px; min-width: 0; color: var(--text); }
+.op-station-name-field > span, .op-station-details { overflow-wrap: anywhere; }
+.op-stations input { width: 100%; min-width: 0; color: var(--text); }
 .op-trains button { width: 100%; text-align: left; }
 .op-trains button.on { background: var(--accent-weak); border-color: var(--accent); }
 .op-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
