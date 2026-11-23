@@ -2,6 +2,8 @@
 //
 // 時刻は「運転開始からの秒」で持つ。Nゲージの縮尺速度（1/150）で走らせたときの、模型の実際の時間。
 
+import { VEHICLE_TYPES, type VehicleType } from "../drive";
+
 /** 列車の種別 */
 export type TrainKind = "local" | "rapid" | "express" | "freight" | "deadhead";
 
@@ -36,6 +38,8 @@ export type Train = {
   /** 走る路線の名前（「再現してみた」で作ったレイアウトの路線など）。ない列車もある */
   line?: string;
   kind: TrainKind;
+  /** 映像の車両。未設定は列車種別に合わせる */
+  vehicleType?: VehicleType;
   /** ダイヤグラムの線の色 */
   color: string;
   cars: number;
@@ -104,6 +108,7 @@ export function normalizeOperation(v: unknown): OperationPlan | undefined {
       name: typeof t.name === "string" ? t.name.slice(0, 40) : "列車",
       ...(typeof t.line === "string" && t.line.trim() ? { line: t.line.trim().slice(0, 40) } : {}),
       kind: TRAIN_KINDS.some((k) => k.value === t.kind) ? t.kind : "local",
+      ...(VEHICLE_TYPES.some((v) => v.value === t.vehicleType) ? { vehicleType: t.vehicleType } : {}),
       color: typeof t.color === "string" && /^#[0-9a-fA-F]{6}$/.test(t.color) ? t.color : "#2f6fb5",
       cars: Math.round(clamp(num(t.cars, 4), LIMITS.cars)),
       speedKmh: clamp(num(t.speedKmh, 80), LIMITS.speedKmh),

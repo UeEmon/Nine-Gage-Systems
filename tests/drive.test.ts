@@ -138,3 +138,33 @@ describe("drive", () => {
     expect(scaleKmhToMmPerSec(100)).toBeCloseTo(185.2, 1);
   });
 });
+
+describe("映像の車両", () => {
+  it("車種ごとに異なる形を作り、既存の車両長に収める", async () => {
+    const { buildTrain } = await import("../src/lib/driveScene");
+    const { VEHICLE_TYPES } = await import("../src/lib/drive");
+    const { Box3, Vector3 } = await import("three");
+    const shapes: number[] = [];
+    for (const type of VEHICLE_TYPES) {
+      const model = buildTrain(3, 0x2f6fb5, type.value);
+      expect(model.cars).toHaveLength(3);
+      let meshes = 0;
+      model.group.traverse((o) => { if (o.type === "Mesh") meshes++; });
+      shapes.push(meshes);
+      for (const car of model.cars) {
+        const box = new Box3().setFromObject(car);
+        expect(box.getSize(new Vector3()).x).toBeLessThanOrEqual(N_CAR.length + 0.7);
+        expect(box.min.y).toBeGreaterThanOrEqual(0);
+      }
+      model.dispose();
+    }
+    expect(new Set(shapes).size).toBeGreaterThan(1);
+  });
+  it("保存した車種を維持し、古いデータと未知の車種も読み込める", async () => {
+    const { normalizeOperation } = await import("../src/lib/operation");
+    const source = { id: "t1", kind: "express", stops: [] };
+    expect(normalizeOperation({ trains: [{ ...source, vehicleType: "shinkansen" }] })?.trains[0].vehicleType).toBe("shinkansen");
+    expect(normalizeOperation({ trains: [source] })?.trains[0].vehicleType).toBeUndefined();
+    expect(normalizeOperation({ trains: [{ ...source, vehicleType: "unknown" }] })?.trains[0].vehicleType).toBeUndefined();
+  });
+});

@@ -7,6 +7,9 @@ import {
   buildDriveGraph,
   carPlacements,
   Drive,
+  VEHICLE_TYPES,
+  defaultVehicleType,
+  type VehicleType,
   makeSegment,
   trainLength,
   scaleKmhToMmPerSec,
@@ -124,6 +127,9 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
   const [targetKmh, setTargetKmh] = useState(80);
   const [policy, setPolicy] = useState<SwitchPolicy>("straight");
   const [view, setView] = useState<ViewMode>("cab");
+  const [vehicleType, setVehicleType] = useState<VehicleType>("commuter");
+  const vehicleTypeRef = useRef(vehicleType);
+  vehicleTypeRef.current = vehicleType;
   const [fixedPosition, setFixedPosition] = useState(() => ({
     x: layout.board.width / 2,
     y: -200,
@@ -222,12 +228,13 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
     const piers = placePiers(layout.pieces, graph.elevation);
     const world = buildScene(graph, layout.pieces, piers, layout.board, layout.accessories ?? []);
     scene.add(world.group);
-    const train = buildTrain(CARS);
+    let currentVehicleType = vehicleTypeRef.current;
+    let train = buildTrain(CARS, 0x2f6fb5, currentVehicleType);
     scene.add(train.group);
     // 運行計画の列車（線の色で塗る）
     const planMeshes = planMode
       ? op.trains.map((x) => {
-          const mesh = buildTrain(x.train.cars, parseInt(x.train.color.slice(1), 16));
+          const mesh = buildTrain(x.train.cars, parseInt(x.train.color.slice(1), 16), x.train.vehicleType ?? defaultVehicleType(x.train.kind));
           mesh.group.visible = false;
           scene.add(mesh.group);
           return mesh;
@@ -281,6 +288,13 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const c = ctl.current;
+      if (!planMode && currentVehicleType !== vehicleTypeRef.current) {
+        scene.remove(train.group);
+        train.dispose();
+        currentVehicleType = vehicleTypeRef.current;
+        train = buildTrain(CARS, 0x2f6fb5, currentVehicleType);
+        scene.add(train.group);
+      }
 
       let pose: DrivePose;
       let ahead: DrivePose;
@@ -676,6 +690,11 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
             <span className="muted">ボード左上が X=0・Y=0、右が +X、下が +Y。Z=0 は地上のレール面。列車を追って向きが変わります。空欄の間は直前の位置を使います。</span>
           </fieldset>
         )}
+        {!planMode && <label>映像の車両
+          <select value={vehicleType} onChange={(e) => setVehicleType(e.target.value as VehicleType)}>
+            {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+          </select>
+        </label>}
         {!planMode && <button onClick={turnBack}>⇄ 逆向き</button>}
         <button
           onClick={() => {

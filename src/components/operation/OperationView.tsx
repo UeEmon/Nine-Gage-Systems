@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { trainLength } from "@/lib/drive";
+import { trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
 import {
@@ -419,6 +419,13 @@ function TrainEditor({
                 {k.label}
               </option>
             ))}
+          </select>
+        </label>
+        <label>
+          映像の車両
+          <select value={train.vehicleType ?? ""} onChange={(e) => onChange({ vehicleType: (e.target.value || undefined) as VehicleType | undefined })}>
+            <option value="">自動（列車種別に合わせる）</option>
+            {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
           </select>
         </label>
         <label>

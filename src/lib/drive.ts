@@ -11,6 +11,17 @@ import { routeEnd, routeSamples, type Route } from "./shapes";
 
 const rad = (d: number) => (d * Math.PI) / 180;
 
+export const VEHICLE_TYPES = [
+  { value: "commuter", label: "通勤電車" },
+  { value: "express", label: "特急車両" },
+  { value: "shinkansen", label: "新幹線" },
+  { value: "freight", label: "貨物列車" },
+] as const;
+export type VehicleType = (typeof VEHICLE_TYPES)[number]["value"];
+export function defaultVehicleType(kind?: string): VehicleType {
+  return kind === "freight" ? "freight" : kind === "express" ? "express" : "commuter";
+}
+
 export type DrivePoint = { x: number; y: number; z: number };
 
 /** 区間（部品の経路1本を、決まった向きに走る） */
