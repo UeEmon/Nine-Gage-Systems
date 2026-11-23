@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-23-remove-papercraft",
+    date: "2026-11-23T09:00:00+09:00",
+    title: "SenroLab での展開図作成を終了しました",
+    body: "SenroLab ではペーパークラフトの展開図作成を行わないため、「再現してみた」の展開図ボタンと作成機能を削除しました。仮オブジェクトの表示・編集・保存はこれまでどおり使えます。",
+  },
+  {
     id: "2026-11-23-fixed-drive-camera",
     date: "2026-11-23T09:00:00+09:00",
     title: "指定した地点から列車を眺められるようになりました",

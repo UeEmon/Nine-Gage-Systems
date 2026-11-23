@@ -114,10 +114,8 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/lib/server/proposeCache.ts`
 - `/src/lib/server/proposeJobs.ts`
 - `/src/lib/server/aiLayouts.ts`
-- `/src/lib/server/papercraft.ts`
 - `/src/app/api/propose/`
 - `/src/app/api/ai-layouts/`
-- `/src/app/api/papercraft/`
 - `/src/app/api/models/`
 - `/src/app/api/ai-config/`
 - `/src/app/api/account/ai/`
@@ -137,7 +135,6 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/tests/proposeJobs.test.ts`
 - `/tests/aiLayouts.test.ts`
 - `/tests/replica.test.ts`
-- `/tests/papercraft.test.ts`
 
 ### アカウント・ログイン・ロール（`feature:auth`）
 

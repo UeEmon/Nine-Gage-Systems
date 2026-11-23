@@ -72,10 +72,8 @@
 /src/lib/server/proposeCache.ts @UeEmon
 /src/lib/server/proposeJobs.ts @UeEmon
 /src/lib/server/aiLayouts.ts @UeEmon
-/src/lib/server/papercraft.ts @UeEmon
 /src/app/api/propose/ @UeEmon
 /src/app/api/ai-layouts/ @UeEmon
-/src/app/api/papercraft/ @UeEmon
 /src/app/api/models/ @UeEmon
 /src/app/api/ai-config/ @UeEmon
 /src/app/api/account/ai/ @UeEmon
@@ -95,7 +93,6 @@
 /tests/proposeJobs.test.ts @UeEmon
 /tests/aiLayouts.test.ts @UeEmon
 /tests/replica.test.ts @UeEmon
-/tests/papercraft.test.ts @UeEmon
 
 # ── アカウント・ログイン・ロール（feature:auth）
 /src/lib/roles.ts @UeEmon
