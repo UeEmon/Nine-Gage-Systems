@@ -181,6 +181,7 @@
 /tsconfig.json @UeEmon
 /vitest.config.ts @UeEmon
 /README.md @UeEmon
+/AGENTS.md @UeEmon
 /CLAUDE.md @UeEmon
 
 # ── 保護する場所（機能の担当より優先）

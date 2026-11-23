@@ -194,4 +194,5 @@
           - "tsconfig.json"
           - "vitest.config.ts"
           - "README.md"
+          - "AGENTS.md"
           - "CLAUDE.md"
