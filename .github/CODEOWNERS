@@ -65,6 +65,8 @@
 /src/lib/ai.ts @UeEmon
 /src/lib/plan.ts @UeEmon
 /src/lib/replica.ts @UeEmon
+/src/lib/object3d.ts @UeEmon
+/src/components/SimObjectEditor.tsx @UeEmon
 /src/lib/llm/ @UeEmon
 /src/lib/server/aiSettings.ts @UeEmon
 /src/lib/server/aiUsage.ts @UeEmon

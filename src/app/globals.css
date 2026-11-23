@@ -597,6 +597,12 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .sim-label { fill: #6a2f96; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
 .sim-note { border: 1px dashed #8a4fb8; border-radius: 6px; padding: 6px 8px; margin: 6px 0; font-size: 12px; line-height: 1.5; }
 .sim-note ul { margin: 4px 0 0; padding-left: 18px; }
+.sim-editor { font-size: 12px; }
+.sim-editor label { display: grid; gap: 4px; margin: 6px 0; min-width: 0; }
+.sim-editor input, .sim-editor select { width: 100%; min-width: 0; }
+.sim-editor details { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.sim-editor summary { cursor: pointer; overflow-wrap: anywhere; }
+.sim-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; }
 .replica-input { display: grid; gap: 6px; margin: 6px 0; }
 .replica-level { display: flex; gap: 8px; align-items: center; margin: 6px 0 2px; }
 .replica-level-label { white-space: nowrap; font-size: 13px; color: var(--muted); }

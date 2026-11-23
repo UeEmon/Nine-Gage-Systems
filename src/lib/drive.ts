@@ -13,8 +13,8 @@ const rad = (d: number) => (d * Math.PI) / 180;
 
 export const VEHICLE_TYPES = [
   { value: "commuter", label: "通勤電車" },
-  { value: "express", label: "特急車両" },
-  { value: "shinkansen", label: "新幹線" },
+  { value: "express", label: "特急（国鉄485系）" },
+  { value: "shinkansen", label: "新幹線（0系）" },
   { value: "freight", label: "貨物列車" },
 ] as const;
 export type VehicleType = (typeof VEHICLE_TYPES)[number]["value"];
