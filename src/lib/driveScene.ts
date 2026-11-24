@@ -248,6 +248,77 @@ export function inHall(h: StationHall, p: XY, margin = 0): boolean {
   return u >= h.u0 - margin && u <= h.u1 + margin && v >= h.v0 - margin && v <= h.v1 + margin;
 }
 
+/** 広間の天井（掘割はボードの面）のレール面からの高さ */
+export function hallTop(h: StationHall): number {
+  return h.covered ? Math.max(TUNNEL_CLEAR, Math.min(HALL_CLEAR, BOARD_Y - 1 - h.z)) : BOARD_Y - h.z;
+}
+
+// ---- ホームの上の設備 ----
+
+export type FurnitureKind = "bench" | "nameSign" | "vending" | "timetable" | "trash" | "departureBoard";
+/** ホームの上の設備の置き場所（ホームの座標: u=前, v=右。face はベンチ・看板が向く側 ±1、0は両面） */
+export type Furniture = { kind: FurnitureKind; u: number; v: number; face: number };
+
+/** 設備の幅（v 方向）の半分。ホームの縁の黄色い線より内側に収めるのに使う */
+export const FURNITURE_HALF_DEPTH: Record<FurnitureKind, number> = {
+  bench: 1.8,
+  nameSign: 0.6,
+  vending: 2.4,
+  timetable: 0.5,
+  trash: 1.2,
+  departureBoard: 0.6,
+};
+/** ホームの縁から、設備を離す距離(mm)。黄色い線（縁から約3mm）と、その内側の歩く所 */
+export const FURNITURE_EDGE_MM = 4.5;
+
+/**
+ * ホームの上に、ベンチ・駅名標・自動販売機・時刻表・くず入れ・発車標を並べる（1/150）。
+ * 屋根の柱（ホームの端から20mm＋40mmおき）と重ならないよう、柱と柱のまんなかの40mmおきに置く。
+ * edges は線路のある側（島式は両側）、covered は屋根か地下駅の天井があるか（発車標をつるす）
+ */
+export function platformFurniture(length: number, width: number, edges: number[], covered: boolean, roofLength = Math.min(length, 280)): Furniture[] {
+  const out: Furniture[] = [];
+  const island = edges.length > 1;
+  const e = edges[0] ?? 1;
+  const halfUsable = width / 2 - FURNITURE_EDGE_MM;
+  // 対向式は線路と反対の側（壁ぎわ）に並べ、線路の側を向ける。島式は中央に背中合わせ
+  const back = (depth: number) => (island ? 0 : -e * Math.max(0, halfUsable - depth));
+  const fits = (k: FurnitureKind, v: number) => Math.abs(v) + FURNITURE_HALF_DEPTH[k] <= width / 2 - FURNITURE_EDGE_MM + 1e-6;
+  const push = (k: FurnitureKind, u: number, v: number, face: number) => {
+    if (fits(k, v)) out.push({ kind: k, u, v, face });
+  };
+  const first = Math.ceil((-length / 2 + 25 + roofLength / 2) / 40);
+  const last = Math.floor((length / 2 - 25 + roofLength / 2) / 40);
+  for (let n = first; n <= last; n++) {
+    const u = -roofLength / 2 + 40 * n;
+    switch (((n % 4) + 4) % 4) {
+      case 0:
+        if (island) {
+          push("bench", u, -2, -1);
+          push("bench", u, 2, 1);
+        } else push("bench", u, back(FURNITURE_HALF_DEPTH.bench), e);
+        push("trash", u + 9, island ? 0 : back(FURNITURE_HALF_DEPTH.trash), 0);
+        break;
+      case 1:
+        push("nameSign", u, island ? 0 : back(FURNITURE_HALF_DEPTH.nameSign), island ? 0 : e);
+        break;
+      case 2:
+        if (island) {
+          push("bench", u, -2, -1);
+          push("bench", u, 2, 1);
+        } else push("bench", u, back(FURNITURE_HALF_DEPTH.bench), e);
+        break;
+      default:
+        // 島式の狭いホームは自動販売機を置かず時刻表だけ
+        if (width >= 30 || !island) push("vending", u, island ? 0 : back(FURNITURE_HALF_DEPTH.vending), island ? 0 : e);
+        push("timetable", u + 8, island ? 0 : back(FURNITURE_HALF_DEPTH.timetable), island ? 0 : e);
+    }
+  }
+  // 発車標は屋根・天井の下のまんなかあたりに2つ
+  if (covered) for (const u of [-roofLength / 4, roofLength / 4]) push("departureBoard", u, island ? 0 : back(FURNITURE_HALF_DEPTH.departureBoard) * 0.5, island ? 0 : e);
+  return out;
+}
+
 function hallCorners(h: StationHall): XY[] {
   return [
     toWorldXY(h, h.u0, h.v0),
@@ -604,9 +675,9 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
   }
 
   // 地下駅の広間
-  buildHalls(halls, centerline, { add, mat, group, disposables, tracks: centerline });
+  buildHalls(halls, centerline, { add, mat, group, disposables, tracks: centerline, halls });
   // 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）
-  buildAccessories(placed, { add, mat, group, disposables, tracks: centerline });
+  buildAccessories(placed, { add, mat, group, disposables, tracks: centerline, halls });
   for (const s of sims) {
     let geometry: THREE.BufferGeometry;
     const length = Math.max(0.1, s.length), width = Math.max(0.1, s.width), height = Math.max(0.1, s.height);
@@ -883,6 +954,8 @@ type SceneKit = {
   disposables: { dispose: () => void }[];
   /** 線路の中心線の点 */
   tracks: DrivePoint[];
+  /** 地下駅の広間 */
+  halls: StationHall[];
 };
 
 /** 広間の端の壁で、線路が通り抜ける所（v の範囲） */
@@ -932,7 +1005,7 @@ function buildHalls(halls: StationHall[], tracks: DrivePoint[], kit: SceneKit) {
     const cv = (h.v0 + h.v1) / 2;
     const floor = -3.5;
     // 天井（トンネルの天井より高く、ボードの面より下）。掘割はボードの面まで壁を立てて天井なし
-    const top = h.covered ? Math.max(TUNNEL_CLEAR, Math.min(HALL_CLEAR, BOARD_Y - 1 - h.z)) : BOARD_Y - h.z;
+    const top = hallTop(h);
     box(L, 0.6, W, cu, floor - 0.3, cv, floorMat);
     for (const v of [h.v0, h.v1]) box(L, top - floor, 1.5, cu, (top + floor) / 2, v + (v === h.v0 ? -0.75 : 0.75), wallMat);
     if (h.covered) {
@@ -984,6 +1057,11 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
     station: mat(0xefe6d2),
     stationRoof: mat(0x7a3b2e),
     glass: mat(0x5d7a94, { roughness: 0.3, metalness: 0.2 }),
+    bench: mat(0x3a6fb3),
+    signFace: mat(0xf6f6f1, { emissive: 0x3a3a38 }),
+    signLine: mat(0x2f8f5b),
+    vending: mat(0xc8323a),
+    led: mat(0xff9b2f, { emissive: 0xff7a10, emissiveIntensity: 0.8 }),
   };
   for (const a of accessories) {
     const def = getAccessory(a.itemId);
@@ -1039,10 +1117,48 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
         const edges = def.kind === "island" ? [-1, 1] : [a.side === "R" ? -1 : 1];
         for (const e of edges) box(L - 4, 0.3, 1.6, 0, h + 0.15, e * (W / 2 - 1.5), m.edge);
         // 地下のホームは構内の天井の下にあるので、ホームの屋根（上屋）は付けない
-        if (def.roof && (a.z ?? 0) >= BELOW_BOARD_Z) {
-          const rl = Math.min(L, 280);
+        const underground = (a.z ?? 0) < BELOW_BOARD_Z;
+        const rl = Math.min(L, 280);
+        if (def.roof && !underground) {
           for (let x = -rl / 2 + 20; x <= rl / 2 - 20; x += 40) box(1.4, 22, 1.4, x, h + 11, 0, m.post);
           box(rl, 1.2, W - 2, 0, h + 22.6, 0, m.roof);
+        }
+        // ホームの上の設備。発車標は屋根か地下駅の天井からつるす
+        const hall = underground ? kit.halls.find((hl) => inHall(hl, a)) : undefined;
+        const ceiling = hall ? hallTop(hall) + hall.z - (a.z ?? 0) : def.roof && !underground ? h + 22 : null;
+        for (const f of platformFurniture(L, W, edges, ceiling !== null, rl)) {
+          const fs = f.face || 1;
+          switch (f.kind) {
+            case "bench":
+              // 座面・背もたれ・脚（約1.8m）
+              box(12, 0.6, 3, f.u, h + 3, f.v, m.bench);
+              box(12, 3, 0.5, f.u, h + 4.8, f.v - fs * 1.3, m.bench);
+              for (const dx of [-5, 5]) box(0.6, 3, 2.4, f.u + dx, h + 1.5, f.v, m.post);
+              break;
+            case "trash":
+              box(2.4, 5.5, 2.4, f.u, h + 2.75, f.v, m.post);
+              break;
+            case "nameSign":
+              // 2本の柱の駅名標（白地に色の帯）
+              for (const dx of [-6, 6]) box(0.6, 15, 0.6, f.u + dx, h + 7.5, f.v, m.post);
+              box(14, 6, 0.8, f.u, h + 12, f.v, m.signFace);
+              box(14.1, 1.2, 0.9, f.u, h + 10, f.v, m.signLine);
+              break;
+            case "vending":
+              box(6.5, 12, 4.6, f.u, h + 6, f.v, m.vending);
+              box(4.5, 6, 4.7, f.u, h + 7.5, f.v + (f.face ? fs * 0.05 : 0), m.glass);
+              break;
+            case "timetable":
+              box(0.5, 9, 0.5, f.u, h + 4.5, f.v, m.post);
+              box(5, 6, 0.6, f.u, h + 11, f.v, m.signFace);
+              break;
+            case "departureBoard":
+              if (ceiling === null) break;
+              // 天井からつるした発車標（黒地に光る文字の帯）
+              box(16, 4.5, 1, f.u, h + 16, f.v, m.black);
+              box(14, 2.4, 1.1, f.u, h + 16, f.v, m.led);
+              for (const dx of [-6, 6]) box(0.4, Math.max(0.1, ceiling - h - 18.2), 0.4, f.u + dx, (h + 18.2 + ceiling) / 2, f.v, m.post);
+          }
         }
         break;
       }

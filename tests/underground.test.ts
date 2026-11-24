@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { systemPrompt, undergroundProblems } from "../src/lib/ai";
 import { getAccessory, placeOnPiece, type Accessory } from "../src/lib/accessories";
 import { buildDriveGraph, makeSegment, type DrivePoint } from "../src/lib/drive";
-import { bridgePosts, inHall, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
+import { bridgePosts, FURNITURE_EDGE_MM, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
 import { levelOf, standardDepth } from "../src/lib/elevation";
 import { analyze, placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { getPart } from "../src/lib/parts";
@@ -299,5 +299,26 @@ describe("地下駅の構内", () => {
     // 構内の穴（長さ896mm × 幅）が入っている
     expect(holeArea).toBeGreaterThan(896 * 60);
     expect(area).toBeCloseTo(stationBoard.width * stationBoard.height - holeArea, -2);
+  });
+});
+
+describe("ホームの上の設備", () => {
+  it("ベンチ・駅名標・時刻表などを、ホームの縁の黄色い線より内側に、屋根の柱を避けて並べる", () => {
+    for (const [L, W, edges] of [[896, 27, [-1, 1]], [896, 22, [1]], [124, 27.5, [-1]], [400, 37, [-1, 1]]] as [number, number, number[]][]) {
+      const rl = Math.min(L, 280);
+      const items = platformFurniture(L, W, edges, true, rl);
+      const kinds = new Set(items.map((f) => f.kind));
+      for (const k of ["bench", "nameSign", "departureBoard"] as const) expect(kinds.has(k), `${L}x${W} ${k}`).toBe(true);
+      for (const f of items) {
+        expect(Math.abs(f.v) + FURNITURE_HALF_DEPTH[f.kind]).toBeLessThanOrEqual(W / 2 - FURNITURE_EDGE_MM + 1e-6);
+        expect(Math.abs(f.u)).toBeLessThanOrEqual(L / 2);
+        // 屋根の柱（端から20mm＋40mmおき, v=0）と重ならない
+        if (f.kind !== "departureBoard") for (let x = -rl / 2 + 20; x <= rl / 2 - 20; x += 40) expect(Math.abs(f.u - x) < 7 && Math.abs(f.v) < 3).toBe(false);
+      }
+    }
+  });
+
+  it("屋根も天井もないホームには発車標をつるさない", () => {
+    expect(platformFurniture(400, 22, [1], false).some((f) => f.kind === "departureBoard")).toBe(false);
   });
 });
