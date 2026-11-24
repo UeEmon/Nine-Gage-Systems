@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { systemPrompt, undergroundProblems } from "../src/lib/ai";
 import { getAccessory, placeOnPiece, type Accessory } from "../src/lib/accessories";
 import { buildDriveGraph, makeSegment, type DrivePoint } from "../src/lib/drive";
-import { bridgePosts, FURNITURE_EDGE_MM, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
+import { bridgePosts, FURNITURE_EDGE_MM, platformLabels, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
 import { levelOf, standardDepth } from "../src/lib/elevation";
 import { analyze, placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { getPart } from "../src/lib/parts";
@@ -320,5 +320,21 @@ describe("ホームの上の設備", () => {
 
   it("屋根も天井もないホームには発車標をつるさない", () => {
     expect(platformFurniture(400, 22, [1], false).some((f) => f.kind === "departureBoard")).toBe(false);
+  });
+});
+
+describe("番線の表示", () => {
+  it("ホームの両側の線路の番線と駅名を、運行計画と同じ決め方で出す", () => {
+    const { pieces, accessories, graph } = undergroundStation(-50);
+    const labels = platformLabels(pieces, accessories, graph.elevation, {});
+    const isl = labels.get("isl")!;
+    const side = labels.get("side")!;
+    // 画面の上（y が小さい側）の線路から1番線・2番線
+    expect(isl.tracks.get(-1)).toBe(1);
+    expect(isl.tracks.get(1)).toBe(2);
+    expect([...side.tracks]).toEqual([[-1, 2]]);
+    expect(isl.station).toBe("A駅");
+    const named = platformLabels(pieces, accessories, graph.elevation, { [[...labels.keys()].sort()[0]]: "大和" });
+    expect(named.get("isl")!.station).toBe("大和");
   });
 });

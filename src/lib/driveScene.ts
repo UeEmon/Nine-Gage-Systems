@@ -11,7 +11,9 @@ import type { Board, Piece } from "./geometry";
 import { makeSegment, N_CAR, type DriveGraph, type DrivePoint, type VehicleType } from "./drive";
 import { getPart, normDeg } from "./parts";
 import { PLATFORM_EDGE_MM } from "../data/accessories";
-import { accessoryCorners, getAccessory, hasAccessory, type Accessory } from "./accessories";
+import { accessoryCorners, getAccessory, hasAccessory, trackPoints, type Accessory } from "./accessories";
+import { detectStations, type Station } from "./operation/stations";
+import type { Elevation } from "./elevation";
 
 /** ボードの面の高さ（地上の線路のレール面からの深さ） */
 export const BOARD_Y = -6;
@@ -255,7 +257,7 @@ export function hallTop(h: StationHall): number {
 
 // ---- ホームの上の設備 ----
 
-export type FurnitureKind = "bench" | "nameSign" | "vending" | "timetable" | "trash" | "departureBoard";
+export type FurnitureKind = "bench" | "nameSign" | "vending" | "timetable" | "trash" | "departureBoard" | "trackNumber";
 /** ホームの上の設備の置き場所（ホームの座標: u=前, v=右。face はベンチ・看板が向く側 ±1、0は両面） */
 export type Furniture = { kind: FurnitureKind; u: number; v: number; face: number };
 
@@ -267,6 +269,7 @@ export const FURNITURE_HALF_DEPTH: Record<FurnitureKind, number> = {
   timetable: 0.5,
   trash: 1.2,
   departureBoard: 0.6,
+  trackNumber: 0.5,
 };
 /** ホームの縁から、設備を離す距離(mm)。黄色い線（縁から約3mm）と、その内側の歩く所 */
 export const FURNITURE_EDGE_MM = 4.5;
@@ -314,10 +317,66 @@ export function platformFurniture(length: number, width: number, edges: number[]
         push("timetable", u + 8, island ? 0 : back(FURNITURE_HALF_DEPTH.timetable), island ? 0 : e);
     }
   }
+  // 番線の表示（のりば番号）はホームの両端に
+  for (const u of [-(length / 2 - 12), length / 2 - 12]) push("trackNumber", u, island ? 0 : back(FURNITURE_HALF_DEPTH.trackNumber), island ? 0 : e);
   // 発車標は屋根・天井の下のまんなかあたりに2つ
   if (covered) for (const u of [-roofLength / 4, roofLength / 4]) push("departureBoard", u, island ? 0 : back(FURNITURE_HALF_DEPTH.departureBoard) * 0.5, island ? 0 : e);
   return out;
 }
+
+/** ホームごとの駅名と、ホームの左右（ホームの座標の v の符号）の番線 */
+export type PlatformLabel = { station: string; tracks: Map<number, number> };
+
+/**
+ * 運行計画と同じ決め方（detectStations）で、ホームの両側の線路が何番線かを調べる。
+ * stationNames は運行計画でつけた駅名（なければ A駅・B駅…）
+ */
+export function platformLabels(pieces: Piece[], accessories: Accessory[], elevation?: Elevation, stationNames: Record<string, string> = {}, stations?: Station[]): Map<string, PlatformLabel> {
+  const out = new Map<string, PlatformLabel>();
+  const list = stations ?? detectStations(pieces, accessories, elevation);
+  const byUid = new Map(pieces.map((p) => [p.uid, p]));
+  const accByUid = new Map(accessories.map((a) => [a.uid, a]));
+  for (const st of list) {
+    const name = stationNames[st.id] || st.defaultName;
+    for (const uid of st.platforms) {
+      const a = accByUid.get(uid);
+      if (!a) continue;
+      const def = getAccessory(a.itemId);
+      const offset = def.offset ?? def.width / 2;
+      const label: PlatformLabel = { station: name, tracks: new Map() };
+      for (const t of st.tracks) {
+        for (const pid of t.pieces) {
+          const piece = byUid.get(pid);
+          if (!piece) continue;
+          for (const p of trackPoints(piece, elevation, 5)) {
+            const { u, v } = toLocal(a, p);
+            if (Math.abs(u) > def.length / 2 || Math.abs(Math.abs(v) - offset) > 8 || Math.abs(p.z - (a.z ?? 0)) > 5) continue;
+            if (!label.tracks.has(Math.sign(v))) label.tracks.set(Math.sign(v), t.number);
+          }
+        }
+      }
+      out.set(uid, label);
+    }
+  }
+  return out;
+}
+
+/** 文字を描いた板のテクスチャ（駅名標・番線の表示） */
+function labelTexture(draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, w: number, h: number): THREE.Texture | null {
+  if (typeof document === "undefined") return null;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+  draw(ctx, w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+const LABEL_FONT = '"Hiragino Sans", "Yu Gothic", "Noto Sans JP", "Noto Sans CJK JP", "WenQuanYi Zen Hei", sans-serif';
 
 function hallCorners(h: StationHall): XY[] {
   return [
@@ -443,7 +502,15 @@ function grassTexture(): THREE.Texture {
 }
 
 /** レイアウト全体の情景（ボード・線路・橋脚・木と建物） */
-export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], board: Board, accessories: Accessory[] = [], sims: SimObject[] = []): Built {
+export function buildScene(
+  graph: DriveGraph,
+  pieces: Piece[],
+  piers: Pier[],
+  board: Board,
+  accessories: Accessory[] = [],
+  sims: SimObject[] = [],
+  stationNames: Record<string, string> = {},
+): Built {
   const group = new THREE.Group();
   const disposables: { dispose: () => void }[] = [];
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => {
@@ -451,7 +518,7 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
     disposables.push(m);
     return m;
   };
-  const add = (g: THREE.BufferGeometry, m: THREE.Material) => {
+  const add = (g: THREE.BufferGeometry, m: THREE.Material | THREE.Material[]) => {
     disposables.push(g);
     const mesh = new THREE.Mesh(g, m);
     group.add(mesh);
@@ -677,7 +744,8 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
   // 地下駅の広間
   buildHalls(halls, centerline, { add, mat, group, disposables, tracks: centerline, halls });
   // 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）
-  buildAccessories(placed, { add, mat, group, disposables, tracks: centerline, halls });
+  const labels = platformLabels(pieces, placed, graph.elevation, stationNames);
+  buildAccessories(placed, { add, mat, group, disposables, tracks: centerline, halls }, labels);
   for (const s of sims) {
     let geometry: THREE.BufferGeometry;
     const length = Math.max(0.1, s.length), width = Math.max(0.1, s.width), height = Math.max(0.1, s.height);
@@ -948,7 +1016,7 @@ export function buildTrain(cars: number, color = 0x2f6fb5, vehicleType: VehicleT
 }
 
 type SceneKit = {
-  add: (g: THREE.BufferGeometry, m: THREE.Material) => THREE.Mesh;
+  add: (g: THREE.BufferGeometry, m: THREE.Material | THREE.Material[]) => THREE.Mesh;
   mat: (color: number, extra?: THREE.MeshStandardMaterialParameters) => THREE.Material;
   group: THREE.Group;
   disposables: { dispose: () => void }[];
@@ -1040,8 +1108,64 @@ function buildHalls(halls: StationHall[], tracks: DrivePoint[], kit: SceneKit) {
  * 線路以外のパーツの3Dの形。ローカル座標は中心が原点・線路の方向が +X、右が +Z（真上から見てレイアウトの図と同じ）。
  * 高さ（Y）は置いた所の線路のレール面が0
  */
-function buildAccessories(accessories: Accessory[], kit: SceneKit) {
+function buildAccessories(accessories: Accessory[], kit: SceneKit, labels: Map<string, PlatformLabel> = new Map()) {
   const { add, mat } = kit;
+  // 文字の板（駅名標・番線）の材質。同じ文字は使い回す
+  const textMats = new Map<string, THREE.Material | null>();
+  const textMat = (key: string, make: () => THREE.Texture | null) => {
+    if (!textMats.has(key)) {
+      const t = make();
+      if (t) kit.disposables.push(t);
+      textMats.set(key, t ? mat(0xffffff, { map: t, emissive: 0x404040, emissiveMap: t }) : null);
+    }
+    return textMats.get(key) ?? null;
+  };
+  const nameMat = (name: string) =>
+    textMat(`name:${name}`, () =>
+      labelTexture(
+        (ctx, w, h) => {
+          ctx.fillStyle = "#f7f7f2";
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = "#2f8f5b";
+          ctx.fillRect(0, h * 0.7, w, h * 0.12);
+          ctx.fillStyle = "#1d1d1d";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          let size = h * 0.42;
+          ctx.font = `bold ${size}px ${LABEL_FONT}`;
+          while (ctx.measureText(name).width > w * 0.9 && size > 10) {
+            size -= 2;
+            ctx.font = `bold ${size}px ${LABEL_FONT}`;
+          }
+          ctx.fillText(name, w / 2, h * 0.38);
+        },
+        448,
+        192,
+      ),
+    );
+  const numberMat = (n: number) =>
+    textMat(`track:${n}`, () =>
+      labelTexture(
+        (ctx, w, h) => {
+          ctx.fillStyle = "#1f3f7a";
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(w / 2, h * 0.44, w * 0.34, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#1f3f7a";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.font = `bold ${String(n).length > 1 ? w * 0.36 : w * 0.46}px ${LABEL_FONT}`;
+          ctx.fillText(String(n), w / 2, h * 0.46);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = `bold ${h * 0.13}px ${LABEL_FONT}`;
+          ctx.fillText("番線", w / 2, h * 0.9);
+        },
+        128,
+        128,
+      ),
+    );
   const m = {
     concrete: mat(0xd8d4c8),
     edge: mat(0xe7c23a),
@@ -1069,7 +1193,7 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
     holder.position.set(a.x, a.z ?? 0, a.y);
     holder.rotation.y = (-a.rot * Math.PI) / 180;
     kit.group.add(holder);
-    const box = (w: number, h: number, d: number, x: number, y: number, z: number, material: THREE.Material) => {
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number, material: THREE.Material | THREE.Material[]) => {
       const mesh = add(new THREE.BoxGeometry(w, h, d), material);
       kit.group.remove(mesh);
       mesh.position.set(x, y, z);
@@ -1126,6 +1250,7 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
         // ホームの上の設備。発車標は屋根か地下駅の天井からつるす
         const hall = underground ? kit.halls.find((hl) => inHall(hl, a)) : undefined;
         const ceiling = hall ? hallTop(hall) + hall.z - (a.z ?? 0) : def.roof && !underground ? h + 22 : null;
+        const label = labels.get(a.uid);
         for (const f of platformFurniture(L, W, edges, ceiling !== null, rl)) {
           const fs = f.face || 1;
           switch (f.kind) {
@@ -1141,9 +1266,27 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
             case "nameSign":
               // 2本の柱の駅名標（白地に色の帯）
               for (const dx of [-6, 6]) box(0.6, 15, 0.6, f.u + dx, h + 7.5, f.v, m.post);
-              box(14, 6, 0.8, f.u, h + 12, f.v, m.signFace);
-              box(14.1, 1.2, 0.9, f.u, h + 10, f.v, m.signLine);
+              {
+                // 運行計画の駅名（なければ A駅・B駅…）を両面に
+                const face = label ? nameMat(label.station) : null;
+                if (face) box(14, 6, 0.8, f.u, h + 12, f.v, [m.signFace, m.signFace, m.signFace, m.signFace, face, face]);
+                else {
+                  box(14, 6, 0.8, f.u, h + 12, f.v, m.signFace);
+                  box(14.1, 1.2, 0.9, f.u, h + 10, f.v, m.signLine);
+                }
+              }
               break;
+            case "trackNumber": {
+              // のりば番号: 線路の側の面に、その側の番線を出す（島式は表と裏で別の番線）
+              const plus = label?.tracks.get(1);
+              const minus = label?.tracks.get(-1);
+              if (plus === undefined && minus === undefined) break;
+              box(0.6, 12, 0.6, f.u, h + 6, f.v, m.post);
+              const fp = plus !== undefined ? numberMat(plus) : null;
+              const fm = minus !== undefined ? numberMat(minus) : null;
+              box(6, 6, 0.6, f.u, h + 14, f.v, [m.black, m.black, m.black, m.black, fp ?? m.black, fm ?? m.black]);
+              break;
+            }
             case "vending":
               box(6.5, 12, 4.6, f.u, h + 6, f.v, m.vending);
               box(4.5, 6, 4.7, f.u, h + 7.5, f.v + (f.face ? fs * 0.05 : 0), m.glass);

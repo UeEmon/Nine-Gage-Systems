@@ -226,7 +226,7 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
     scene.add(sun);
 
     const piers = placePiers(layout.pieces, graph.elevation);
-    const world = buildScene(graph, layout.pieces, piers, layout.board, layout.accessories ?? [], layout.sims ?? []);
+    const world = buildScene(graph, layout.pieces, piers, layout.board, layout.accessories ?? [], layout.sims ?? [], (normalizeOperation(layout.operation) ?? EMPTY_OPERATION).stationNames);
     scene.add(world.group);
     let currentVehicleType = vehicleTypeRef.current;
     let train = buildTrain(CARS, 0x2f6fb5, currentVehicleType);
