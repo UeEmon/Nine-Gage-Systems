@@ -21,9 +21,9 @@ body:
         - "アカウント・ログイン・ロール（feature:auth）"
         - "管理画面（feature:admin）"
         - "お知らせ・リリースノート（feature:notices）"
-        - "ターミナル（レイアウトの共有）（feature:share）"
+        - "ターミナル（レイアウトの共有）（feature:terminal）"
         - "改善リクエスト（feature:feedback）"
-        - "基盤・運用（feature:platform）"
+        - "基盤・運用（feature:infra）"
         - "わからない・複数にまたがる"
     validations:
       required: true

@@ -1,8 +1,8 @@
-// ターミナルのデータ（SQLite: SHARE_DATA_DIR/share.sqlite、権限600）。
+// ターミナルのデータ（SQLite: TERMINAL_DATA_DIR/terminal.sqlite、権限600）。
 // 投稿したレイアウト（posts）と、投稿をつないだレイアウト（sets）。
 
 import { randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Layout } from "../../../src/lib/geometry";
@@ -42,10 +42,11 @@ export type LayoutSet = {
 const dbs = new Map<string, DatabaseSync>();
 
 export function openStore(dir: string): DatabaseSync {
-  const file = path.join(dir, "share.sqlite");
+  const file = path.join(dir, "terminal.sqlite");
   const cached = dbs.get(file);
   if (cached) return cached;
   mkdirSync(dir, { recursive: true });
+  renameOldFile(dir, file);
   const db = new DatabaseSync(file);
   chmodSync(file, 0o600);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;");
@@ -92,6 +93,14 @@ export function openStore(dir: string): DatabaseSync {
 }
 
 /** 前の版で作ったデータベースに、足した列を加える */
+/** 名称変更前のファイル（share.sqlite と WAL・共有メモリ）があれば、新しい名前に移す */
+function renameOldFile(dir: string, file: string) {
+  const old = path.join(dir, "share.sqlite");
+  if (existsSync(file) || !existsSync(old)) return;
+  for (const suffix of ["-wal", "-shm"]) if (existsSync(old + suffix)) renameSync(old + suffix, file + suffix);
+  renameSync(old, file);
+}
+
 function migrate(db: DatabaseSync) {
   const cols = new Set((db.prepare("PRAGMA table_info(posts)").all() as { name: string }[]).map((c) => c.name));
   if (!cols.has("train_count")) {
@@ -101,7 +110,7 @@ function migrate(db: DatabaseSync) {
 }
 
 export function closeStore(dir: string) {
-  const file = path.join(dir, "share.sqlite");
+  const file = path.join(dir, "terminal.sqlite");
   dbs.get(file)?.close();
   dbs.delete(file);
 }

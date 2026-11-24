@@ -1,15 +1,15 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { placeAt, worldJoints, type Layout, type Piece } from "../src/lib/geometry";
 import { findConnectors } from "../src/lib/modules";
-import { signHandoff, verifyHandoff } from "../src/lib/shareLink";
-import { safeNext } from "../src/lib/server/share";
-import { assemble, assemblyProblems } from "../share/src/lib/assembly";
-import { safePath } from "../share/src/lib/paths";
-import { createSession, readSession } from "../share/src/lib/session";
+import { signHandoff, verifyHandoff } from "../src/lib/terminalLink";
+import { safeNext, terminalConfig } from "../src/lib/server/terminal";
+import { assemble, assemblyProblems } from "../terminal/src/lib/assembly";
+import { safePath } from "../terminal/src/lib/paths";
+import { createSession, readSession } from "../terminal/src/lib/session";
 import {
   closeStore,
   connectablePosts,
@@ -22,8 +22,8 @@ import {
   listSets,
   openStore,
   recentCount,
-} from "../share/src/lib/store";
-import { parsePostInput, parseSetInput } from "../share/src/lib/validate";
+} from "../terminal/src/lib/store";
+import { parsePostInput, parseSetInput } from "../terminal/src/lib/validate";
 
 const SECRET = "x".repeat(40);
 
@@ -47,7 +47,7 @@ const moduleLayout = (title = "直線モジュール"): Layout => ({
   pieces: line(150, 31, ["S248", "S248", "S124"], "a"),
 });
 
-describe("share: login handoff", () => {
+describe("terminal: login handoff", () => {
   it("accepts a fresh token with the same state", () => {
     const t = signHandoff({ sub: "u1", name: "taro", role: "user" }, "state-abcdefghijklmnop", SECRET);
     expect(verifyHandoff(t, "state-abcdefghijklmnop", SECRET)).toEqual({ sub: "u1", name: "taro", role: "user" });
@@ -70,7 +70,7 @@ describe("share: login handoff", () => {
     expect(verifyHandoff("a.b", "s".repeat(20), "short")).toBeNull();
   });
 
-  it("keeps the share session for 7 days and marks admins", () => {
+  it("keeps the terminal session for 7 days and marks admins", () => {
     const now = Date.now();
     const s = createSession({ sub: "u1", name: "hanako", role: "admin" }, SECRET, now);
     expect(readSession(s, SECRET, now)).toEqual({ sub: "u1", name: "hanako", role: "admin", admin: true });
@@ -83,12 +83,36 @@ describe("share: login handoff", () => {
       expect(safeNext(bad)).toBe("/");
       expect(safePath(bad)).toBe("/");
     }
-    expect(safeNext("/api/share/handoff?state=abc")).toBe("/api/share/handoff?state=abc");
+    expect(safeNext("/api/terminal/handoff?state=abc")).toBe("/api/terminal/handoff?state=abc");
     expect(safePath("/connect?resume=1")).toBe("/connect?resume=1");
   });
 });
 
-describe("share: input", () => {
+describe("terminal: platform config", () => {
+  const keys = ["SENROLAB_TERMINAL_URL", "SENROLAB_TERMINAL_SECRET", "SENROLAB_SHARE_URL", "SENROLAB_SHARE_SECRET"];
+  let saved: Record<string, string | undefined>;
+  beforeEach(() => {
+    saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    for (const k of keys) delete process.env[k];
+  });
+  afterEach(() => {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("reads the new names, and the old SENROLAB_SHARE_* names from before the rename", () => {
+    expect(terminalConfig()).toBeNull();
+    process.env.SENROLAB_SHARE_URL = "https://share.example.jp/";
+    process.env.SENROLAB_SHARE_SECRET = SECRET;
+    expect(terminalConfig()).toEqual({ url: "https://share.example.jp", secret: SECRET });
+    process.env.SENROLAB_TERMINAL_URL = "https://terminal.example.jp";
+    expect(terminalConfig()?.url).toBe("https://terminal.example.jp");
+  });
+});
+
+describe("terminal: input", () => {
   it("accepts a SenroLab layout and refuses broken ones", () => {
     expect(parsePostInput({ title: " 直線 ", layout: moduleLayout() })).toMatchObject({ ok: true, value: { title: "直線" } });
     expect(parsePostInput({ title: "", layout: moduleLayout() }).ok).toBe(false);
@@ -116,7 +140,7 @@ const withOperation = (layout: Layout): Layout => ({
   },
 });
 
-describe("share: operation plans", () => {
+describe("terminal: operation plans", () => {
   it("keeps the operation plan with the post, normalized", () => {
     const r = parsePostInput({ title: "ダイヤつき", layout: withOperation(moduleLayout()) });
     expect(r.ok).toBe(true);
@@ -153,10 +177,10 @@ describe("share: operation plans", () => {
   });
 });
 
-describe("share: store", () => {
+describe("terminal: store", () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(path.join(tmpdir(), "share-"));
+    dir = mkdtempSync(path.join(tmpdir(), "terminal-"));
   });
   afterEach(() => {
     closeStore(dir);
@@ -188,12 +212,22 @@ describe("share: store", () => {
     expect(listPosts(db, { withOperation: true }).posts.map((p) => p.id)).toEqual([a.id]);
     closeStore(dir);
     // 列を消した古い形にして開き直すと、レイアウトの中から数え直す
-    const raw = new DatabaseSync(path.join(dir, "share.sqlite"));
+    const raw = new DatabaseSync(path.join(dir, "terminal.sqlite"));
     raw.exec("ALTER TABLE posts DROP COLUMN train_count");
     raw.close();
     const again = openStore(dir);
     expect(getPost(again, a.id)?.trainCount).toBe(1);
     expect(listPosts(again, { withOperation: true }).total).toBe(1);
+  });
+
+  it("moves the data file from before the rename (share.sqlite) to terminal.sqlite", () => {
+    const db = openStore(dir);
+    const a = createPost(db, { id: "u1", name: "taro" }, { title: "旧名のまま", description: "", layout: moduleLayout() });
+    closeStore(dir);
+    renameSync(path.join(dir, "terminal.sqlite"), path.join(dir, "share.sqlite"));
+    const again = openStore(dir);
+    expect(getPost(again, a.id)?.title).toBe("旧名のまま");
+    expect(existsSync(path.join(dir, "share.sqlite"))).toBe(false);
   });
 
   it("saves a set of connected posts and merges it into one layout", () => {

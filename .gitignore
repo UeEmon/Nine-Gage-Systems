@@ -6,4 +6,4 @@ next-env.d.ts
 .env*.local
 .env
 /data/
-share/share-data/
+terminal/terminal-data/

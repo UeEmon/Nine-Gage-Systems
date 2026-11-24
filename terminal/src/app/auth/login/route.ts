@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const next = safePath(new URL(req.url).searchParams.get("next"));
   const state = randomBytes(24).toString("base64url");
   const secure = secureCookies(req);
-  const headers = new Headers({ Location: `${senrolabUrl()}/api/share/handoff?state=${state}`, "Cache-Control": "no-store" });
+  const headers = new Headers({ Location: `${senrolabUrl()}/api/terminal/handoff?state=${state}`, "Cache-Control": "no-store" });
   headers.append("Set-Cookie", setCookie(STATE_COOKIE, `${state}|${next}`, { maxAge: 600, secure, path: "/auth" }));
   return new Response(null, { status: 303, headers });
 }

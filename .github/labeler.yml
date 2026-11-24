@@ -141,17 +141,17 @@
           - "src/components/NoticeList.tsx"
           - "src/components/AdminNoticesPanel.tsx"
           - "tests/notices.test.ts"
-"feature:share":
+"feature:terminal":
   - changed-files:
       - any-glob-to-any-file:
-          - "share/**"
+          - "terminal/**"
           - "src/lib/modules.ts"
-          - "src/lib/shareLink.ts"
-          - "src/lib/server/share.ts"
-          - "src/app/api/share/**"
-          - "src/app/share/**"
+          - "src/lib/terminalLink.ts"
+          - "src/lib/server/terminal.ts"
+          - "src/app/api/terminal/**"
+          - "src/app/terminal/**"
           - "tests/modules.test.ts"
-          - "tests/share.test.ts"
+          - "tests/terminal.test.ts"
 "feature:feedback":
   - changed-files:
       - any-glob-to-any-file:
@@ -163,7 +163,7 @@
           - "src/components/FeedbackForm.tsx"
           - "src/components/AdminFeedbackPanel.tsx"
           - "tests/feedback.test.ts"
-"feature:platform":
+"feature:infra":
   - changed-files:
       - any-glob-to-any-file:
           - "src/lib/server/db.ts"

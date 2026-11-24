@@ -26,7 +26,7 @@ export function patternFileOf(name: string, layout: Layout, now = new Date()): P
     format: PATTERN_FILE_FORMAT,
     version: PATTERN_FILE_VERSION,
     exportedAt: now.toISOString(),
-    patterns: [{ id: `pat_share_${now.getTime().toString(36)}`, name, savedAt: now.toISOString(), layout }],
+    patterns: [{ id: `pat_terminal_${now.getTime().toString(36)}`, name, savedAt: now.toISOString(), layout }],
   };
 }
 

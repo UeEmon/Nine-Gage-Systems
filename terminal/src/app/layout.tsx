@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "../../../src/app/globals.css";
-import "./share.css";
+import "./terminal.css";
 
 export const metadata: Metadata = {
   title: "ターミナル｜SenroLab",

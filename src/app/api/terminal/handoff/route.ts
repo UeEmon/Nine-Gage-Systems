@@ -1,6 +1,6 @@
 import { currentUser } from "@/lib/server/auth";
-import { shareConfig } from "@/lib/server/share";
-import { shareCallbackUrl, signHandoff } from "@/lib/shareLink";
+import { terminalConfig } from "@/lib/server/terminal";
+import { terminalCallbackUrl, signHandoff } from "@/lib/terminalLink";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  * ログインしていなければログイン画面へ（ログイン後にここへ戻る）。
  */
 export async function GET(req: Request) {
-  const cfg = shareConfig();
+  const cfg = terminalConfig();
   if (!cfg) return Response.json({ error: "ターミナルは設定されていません。" }, { status: 404 });
   const url = new URL(req.url);
   const state = url.searchParams.get("state") ?? "";
@@ -17,9 +17,9 @@ export async function GET(req: Request) {
   const user = await currentUser();
   const headers = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
   if (!user) {
-    const next = `/api/share/handoff?state=${state}`;
+    const next = `/api/terminal/handoff?state=${state}`;
     return new Response(null, { status: 303, headers: { ...headers, Location: `/login?next=${encodeURIComponent(next)}` } });
   }
   const token = signHandoff({ sub: user.id, name: user.username, role: user.role }, state, cfg.secret);
-  return new Response(null, { status: 303, headers: { ...headers, Location: shareCallbackUrl(cfg.url, token) } });
+  return new Response(null, { status: 303, headers: { ...headers, Location: terminalCallbackUrl(cfg.url, token) } });
 }

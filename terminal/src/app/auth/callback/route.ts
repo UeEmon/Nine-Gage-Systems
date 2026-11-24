@@ -1,4 +1,4 @@
-import { verifyHandoff } from "../../../../../src/lib/shareLink";
+import { verifyHandoff } from "../../../../../src/lib/terminalLink";
 import { handoffSecret, secureCookies, sessionSecret } from "../../../lib/config";
 import { cookieValue, createSession, SESSION_COOKIE, SESSION_DAYS, setCookie, STATE_COOKIE } from "../../../lib/session";
 import { safePath } from "../../../lib/paths";

@@ -1,6 +1,6 @@
 # ターミナル（レイアウトの共有）
 
-SenroLab プラットフォームで作ったレイアウトを投稿・共有し、投稿どうしをボードの端の線路でつないで大きなレイアウトにできるサイトです。プラットフォームとは別のコンテナ（イメージ `ghcr.io/ueemon/nine-gage-share`）で動き、データも別（`SHARE_DATA_DIR/share.sqlite`）です。
+SenroLab プラットフォームで作ったレイアウトを投稿・共有し、投稿どうしをボードの端の線路でつないで大きなレイアウトにできるサイトです。プラットフォームとは別のコンテナ（イメージ `ghcr.io/ueemon/nine-gage-terminal`）で動き、データも別（`TERMINAL_DATA_DIR/terminal.sqlite`）です。
 
 ## できること
 
@@ -23,11 +23,11 @@ SenroLab プラットフォームで作ったレイアウトを投稿・共有�
 
 ## ログイン（SenroLab のアカウント）
 
-ターミナルはパスワードを持たず、プラットフォームにログインを確かめてもらいます（`src/lib/shareLink.ts`）。
+ターミナルはパスワードを持たず、プラットフォームにログインを確かめてもらいます（`src/lib/terminalLink.ts`）。
 
-1. ターミナルの `/auth/login` が乱数の state を Cookie（10分）に置き、プラットフォームの `/api/share/handoff?state=…` へ移る
-2. プラットフォームはログイン中のユーザーを確かめ（ログインしていなければログイン画面を挟む）、ユーザーID・名前・ロール・state・期限（60秒）に `SENROLAB_SHARE_SECRET` で署名した合図を付けて、`SENROLAB_SHARE_URL/auth/callback` へ戻す。戻り先は環境変数で固定
-3. ターミナルは署名・期限・state を確かめ、自分のログインの Cookie（7日。`SHARE_SESSION_SECRET` で署名）を出す
+1. ターミナルの `/auth/login` が乱数の state を Cookie（10分）に置き、プラットフォームの `/api/terminal/handoff?state=…` へ移る
+2. プラットフォームはログイン中のユーザーを確かめ（ログインしていなければログイン画面を挟む）、ユーザーID・名前・ロール・state・期限（60秒）に `SENROLAB_TERMINAL_SECRET` で署名した合図を付けて、`SENROLAB_TERMINAL_URL/auth/callback` へ戻す。戻り先は環境変数で固定
+3. ターミナルは署名・期限・state を確かめ、自分のログインの Cookie（7日。`TERMINAL_SESSION_SECRET` で署名）を出す
 
 プラットフォームでユーザーを消したりパスワードを変えたりしても、ターミナルのログインは最長7日残ります。管理者（プラットフォームのロール `admin`）は、すべての投稿とつないだレイアウトを削除できます。
 
@@ -35,36 +35,38 @@ SenroLab プラットフォームで作ったレイアウトを投稿・共有�
 
 | 変数 | どちら | 内容 |
 |---|---|---|
-| `SENROLAB_SHARE_URL` | プラットフォーム | ターミナルの公開URL（例 `https://share.example.jp`）。ないとプラットフォームの「ターミナル」とログインの受け渡しは404 |
-| `SENROLAB_SHARE_SECRET` | 両方 | ログインの受け渡しの署名の鍵（32文字以上、同じ値） |
+| `SENROLAB_TERMINAL_URL` | プラットフォーム | ターミナルの公開URL（例 `https://terminal.example.jp`）。ないとプラットフォームの「ターミナル」とログインの受け渡しは404 |
+| `SENROLAB_TERMINAL_SECRET` | 両方 | ログインの受け渡しの署名の鍵（32文字以上、同じ値） |
 | `SENROLAB_URL` | ターミナル | プラットフォームの公開URL（ログインとリンクに使う） |
-| `SHARE_SESSION_SECRET` | ターミナル | ターミナルのログインの Cookie の署名の鍵（32文字以上） |
-| `SHARE_DATA_DIR` | ターミナル | データの保存先（イメージでは `/data`） |
+| `TERMINAL_SESSION_SECRET` | ターミナル | ターミナルのログインの Cookie の署名の鍵（32文字以上） |
+| `TERMINAL_DATA_DIR` | ターミナル | データの保存先（イメージでは `/data`） |
+
+名称変更（2026-11-24）前の環境変数名（`SENROLAB_SHARE_URL`・`SENROLAB_SHARE_SECRET`・`SHARE_SESSION_SECRET`・`SHARE_DATA_DIR`・`SHARE_INSECURE_COOKIE`）も、新しい名前がないときに読みます。データの `share.sqlite` は、`terminal.sqlite` がなければ起動時に `terminal.sqlite` へ名前を変えます。
 
 ## 手元で動かす
 
 ```sh
 npm ci
 # プラットフォーム（3000）
-SENROLAB_SHARE_URL=http://127.0.0.1:3100 SENROLAB_SHARE_SECRET=<32文字以上> npm run dev
+SENROLAB_TERMINAL_URL=http://127.0.0.1:3100 SENROLAB_TERMINAL_SECRET=<32文字以上> npm run dev
 # ターミナル（3100）
-npx next build share
-cp -r share/.next/static share/.next/standalone/share/.next/static
-cd share/.next/standalone && PORT=3100 SHARE_INSECURE_COOKIE=true SHARE_DATA_DIR=/tmp/share \
-  SENROLAB_URL=http://127.0.0.1:3000 SENROLAB_SHARE_SECRET=<同じ値> SHARE_SESSION_SECRET=<32文字以上> node share/server.js
+npx next build terminal
+cp -r terminal/.next/static terminal/.next/standalone/terminal/.next/static
+cd terminal/.next/standalone && PORT=3100 TERMINAL_INSECURE_COOKIE=true TERMINAL_DATA_DIR=/tmp/terminal \
+  SENROLAB_URL=http://127.0.0.1:3000 SENROLAB_TERMINAL_SECRET=<同じ値> TERMINAL_SESSION_SECRET=<32文字以上> node terminal/server.js
 ```
 
-イメージは `docker build -f share/Dockerfile .`（リポジトリのルートで）。CI がテストのあと、main では `:main`、タグ `v*` では `:stable` を作ります。
+イメージは `docker build -f terminal/Dockerfile .`（リポジトリのルートで）。CI がテストのあと、main では `:main`、タグ `v*` では `:stable` を作ります。
 
 ## ファイル
 
 | ファイル | 役割 |
 |---|---|
 | `src/lib/modules.ts`（プラットフォーム側） | 端子・置き方・すき間の線路・検査・合成 |
-| `src/lib/shareLink.ts`（プラットフォーム側） | ログインの受け渡しの署名と確かめ |
-| `src/app/api/share/handoff/route.ts`、`src/app/share/route.ts`（プラットフォーム側） | プラットフォームのログインの受け渡しと、「ターミナル」へのリンク |
-| `share/src/lib/store.ts` | 投稿・つないだレイアウトの保存（SQLite） |
-| `share/src/lib/validate.ts` | 入力の確かめと上限 |
-| `share/src/lib/assembly.ts` | 投稿と置き方から全体を組み立てる・ファイルにする |
-| `share/src/components/Builder.tsx` | つなぐ画面 |
-| `share/src/components/LayoutSvg.tsx` | 平面図（プラットフォームの `TrackPiece`・`AccessoryShape` で描く） |
+| `src/lib/terminalLink.ts`（プラットフォーム側） | ログインの受け渡しの署名と確かめ |
+| `src/app/api/terminal/handoff/route.ts`、`src/app/terminal/route.ts`（プラットフォーム側） | プラットフォームのログインの受け渡しと、「ターミナル」へのリンク |
+| `terminal/src/lib/store.ts` | 投稿・つないだレイアウトの保存（SQLite） |
+| `terminal/src/lib/validate.ts` | 入力の確かめと上限 |
+| `terminal/src/lib/assembly.ts` | 投稿と置き方から全体を組み立てる・ファイルにする |
+| `terminal/src/components/Builder.tsx` | つなぐ画面 |
+| `terminal/src/components/LayoutSvg.tsx` | 平面図（プラットフォームの `TrackPiece`・`AccessoryShape` で描く） |

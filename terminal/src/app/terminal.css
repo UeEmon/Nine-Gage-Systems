@@ -1,14 +1,14 @@
 /* ターミナルだけの見た目（線路・パーツの描き方と色はプラットフォームの globals.css を使う） */
 html, body { height: auto; }
-.share-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.share-header nav { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 14px; }
-.share-header nav a { color: inherit; text-decoration: none; }
-.share-header nav a:hover { text-decoration: underline; }
-.share-header .who { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 13px; }
-.share-header .who form { display: inline; }
-.share-header .who button { padding: 2px 8px; }
-.share-title { font-size: 15px; margin: 0; display: flex; align-items: center; gap: 8px; }
-.share-title a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+.terminal-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.terminal-header nav { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 14px; }
+.terminal-header nav a { color: inherit; text-decoration: none; }
+.terminal-header nav a:hover { text-decoration: underline; }
+.terminal-header .who { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.terminal-header .who form { display: inline; }
+.terminal-header .who button { padding: 2px 8px; }
+.terminal-title { font-size: 15px; margin: 0; display: flex; align-items: center; gap: 8px; }
+.terminal-title a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
 .page.wide { max-width: 1180px; }
 .lead { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -73,9 +73,9 @@ textarea { width: 100%; min-height: 90px; padding: 6px 8px; border: 1px solid va
 .notice { font-size: 13px; color: var(--muted); line-height: 1.6; }
 .layout-svg .board-rect, .layout-svg .piece, .layout-svg .acc { pointer-events: none; }
 .cand-list li button.primary { align-items: center; margin-top: 4px; }
-.share-header .who a { color: inherit; }
-.share-header .who button { background: transparent; color: inherit; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 6px; cursor: pointer; }
-.share-header .who button:hover { border-color: #fff; }
+.terminal-header .who a { color: inherit; }
+.terminal-header .who button { background: transparent; color: inherit; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 6px; cursor: pointer; }
+.terminal-header .who button:hover { border-color: #fff; }
 .operation-card { display: flex; flex-direction: column; gap: 8px; }
 .operation-card .op-diagram { max-width: 100%; }
 .table-wrap { overflow-x: auto; }

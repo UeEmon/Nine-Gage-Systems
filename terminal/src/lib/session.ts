@@ -1,23 +1,23 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { ShareIdentity } from "../../../src/lib/shareLink";
+import type { TerminalIdentity } from "../../../src/lib/terminalLink";
 
 /** ターミナルのログイン。中身は「プラットフォームのユーザーID・名前・ロール・期限」に署名したもの */
 export const SESSION_COOKIE = "ls_session";
 export const STATE_COOKIE = "ls_state";
 export const SESSION_DAYS = 7;
 
-export type ShareUser = ShareIdentity & { admin: boolean };
+export type TerminalUser = TerminalIdentity & { admin: boolean };
 
 function mac(body: string, secret: string) {
-  return createHmac("sha256", `share-session:${secret}`).update(body).digest("base64url");
+  return createHmac("sha256", `terminal-session:${secret}`).update(body).digest("base64url");
 }
 
-export function createSession(id: ShareIdentity, secret: string, now = Date.now()): string {
+export function createSession(id: TerminalIdentity, secret: string, now = Date.now()): string {
   const body = Buffer.from(JSON.stringify({ ...id, exp: Math.floor(now / 1000) + SESSION_DAYS * 86400 })).toString("base64url");
   return `${body}.${mac(body, secret)}`;
 }
 
-export function readSession(token: string | undefined, secret: string, now = Date.now()): ShareUser | null {
+export function readSession(token: string | undefined, secret: string, now = Date.now()): TerminalUser | null {
   if (!token) return null;
   const [body, sig, extra] = token.split(".");
   if (!body || !sig || extra !== undefined) return null;

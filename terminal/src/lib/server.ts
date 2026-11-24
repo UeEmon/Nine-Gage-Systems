@@ -2,7 +2,7 @@
 import { cookies } from "next/headers";
 import type { DatabaseSync } from "node:sqlite";
 import { dataDir, sessionSecret } from "./config";
-import { cookieValue, readSession, SESSION_COOKIE, type ShareUser } from "./session";
+import { cookieValue, readSession, SESSION_COOKIE, type TerminalUser } from "./session";
 import { openStore } from "./store";
 
 export function db(): DatabaseSync {
@@ -13,12 +13,12 @@ export function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-export function userFrom(req: Request): ShareUser | null {
+export function userFrom(req: Request): TerminalUser | null {
   return readSession(cookieValue(req, SESSION_COOKIE), sessionSecret());
 }
 
 /** 画面（サーバーコンポーネント）で使う */
-export async function currentUser(): Promise<ShareUser | null> {
+export async function currentUser(): Promise<TerminalUser | null> {
   return readSession((await cookies()).get(SESSION_COOKIE)?.value, sessionSecret());
 }
 
@@ -35,7 +35,7 @@ export function sameOrigin(req: Request): boolean {
   }
 }
 
-type Guard = { ok: true; user: ShareUser } | { ok: false; response: Response };
+type Guard = { ok: true; user: TerminalUser } | { ok: false; response: Response };
 
 export function requireUser(req: Request): Guard {
   if (!sameOrigin(req)) return { ok: false, response: json({ error: "別のサイトからの要求は受け付けません。" }, 403) };
@@ -55,6 +55,6 @@ export async function readJson(req: Request, maxBytes: number): Promise<{ ok: tr
   }
 }
 
-export function canEdit(user: ShareUser | null, ownerId: string) {
+export function canEdit(user: TerminalUser | null, ownerId: string) {
   return !!user && (user.sub === ownerId || user.admin);
 }

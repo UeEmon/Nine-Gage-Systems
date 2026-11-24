@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/LoginForm";
 import { currentUser } from "@/lib/server/auth";
 import { signupOpen } from "@/lib/server/users";
-import { safeNext } from "@/lib/server/share";
+import { safeNext } from "@/lib/server/terminal";
 import { BrandLogo } from "@/components/BrandLogo";
 
 export const dynamic = "force-dynamic";

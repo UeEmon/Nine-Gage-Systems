@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { BrandLogo } from "../../../src/components/BrandLogo";
 import { senrolabUrl } from "../lib/config";
-import type { ShareUser } from "../lib/session";
+import type { TerminalUser } from "../lib/session";
 
-export function Header({ user, next = "/" }: { user: ShareUser | null; next?: string }) {
+export function Header({ user, next = "/" }: { user: TerminalUser | null; next?: string }) {
   return (
-    <header className="header share-header">
-      <h1 className="share-title">
+    <header className="header terminal-header">
+      <h1 className="terminal-title">
         <Link href="/" aria-label="ターミナルのトップへ">
           <BrandLogo height={26} />
           <span>ターミナル</span>
