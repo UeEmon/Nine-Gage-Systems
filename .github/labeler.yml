@@ -116,13 +116,21 @@
           - "src/app/signup/**"
           - "src/app/verify/**"
           - "src/app/account/**"
+          - "src/app/forgot/**"
+          - "src/app/reset/**"
+          - "src/app/home/**"
+          - "src/proxy.ts"
+          - "src/lib/sites.ts"
           - "src/components/LoginForm.tsx"
+          - "src/components/ForgotForm.tsx"
+          - "src/components/ResetForm.tsx"
           - "src/components/SignupForm.tsx"
           - "src/components/VerifyForm.tsx"
           - "src/components/PasswordForm.tsx"
           - "src/components/UserMenu.tsx"
           - "tests/auth.test.ts"
           - "tests/roles.test.ts"
+          - "tests/sites.test.ts"
 "feature:admin":
   - changed-files:
       - any-glob-to-any-file:

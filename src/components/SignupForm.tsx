@@ -80,7 +80,7 @@ export function SignupForm() {
         登録すると「一般」ユーザーになり、自分のAPIキー（Claude・OpenAI・Gemini）を設定してAI提案を使えます。サーバーのAIを使えるようにするかどうかは、管理者が一般ユーザーの中から選びます（「{ROLE_LABELS.ai}」）。
       </p>
       <p className="hint">
-        <Link href="/login">ログイン</Link> ／ <Link href="/">ログインせずに使う</Link>
+        <Link href="/login">ログイン</Link> ／ <a href="/editor">ログインせずに使う</a>
       </p>
     </form>
   );

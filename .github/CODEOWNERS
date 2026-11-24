@@ -108,13 +108,21 @@
 /src/app/signup/ @UeEmon
 /src/app/verify/ @UeEmon
 /src/app/account/ @UeEmon
+/src/app/forgot/ @UeEmon
+/src/app/reset/ @UeEmon
+/src/app/home/ @UeEmon
+/src/proxy.ts @UeEmon
+/src/lib/sites.ts @UeEmon
 /src/components/LoginForm.tsx @UeEmon
+/src/components/ForgotForm.tsx @UeEmon
+/src/components/ResetForm.tsx @UeEmon
 /src/components/SignupForm.tsx @UeEmon
 /src/components/VerifyForm.tsx @UeEmon
 /src/components/PasswordForm.tsx @UeEmon
 /src/components/UserMenu.tsx @UeEmon
 /tests/auth.test.ts @UeEmon
 /tests/roles.test.ts @UeEmon
+/tests/sites.test.ts @UeEmon
 
 # ── 管理画面（feature:admin）
 /src/app/admin/ @UeEmon
@@ -191,6 +199,8 @@
 /package.json @UeEmon
 /package-lock.json @UeEmon
 /next.config.ts @UeEmon
+/src/proxy.ts @UeEmon
+/src/lib/sites.ts @UeEmon
 /src/lib/server/ @UeEmon
 /src/app/api/ @UeEmon
 /src/lib/llm/ @UeEmon

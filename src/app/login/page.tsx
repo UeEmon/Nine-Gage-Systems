@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/LoginForm";
 import { currentUser } from "@/lib/server/auth";
 import { signupOpen } from "@/lib/server/users";
+import { mailLinksReady } from "@/lib/server/mailer";
+import Link from "next/link";
 import { safeNext } from "@/lib/server/terminal";
 import { BrandLogo } from "@/components/BrandLogo";
 
@@ -13,9 +15,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="page narrow">
       <h1>
-        <BrandLogo height={44} />
+        <Link href="/" aria-label="SenroLab のトップへ">
+          <BrandLogo height={44} />
+        </Link>
       </h1>
-      <LoginForm signup={signupOpen()} next={next} />
+      <LoginForm signup={signupOpen()} forgot={mailLinksReady()} next={next} />
     </main>
   );
 }

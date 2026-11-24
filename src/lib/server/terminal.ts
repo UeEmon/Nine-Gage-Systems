@@ -14,8 +14,5 @@ export function terminalConfig(): { url: string; secret: string } | null {
   }
 }
 
-/** ログイン後に戻る先として受け付けるのは、このサイトの中のパスだけ */
-export function safeNext(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/";
-  return next;
-}
+/** ログイン後に戻る先（トップページとプラットフォームのアドレスも受け付ける） */
+export { safeNext } from "../sites";

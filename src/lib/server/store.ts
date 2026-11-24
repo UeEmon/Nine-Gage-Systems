@@ -43,6 +43,8 @@ export type StoredUser = {
   email?: string;
   /** メールの確認待ち（確認が済むと消す）。あるあいだはログインできない */
   pendingVerify?: { tokenHash: string; expiresAt: string };
+  /** パスワード再設定のメールのリンク（使うか期限が切れると無効。新しく頼むと置き換わる） */
+  passwordReset?: { tokenHash: string; expiresAt: string };
 };
 
 export const AUDIENCES = ["all", "admin"] as const;
@@ -161,6 +163,8 @@ function normalizeUsers(raw: unknown, version: unknown): StoredUser[] {
     if (typeof user.email !== "string" || user.email.length > 254) delete user.email;
     const pv = u.pendingVerify;
     if (!pv || typeof pv.tokenHash !== "string" || typeof pv.expiresAt !== "string") delete user.pendingVerify;
+    const pr = u.passwordReset;
+    if (!pr || typeof pr.tokenHash !== "string" || typeof pr.expiresAt !== "string") delete user.passwordReset;
     const ownAi = ownAiOf(u.ownAi);
     if (ownAi) user.ownAi = ownAi;
     else delete user.ownAi;

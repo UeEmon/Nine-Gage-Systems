@@ -26,14 +26,14 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 | 運行計画 | `feature:operation` | @UeEmon | 作ったレイアウトで列車の運行計画（ダイヤ・運用）を立てる機能 |
 | デジタルツイン | `feature:twin` | @UeEmon | 実物のレイアウト（実機・模擬の実機）とつなぎ、列車の位置・ポイント・センサーの状態を映して、アプリから操作する機能 |
 | AIレイアウト提案 | `feature:ai` | @UeEmon | AIへの指示と検査・修正のループ、AIプロバイダの切り替え、自分のAPIキー、利用量と料金 |
-| アカウント・ログイン・ロール | `feature:auth` | @UeEmon | ユーザー登録とメール確認、ログイン、パスワード、ロール（管理者・プレミアム・一般） |
+| アカウント・ログイン・ロール | `feature:auth` | @UeEmon | トップページ（www.）とプラットフォームの振り分け、ユーザー登録とメール確認、ログイン、パスワードとその再設定、ロール（管理者・プレミアム・一般） |
 | 管理画面 | `feature:admin` | @UeEmon | 管理画面の枠とユーザー管理（AI設定・お知らせの管理画面はそれぞれの機能の担当） |
 | お知らせ・リリースノート | `feature:notices` | @UeEmon | ベルの未読通知、更新履歴（/news）、管理者からのお知らせ、リリースノート |
 | ターミナル（レイアウトの共有） | `feature:terminal` | @UeEmon | レイアウトの投稿・共有と、投稿どうしをボードの端の線路でつなぐ仕組み（別コンテナの terminal/）、プラットフォームからのログインの受け渡し |
 | 改善リクエスト | `feature:feedback` | @UeEmon | 利用者がアプリから送る改善リクエストと、GitHub の Issue への自動登録、管理画面の一覧 |
 | 基盤・運用 | `feature:infra` | @UeEmon | データの保存（SQLite）・暗号化・バックアップ・死活確認、画面の共通部分とブランド、ビルド・CI・デプロイ、文書 |
 
-保護する場所の担当: @UeEmon（`/.github/`、`/Dockerfile`、`/.dockerignore`、`/package.json`、`/package-lock.json`、`/next.config.ts`、`/src/lib/server/`、`/src/app/api/`、`/src/lib/llm/`、`/scripts/`、`/terminal/Dockerfile`、`/terminal/next.config.ts`、`/terminal/src/app/api/`、`/terminal/src/app/auth/`、`/terminal/src/lib/`）
+保護する場所の担当: @UeEmon（`/.github/`、`/Dockerfile`、`/.dockerignore`、`/package.json`、`/package-lock.json`、`/next.config.ts`、`/src/proxy.ts`、`/src/lib/sites.ts`、`/src/lib/server/`、`/src/app/api/`、`/src/lib/llm/`、`/scripts/`、`/terminal/Dockerfile`、`/terminal/next.config.ts`、`/terminal/src/app/api/`、`/terminal/src/app/auth/`、`/terminal/src/lib/`）
 
 ## 機能ごとのファイル
 
@@ -151,13 +151,21 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/app/signup/`
 - `/src/app/verify/`
 - `/src/app/account/`
+- `/src/app/forgot/`
+- `/src/app/reset/`
+- `/src/app/home/`
+- `/src/proxy.ts`
+- `/src/lib/sites.ts`
 - `/src/components/LoginForm.tsx`
+- `/src/components/ForgotForm.tsx`
+- `/src/components/ResetForm.tsx`
 - `/src/components/SignupForm.tsx`
 - `/src/components/VerifyForm.tsx`
 - `/src/components/PasswordForm.tsx`
 - `/src/components/UserMenu.tsx`
 - `/tests/auth.test.ts`
 - `/tests/roles.test.ts`
+- `/tests/sites.test.ts`
 
 ### 管理画面（`feature:admin`）
 

@@ -9,9 +9,11 @@ import { BrandLogo } from "@/components/BrandLogo";
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ welcome?: string; reset?: string }> }) {
   const user = await currentUser();
-  const welcome = (await searchParams).welcome === "1";
+  const params = await searchParams;
+  const welcome = params.welcome === "1";
+  const reset = params.reset === "1";
   if (!user) redirect("/login");
   return (
     <div className="page-wrap">
@@ -25,6 +27,14 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         <UserMenu user={user} />
       </header>
       <main className="page narrow">
+        {reset && (
+          <section className="card welcome">
+            <h2>パスワードを変えました</h2>
+            <p>
+              新しいパスワードでログインしています。<a href="/editor">プラットフォームへ</a>
+            </p>
+          </section>
+        )}
         {welcome && user.role === "user" && (
           <section className="card welcome">
             <h2>登録が完了しました</h2>
@@ -34,7 +44,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
               <Link href={API_KEY_GUIDE_PATH}>APIキー登録のチュートリアル</Link>にまとめています。
             </p>
             <p className="hint">
-              あとで登録するときは、右上の「アカウント・AI設定」からいつでも開けます。<Link href="/">エディタへ</Link>
+              あとで登録するときは、右上の「アカウント・AI設定」からいつでも開けます。<a href="/editor">プラットフォームへ</a>
             </p>
           </section>
         )}
