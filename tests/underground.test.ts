@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { systemPrompt, undergroundProblems } from "../src/lib/ai";
 import { getAccessory, placeOnPiece, type Accessory } from "../src/lib/accessories";
 import { buildDriveGraph, makeSegment, type DrivePoint } from "../src/lib/drive";
-import { autoFootbridges, bridgePosts, FOOTBRIDGE_HEIGHT, FURNITURE_EDGE_MM, platformAccess, platformLabels, STAIR_RUN_PER_RISE, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
+import { autoFootbridges, bridgePosts, hallOpenings, FOOTBRIDGE_HEIGHT, FURNITURE_EDGE_MM, platformAccess, platformLabels, STAIR_RUN_PER_RISE, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
 import { levelOf, standardDepth } from "../src/lib/elevation";
 import { analyze, placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { getPart } from "../src/lib/parts";
@@ -429,5 +429,58 @@ describe("跨線橋の自動配置", () => {
     const one = twoIslands();
     const single = one.accessories.slice(0, 1);
     expect(autoFootbridges(detectStations(one.pieces, single, one.an.elevation), single)).toEqual([]);
+  });
+});
+
+describe("地下駅の構内の両端", () => {
+  /** 線路の中心線（勾配の部品も含む） */
+  const centerOf = (pieces: Piece[]) => {
+    const graph = buildDriveGraph(pieces);
+    return pieces.flatMap((piece) =>
+      getPart(piece.partId).routes.flatMap((_, routeIndex) => makeSegment(graph, { uid: piece.uid, routeIndex, reverse: false }, 4).points),
+    );
+  };
+
+  it("両端の壁には、通り抜ける線路ごとに口を開ける", () => {
+    const { accessories, tracks } = undergroundStation(-50);
+    const [h] = stationHalls(accessories, tracks);
+    for (const u of [h.u0, h.u1]) expect(hallOpenings(h, u, tracks)).toHaveLength(2);
+  });
+
+  it("ホームが地下の区間より長く勾配にかかっていても、線路を壁でふさがない", () => {
+    // 地下の区間は2本分（496mm）だけで、島式ホーム（896mm）の両端は勾配の上
+    const dip2 = (y: number, p: string) =>
+      chain(
+        { x: 50, y, deg: 0 },
+        [
+          ["kato:S248", 0],
+          ...Array<[string, number | null]>(4).fill(["kato:S248", null]),
+          ...Array<[string, number | null]>(2).fill(["kato:S248", -55]),
+          ...Array<[string, number | null]>(4).fill(["kato:S248", null]),
+          ["kato:S248", 0],
+        ],
+        p,
+      );
+    const pieces = [...dip2(700, "a"), ...dip2(749.5, "b")];
+    const an = analyze({ board: stationBoard, pieces });
+    const isl = { ...placeOnPiece(getAccessory("kato:ISLAND"), pieces[5], an.elevation, "R", "isl"), x: pieces[6].x };
+    const tracks = centerOf(pieces);
+    const [h] = stationHalls([isl], tracks);
+    expect(h.covered).toBe(true);
+    for (const u of [h.u0, h.u1]) {
+      const ops = hallOpenings(h, u, tracks);
+      expect(ops).toHaveLength(2);
+      // 口の上の端は、そこを通る線路の高さ＋トンネルの天井より低くない
+      for (const [, , lintel] of ops) expect(lintel).toBeGreaterThanOrEqual(30);
+    }
+  });
+
+  it("ホームが線路より高い所（勾配の途中）に吸着していても、構内は線路の高さで作り、両端に口を開ける", () => {
+    const { accessories, tracks } = undergroundStation(-50);
+    const isl = { ...accessories.find((a) => a.uid === "isl")!, z: -30 };
+    const [h] = stationHalls([isl], tracks);
+    expect(h.z).toBeCloseTo(-50);
+    expect(h.covered).toBe(true);
+    for (const u of [h.u0, h.u1]) expect(hallOpenings(h, u, tracks)).toHaveLength(2);
   });
 });
