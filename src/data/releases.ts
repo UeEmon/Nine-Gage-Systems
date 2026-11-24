@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-25-official-release-v1",
+    date: "2026-11-25T09:30:00+09:00",
+    title: "SenroLab の正式リリース版（Ver.1.0）を公開しました",
+    body: "アカウントにログインして使える今回の版を、SenroLab の最初の正式リリース版（Ver.1.0）としました。トップページ www.senrolab.com からユーザー登録・ログインでき、プラットフォームでのレイアウトづくり・運転席の映像・運行計画と、ターミナルでの共有を同じアカウントで使えます。これまでに作ったレイアウトや投稿は、そのまま使えます。",
+  },
+  {
     id: "2026-11-25-underground-station-ends",
     date: "2026-11-25T06:00:00+09:00",
     title: "地下駅の両端で線路が壁にふさがれることがあったのを直しました",
