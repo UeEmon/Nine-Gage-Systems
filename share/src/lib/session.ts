@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ShareIdentity } from "../../../src/lib/shareLink";
 
-/** 共有サイトのログイン。中身は「本体のユーザーID・名前・ロール・期限」に署名したもの */
+/** ターミナルのログイン。中身は「プラットフォームのユーザーID・名前・ロール・期限」に署名したもの */
 export const SESSION_COOKIE = "ls_session";
 export const STATE_COOKIE = "ls_state";
 export const SESSION_DAYS = 7;

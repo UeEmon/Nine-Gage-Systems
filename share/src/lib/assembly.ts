@@ -20,7 +20,7 @@ export function assemble(title: string, modules: ModuleRef[], posts: ModulePost[
   return { ...mergeAssembly(title, placedOf(present), sources), present, missing: modules.length - present.length };
 }
 
-/** SenroLab の「パターンの保存」で読み込めるファイル */
+/** プラットフォームの「パターンの保存」で読み込めるファイル */
 export function patternFileOf(name: string, layout: Layout, now = new Date()): PatternFile {
   return {
     format: PATTERN_FILE_FORMAT,

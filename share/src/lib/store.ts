@@ -1,4 +1,4 @@
-// 共有サイトのデータ（SQLite: SHARE_DATA_DIR/share.sqlite、権限600）。
+// ターミナルのデータ（SQLite: SHARE_DATA_DIR/share.sqlite、権限600）。
 // 投稿したレイアウト（posts）と、投稿をつないだレイアウト（sets）。
 
 import { randomBytes } from "node:crypto";

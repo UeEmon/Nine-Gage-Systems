@@ -1,4 +1,4 @@
-/* 共有サイトだけの見た目（線路・パーツの描き方と色は本体の globals.css を使う） */
+/* ターミナルだけの見た目（線路・パーツの描き方と色はプラットフォームの globals.css を使う） */
 html, body { height: auto; }
 .share-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .share-header nav { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 14px; }

@@ -1,11 +1,11 @@
-// 本体（SenroLab）と共有サイトのあいだのログインの受け渡し。
+// プラットフォームとターミナルのあいだのログインの受け渡し。
 //
-// 1. 共有サイトの「ログイン」で、乱数の state を Cookie に置いて、本体の /api/share/handoff?state=… へ移る
-// 2. 本体はログイン中のユーザーを確かめ、ユーザーID・名前・ロール・state・期限（60秒）に署名した合図を作り、
-//    共有サイトの /auth/callback?token=… へ戻す（戻り先は SENROLAB_SHARE_URL に固定）
-// 3. 共有サイトは署名・期限・state を確かめて、自分のログインの Cookie を出す
+// 1. ターミナルの「ログイン」で、乱数の state を Cookie に置いて、プラットフォームの /api/share/handoff?state=… へ移る
+// 2. プラットフォームはログイン中のユーザーを確かめ、ユーザーID・名前・ロール・state・期限（60秒）に署名した合図を作り、
+//    ターミナルの /auth/callback?token=… へ戻す（戻り先は SENROLAB_SHARE_URL に固定）
+// 3. ターミナルは署名・期限・state を確かめて、自分のログインの Cookie を出す
 //
-// 署名の鍵は両方のコンテナに渡す SENROLAB_SHARE_SECRET（32文字以上）。共有サイトはパスワードを持たない。
+// 署名の鍵は両方のコンテナに渡す SENROLAB_SHARE_SECRET（32文字以上）。ターミナルはパスワードを持たない。
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -26,7 +26,7 @@ export function signHandoff(id: ShareIdentity, state: string, secret: string, no
   return `${body}.${mac(body, secret)}`;
 }
 
-/** 署名・期限・state が合えば、本体のユーザーを返す */
+/** 署名・期限・state が合えば、プラットフォームのユーザーを返す */
 export function verifyHandoff(token: string, state: string, secret: string, now = Date.now()): ShareIdentity | null {
   if (secret.length < MIN_SECRET_LENGTH || !state) return null;
   const [body, sig, extra] = token.split(".");
@@ -48,7 +48,7 @@ export function verifyHandoff(token: string, state: string, secret: string, now 
   return { sub: p.sub, name: p.name, role: p.role };
 }
 
-/** 本体から共有サイトへ戻すURL。設定がなければ null（共有サイトを使わない） */
+/** プラットフォームからターミナルへ戻すURL。設定がなければ null（ターミナルを使わない） */
 export function shareCallbackUrl(shareUrl: string, token: string): string {
   const u = new URL("/auth/callback", shareUrl);
   u.searchParams.set("token", token);

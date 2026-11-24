@@ -75,7 +75,7 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
                 )}
               </div>
               <p className="notice">
-                保存したファイルは、SenroLab の「パターンの保存」→「読み込む」で開けます{post.trainCount ? "（運行計画も入っています）" : ""}。
+                保存したファイルは、プラットフォームの「パターンの保存」→「読み込む」で開けます{post.trainCount ? "（運行計画も入っています）" : ""}。
               </p>
               {canEdit(user, post.ownerId) && <OwnerActions kind="post" id={post.id} title={post.title} description={post.description} />}
             </div>

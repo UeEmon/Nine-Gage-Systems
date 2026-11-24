@@ -5,7 +5,7 @@ import { Diagram } from "../../../src/components/operation/Diagram";
 import { elevationOf, type Layout } from "../../../src/lib/geometry";
 import { computeSchedule, detectStations, formatTime, kindLabel } from "../../../src/lib/operation";
 
-/** 運行計画（ダイヤ）の見せ方: 駅・列車の一覧とダイヤグラム。計算は本体と同じ（src/lib/operation） */
+/** 運行計画（ダイヤ）の見せ方: 駅・列車の一覧とダイヤグラム。計算はプラットフォームと同じ（src/lib/operation） */
 export function OperationSummary({ layout }: { layout: Layout }) {
   const plan = layout.operation;
   const stations = useMemo(() => detectStations(layout.pieces, layout.accessories ?? [], elevationOf(layout.pieces).elevation), [layout]);
@@ -23,7 +23,7 @@ export function OperationSummary({ layout }: { layout: Layout }) {
       <p className="op-lead">
         駅 {stations.length}・列車 {plan.trains.length}本・運転時間 {formatTime(end)}
         {result.conflicts.length > 0 && <span className="problem">・ぶつかる所 {result.conflicts.length}か所</span>}
-        。ファイルに保存して SenroLab で開くと、運行計画の画面や運転席の映像で走らせられます。
+        。ファイルに保存してプラットフォームで開くと、運行計画の画面や運転席の映像で走らせられます。
       </p>
       {stations.length > 0 && (
         <p className="op-lead">

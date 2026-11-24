@@ -7,9 +7,9 @@ export function Header({ user, next = "/" }: { user: ShareUser | null; next?: st
   return (
     <header className="header share-header">
       <h1 className="share-title">
-        <Link href="/" aria-label="みんなのレイアウトのトップへ">
+        <Link href="/" aria-label="ターミナルのトップへ">
           <BrandLogo height={26} />
-          <span>みんなのレイアウト</span>
+          <span>ターミナル</span>
         </Link>
       </h1>
       <nav>
@@ -17,7 +17,7 @@ export function Header({ user, next = "/" }: { user: ShareUser | null; next?: st
         <Link href="/sets">つないだレイアウト</Link>
         <Link href="/connect">つなぐ</Link>
         <Link href="/post">投稿する</Link>
-        <a href={senrolabUrl()}>SenroLabで作る</a>
+        <a href={senrolabUrl()}>プラットフォームで作る</a>
       </nav>
       <div className="who">
         {user ? (

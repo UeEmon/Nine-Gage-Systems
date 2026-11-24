@@ -5,7 +5,7 @@ import { safePath } from "../../../lib/paths";
 
 export const dynamic = "force-dynamic";
 
-/** SenroLab のアカウントでログインする（本体でログインを確かめて戻ってくる） */
+/** SenroLab のアカウントでログインする（プラットフォームでログインを確かめて戻ってくる） */
 export async function GET(req: Request) {
   const next = safePath(new URL(req.url).searchParams.get("next"));
   const state = randomBytes(24).toString("base64url");

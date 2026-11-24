@@ -65,7 +65,7 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
                   全体をファイルに保存
                 </a>
               </div>
-              <p className="notice">全体を1つのレイアウトにしたファイルです（すき間を埋める線路と、ボードごとの運行計画も入ります）。SenroLab の「パターンの保存」→「読み込む」で開けます。</p>
+              <p className="notice">全体を1つのレイアウトにしたファイルです（すき間を埋める線路と、ボードごとの運行計画も入ります）。プラットフォームの「パターンの保存」→「読み込む」で開けます。</p>
               {canEdit(user, set.ownerId) && <OwnerActions kind="set" id={set.id} title={set.title} description={set.description} />}
             </div>
             <div className="card">

@@ -5,12 +5,12 @@ import { shareCallbackUrl, signHandoff } from "@/lib/shareLink";
 export const dynamic = "force-dynamic";
 
 /**
- * 共有サイトのログイン。ログイン中なら署名した合図を付けて共有サイトへ戻し、
+ * ターミナルのログイン。ログイン中なら署名した合図を付けてターミナルへ戻し、
  * ログインしていなければログイン画面へ（ログイン後にここへ戻る）。
  */
 export async function GET(req: Request) {
   const cfg = shareConfig();
-  if (!cfg) return Response.json({ error: "共有サイトは設定されていません。" }, { status: 404 });
+  if (!cfg) return Response.json({ error: "ターミナルは設定されていません。" }, { status: 404 });
   const url = new URL(req.url);
   const state = url.searchParams.get("state") ?? "";
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(state)) return Response.json({ error: "要求の形が正しくありません。" }, { status: 400 });

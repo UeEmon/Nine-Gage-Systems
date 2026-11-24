@@ -68,7 +68,7 @@ export function PostForm() {
     <form className="card form" onSubmit={submit}>
       <h2>レイアウトを投稿する</h2>
       <p className="notice">
-        SenroLab の「パターンの保存」で書き出したファイル（.json）を選んでください。「JSONで保存」で作った1つだけのファイルも使えます。運行計画（ダイヤ）を作ってあれば、一緒に投稿できます。
+        プラットフォームの「パターンの保存」で書き出したファイル（.json）を選んでください。「JSONで保存」で作った1つだけのファイルも使えます。運行計画（ダイヤ）を作ってあれば、一緒に投稿できます。
       </p>
       <label>
         ファイル
@@ -90,7 +90,7 @@ export function PostForm() {
         <>
           <LayoutSvg layout={chosen.layout} connectors={connectors} />
           {!bounded ? (
-            <p className="error">ボードの大きさが決まっていないレイアウトは投稿できません。SenroLab でボードの大きさを決めてから書き出してください。</p>
+            <p className="error">ボードの大きさが決まっていないレイアウトは投稿できません。プラットフォームでボードの大きさを決めてから書き出してください。</p>
           ) : connectors.length ? (
             <p className="notice ok">
               ほかのレイアウトとつなげる端子が {connectors.length} か所あります（
@@ -107,7 +107,7 @@ export function PostForm() {
               運行計画（列車 {trains}本）も一緒に投稿する
             </label>
           ) : (
-            <p className="notice">このレイアウトには運行計画がありません。SenroLab の「運行計画」で列車を作ってから書き出すと、ダイヤも一緒に投稿できます。</p>
+            <p className="notice">このレイアウトには運行計画がありません。プラットフォームの「運行計画」で列車を作ってから書き出すと、ダイヤも一緒に投稿できます。</p>
           )}
           <label>
             題名

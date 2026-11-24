@@ -132,7 +132,7 @@
 /src/components/AdminNoticesPanel.tsx @UeEmon
 /tests/notices.test.ts @UeEmon
 
-# ── みんなのレイアウト（共有サイト）（feature:share）
+# ── ターミナル（レイアウトの共有）（feature:share）
 /share/ @UeEmon
 /src/lib/modules.ts @UeEmon
 /src/lib/shareLink.ts @UeEmon

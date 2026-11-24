@@ -4,7 +4,7 @@ import { getPost } from "../../../../../lib/store";
 
 export const dynamic = "force-dynamic";
 
-/** SenroLab の「パターンの保存」→「読み込む」で開けるファイル */
+/** プラットフォームの「パターンの保存」→「読み込む」で開けるファイル */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const post = getPost(db(), (await params).id);
   if (!post) return new Response("見つかりません。", { status: 404 });

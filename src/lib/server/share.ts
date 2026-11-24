@@ -1,6 +1,6 @@
 import { MIN_SECRET_LENGTH } from "../shareLink";
 
-/** 共有サイトの設定。URL と鍵の両方があるときだけ使う */
+/** ターミナルの設定。URL と鍵の両方があるときだけ使う */
 export function shareConfig(): { url: string; secret: string } | null {
   const url = process.env.SENROLAB_SHARE_URL?.trim();
   const secret = process.env.SENROLAB_SHARE_SECRET ?? "";

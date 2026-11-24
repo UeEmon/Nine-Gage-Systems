@@ -5,7 +5,7 @@ import { safePath } from "../../../lib/paths";
 
 export const dynamic = "force-dynamic";
 
-/** 本体からの合図を確かめて、共有サイトのログインの Cookie を出す */
+/** プラットフォームからの合図を確かめて、ターミナルのログインの Cookie を出す */
 export async function GET(req: Request) {
   const token = new URL(req.url).searchParams.get("token") ?? "";
   const [state = "", next = "/"] = (cookieValue(req, STATE_COOKIE) ?? "").split("|");

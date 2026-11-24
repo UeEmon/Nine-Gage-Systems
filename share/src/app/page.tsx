@@ -39,7 +39,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
       <Header user={user} />
       <main className="page wide">
         <p className="lead">
-          SenroLab で作ったレイアウトを投稿して見せ合えます。ボードの端まで延びた線路（
+          SenroLab プラットフォームで作ったレイアウトを投稿して見せ合えます。ボードの端まで延びた線路（
           <span className="num">1</span>
           の印の「端子」）があるレイアウトは、ほかの人のレイアウトと端どうしでつないで、大きなレイアウトにできます。運行計画（ダイヤ）を作ったレイアウトは、ダイヤも一緒に見られます。
         </p>
