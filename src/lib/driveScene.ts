@@ -576,6 +576,22 @@ function hallCorners(h: StationHall): XY[] {
   ];
 }
 
+/** 地下のホームの高さを、ホームの中央の横を通る線路のレール面の高さにそろえる */
+export function snapUndergroundPlatform(a: Accessory, tracks: DrivePoint[]): Accessory {
+  const def = getAccessory(a.itemId);
+  if ((def.kind !== "platform" && def.kind !== "island") || (a.z ?? 0) >= BELOW_BOARD_Z) return a;
+  const reach = def.width / 2 + PLATFORM_EDGE_MM + 6;
+  let best: { d: number; z: number } | null = null;
+  for (const p of tracks) {
+    if (p.z >= BELOW_BOARD_Z) continue;
+    const { u, v } = toLocal(a, p);
+    if (Math.abs(u) > 10 || Math.abs(v) > reach) continue;
+    const d = Math.abs(u);
+    if (!best || d < best.d) best = { d, z: p.z };
+  }
+  return best && Math.abs(best.z - (a.z ?? 0)) > 0.5 ? { ...a, z: best.z } : a;
+}
+
 /**
  * 地下に置いたホームごとに、ホームとそれに面する線路を囲む広間を作り、重なる広間は1つにまとめる。
  * tracks は線路の中心線の点（高さ付き）
@@ -588,14 +604,26 @@ export function stationHalls(accessories: Accessory[], tracks: DrivePoint[]): St
     const z = a.z ?? 0;
     if ((def.kind !== "platform" && def.kind !== "island") || z >= BELOW_BOARD_Z) continue;
     const h: StationHall = { x: a.x, y: a.y, rot: a.rot, u0: -def.length / 2, u1: def.length / 2, v0: -def.width / 2, v1: def.width / 2, z, covered: isCovered(z) };
-    // ホームの縁に面する線路（ホームの縁から線路の中心まで PLATFORM_EDGE_MM ほど）を広間に入れる
+    // ホームの縁に面する地下の線路（ホームの縁から線路の中心まで PLATFORM_EDGE_MM ほど）を広間に入れる。
+    // ホームの高さと線路の高さが少しずれていても（勾配の部品に吸着したホームなど）、線路は広間に入れる
     const reach = def.width / 2 + PLATFORM_EDGE_MM + 6;
-    for (const p of tracks) {
-      if (Math.abs(p.z - z) > 12) continue;
-      const { u, v } = toLocal(h, p);
-      if (u < h.u0 || u > h.u1 || Math.abs(v) > reach) continue;
-      h.v0 = Math.min(h.v0, v - TUNNEL_HALF_WIDTH);
-      h.v1 = Math.max(h.v1, v + TUNNEL_HALF_WIDTH);
+    const near = tracks
+      .filter((p) => p.z < BELOW_BOARD_Z)
+      .map((p) => ({ ...toLocal(h, p), z: p.z }))
+      .filter((p) => p.u >= h.u0 && p.u <= h.u1 && Math.abs(p.v) <= reach);
+    if (near.length) {
+      // 広間の床は、面する線路のいちばん低い所に合わせる
+      h.z = Math.min(z, ...near.map((p) => p.z));
+      h.covered = isCovered(h.z);
+      for (const p of near) {
+        h.v0 = Math.min(h.v0, p.v - TUNNEL_HALF_WIDTH);
+        h.v1 = Math.max(h.v1, p.v + TUNNEL_HALF_WIDTH);
+      }
+      // ホームが地下の区間より長く勾配にかかっているときは、線路が駅の深さにある所までを構内にする
+      // （その先は線路ごとのトンネルになり、端の壁に線路の口を開ける）
+      const deep = near.filter((p) => p.z - h.z <= 12);
+      h.u0 = Math.max(h.u0, Math.min(...deep.map((p) => p.u)));
+      h.u1 = Math.min(h.u1, Math.max(...deep.map((p) => p.u)));
     }
     halls.push(h);
   }
@@ -724,8 +752,10 @@ export function buildScene(
       centerline.push(...makeSegment(graph, { uid: piece.uid, routeIndex, reverse: false }, 4).points);
     });
   }
-  const placed = accessories.filter((a) => hasAccessory(a.itemId));
-  const halls = stationHalls(placed, centerline);
+  const raw = accessories.filter((a) => hasAccessory(a.itemId));
+  const halls = stationHalls(raw, centerline);
+  // 地下のホームは、面する線路の高さにそろえる（勾配の途中の部品に吸着して浮いたホームを線路の横に下ろす）
+  const placed = raw.map((a) => snapUndergroundPlatform(a, centerline));
   const inAnyHall = (p: XY) => halls.some((h) => inHall(h, p));
   // 地下の線路があれば、掘割の所はボードに穴を開け、床と枠をその下まで下げる
   const { holes, lowest } = undergroundOf(graph, pieces, halls);
@@ -1218,20 +1248,25 @@ type SceneKit = {
 };
 
 /** 広間の端の壁で、線路が通り抜ける所（v の範囲） */
-function hallOpenings(h: StationHall, u: number, tracks: DrivePoint[]): [number, number][] {
-  const vs = tracks
-    .filter((p) => Math.abs(p.z - h.z) < 12)
-    .map((p) => toLocal(h, p))
+export function hallOpenings(h: StationHall, u: number, tracks: DrivePoint[]): [number, number, number][] {
+  // 広間の天井より下で端の壁を通る線路すべて（勾配で高さが変わっていても開ける）
+  const top = hallTop(h);
+  const hits = tracks
+    .filter((p) => p.z - h.z < top)
+    .map((p) => ({ ...toLocal(h, p), dz: p.z - h.z }))
     .filter((p) => Math.abs(p.u - u) < 6 && p.v > h.v0 - TUNNEL_HALF_WIDTH && p.v < h.v1 + TUNNEL_HALF_WIDTH)
-    .map((p) => p.v)
-    .sort((a, b) => a - b);
-  const out: [number, number][] = [];
-  for (const v of vs) {
-    const lo = Math.max(h.v0, v - TUNNEL_HALF_WIDTH);
-    const hi = Math.min(h.v1, v + TUNNEL_HALF_WIDTH);
+    .sort((a, b) => a.v - b.v);
+  const out: [number, number, number][] = [];
+  for (const p of hits) {
+    const lo = Math.max(h.v0, p.v - TUNNEL_HALF_WIDTH);
+    const hi = Math.min(h.v1, p.v + TUNNEL_HALF_WIDTH);
+    // 口の上の端: 線路の高さ＋トンネルの天井の高さ（広間の天井まで）
+    const lintel = Math.min(top, Math.max(TUNNEL_CLEAR, p.dz + TUNNEL_CLEAR));
     const last = out[out.length - 1];
-    if (last && lo <= last[1]) last[1] = Math.max(last[1], hi);
-    else out.push([lo, hi]);
+    if (last && lo <= last[1]) {
+      last[1] = Math.max(last[1], hi);
+      last[2] = Math.max(last[2], lintel);
+    } else out.push([lo, hi, lintel]);
   }
   return out;
 }
@@ -1270,9 +1305,9 @@ function buildHalls(halls: StationHall[], tracks: DrivePoint[], kit: SceneKit) {
     if (h.covered) {
       box(L + 3, 2, W + 3, cu, top + 1, cv, ceilMat);
       // ホームの上（線路のない所）に照明
-      const openings = hallOpenings(h, 0, tracks);
+      const openings = hallOpenings(h, cu, tracks);
       let from = h.v0;
-      for (const [lo, hi] of [...openings, [h.v1, h.v1] as [number, number]]) {
+      for (const [lo, hi] of [...openings.map(([o0, o1]) => [o0, o1] as [number, number]), [h.v1, h.v1] as [number, number]]) {
         if (lo - from >= 8) box(L - 20, 0.6, 3, cu, top - 0.3, (from + lo) / 2, lightMat);
         from = Math.max(from, hi);
       }
@@ -1280,14 +1315,13 @@ function buildHalls(halls: StationHall[], tracks: DrivePoint[], kit: SceneKit) {
     // 両端の壁
     for (const u of [h.u0, h.u1]) {
       const openings = hallOpenings(h, u, tracks);
-      const lintel = h.covered ? TUNNEL_CLEAR : top;
       let from = h.v0;
       const piece = (v0: number, v1: number, y0: number, y1: number) => {
         if (v1 - v0 > 0.1 && y1 - y0 > 0.1) box(1.5, y1 - y0, v1 - v0, u + (u === h.u0 ? -0.75 : 0.75), (y0 + y1) / 2, (v0 + v1) / 2, wallMat);
       };
-      for (const [lo, hi] of openings) {
+      for (const [lo, hi, lintel] of openings) {
         piece(from, lo, floor, top);
-        piece(lo, hi, lintel, top);
+        if (h.covered) piece(lo, hi, lintel, top);
         from = hi;
       }
       piece(from, h.v1, floor, top);
