@@ -845,41 +845,58 @@ export function buildScene(
         );
       }
       // 地下: 掘割は両側の壁、トンネルは壁と天井。坑口には地上に出る面を立てる
-      // 地下駅の広間の中は、線路ごとのトンネルではなく広間の壁と天井で囲む
+      // 地下駅の広間の中は、線路ごとのトンネルではなく広間の壁と天井で囲む。
+      // トンネルは広間の外の区間ごとに分けて作り（広間の壁の口まで同じ太さで届かせる）、
+      // 広間の中で細く絞る面が口をふさがないようにする
       const below = (i: number) => seg.points[i].z < BELOW_BOARD_Z && !inAnyHall(seg.points[i]);
       if (seg.points.some((_, i) => below(i))) {
-        add(
-          sweep(
-            frames,
-            (i) => {
-              const z = seg.points[i].z;
-              const w = below(i) ? TUNNEL_HALF_WIDTH : 0.01;
-              const top = below(i) ? Math.min(BOARD_Y - z, TUNNEL_CLEAR) : -3;
+        const ranges: [number, number][] = [];
+        const inside = seg.points.map((p) => inAnyHall(p));
+        for (let i = 0; i < seg.points.length; i++) {
+          if (inside[i]) continue;
+          let j = i;
+          while (j + 1 < seg.points.length && !inside[j + 1]) j++;
+          // 広間の中のとなりの点まで伸ばして、広間の端の壁に届かせる
+          ranges.push([Math.max(0, i - 1), Math.min(seg.points.length - 1, j + 1)]);
+          i = j;
+        }
+        for (const [r0, r1] of ranges) {
+          if (r1 - r0 < 1) continue;
+          const sub = frames.slice(r0, r1 + 1);
+          const under = (k: number) => seg.points[r0 + k].z < BELOW_BOARD_Z;
+          add(
+            sweep(
+              sub,
+              (k) => {
+                const z = seg.points[r0 + k].z;
+                const w = under(k) ? TUNNEL_HALF_WIDTH : 0.01;
+                const top = under(k) ? Math.min(BOARD_Y - z, TUNNEL_CLEAR) : -3;
+                return [
+                  [-w, top],
+                  [-w, -3.5],
+                  [w, -3.5],
+                  [w, top],
+                ];
+              },
+              false,
+            ),
+            tunnelMat,
+          );
+          add(
+            sweep(sub, (k) => {
+              const on = isCovered(seg.points[r0 + k].z);
+              const w = on ? TUNNEL_HALF_WIDTH + 1 : 0.01;
+              const v = on ? TUNNEL_CLEAR : -3;
               return [
-                [-w, top],
-                [-w, -3.5],
-                [w, -3.5],
-                [w, top],
+                [-w, v + 2],
+                [w, v + 2],
+                [w, v],
+                [-w, v],
               ];
-            },
-            false,
-          ),
-          tunnelMat,
-        );
-        add(
-          sweep(frames, (i) => {
-            const on = isCovered(seg.points[i].z) && !inAnyHall(seg.points[i]);
-            const w = on ? TUNNEL_HALF_WIDTH + 1 : 0.01;
-            const v = on ? TUNNEL_CLEAR : -3;
-            return [
-              [-w, v + 2],
-              [w, v + 2],
-              [w, v],
-              [-w, v],
-            ];
-          }),
-          tunnelMat,
-        );
+            }),
+            tunnelMat,
+          );
+        }
         // 坑口: 掘割とトンネルの境目に、天井からボードの面の少し上までの壁
         for (let i = 1; i < seg.points.length; i++) {
           const a = seg.points[i - 1];
