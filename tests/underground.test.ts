@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { systemPrompt, undergroundProblems } from "../src/lib/ai";
 import { getAccessory, placeOnPiece, type Accessory } from "../src/lib/accessories";
 import { buildDriveGraph, makeSegment, type DrivePoint } from "../src/lib/drive";
-import { bridgePosts, FURNITURE_EDGE_MM, platformAccess, platformLabels, STAIR_RUN_PER_RISE, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
+import { autoFootbridges, bridgePosts, FOOTBRIDGE_HEIGHT, FURNITURE_EDGE_MM, platformAccess, platformLabels, STAIR_RUN_PER_RISE, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
 import { levelOf, standardDepth } from "../src/lib/elevation";
 import { analyze, placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { getPart } from "../src/lib/parts";
+import { detectStations } from "../src/lib/operation/stations";
 import { buildFromPlan, evaluatePlan, type LayoutPlan } from "../src/lib/plan";
 import { replicaGuide } from "../src/lib/replica";
 
@@ -386,5 +387,47 @@ describe("ホームと駅舎を結ぶ階段・エスカレーター・エレベ�
   it("階段・エレベーターのある所にはベンチなどを置かない", () => {
     const blocked: [number, number][] = [[100, 170]];
     for (const f of platformFurniture(896, 27, [-1, 1], true, 280, blocked)) expect(f.u > 92 && f.u < 178).toBe(false);
+  });
+});
+
+describe("跨線橋の自動配置", () => {
+  /** 4本の線路と、その間の島式ホーム2本（橋上駅舎なし） */
+  function twoIslands(extra: (pieces: Piece[], an: ReturnType<typeof analyze>) => Accessory[] = () => []) {
+    const ys = [600, 649.5, 682.5, 732];
+    const pieces = ys.flatMap((y, k) => chain({ x: 50, y, deg: 0 }, Array<[string, number | null]>(14).fill(["kato:S248", 0]), `t${k}_`));
+    const an = analyze({ board: stationBoard, pieces });
+    const accessories = [
+      placeOnPiece(getAccessory("kato:ISLAND"), pieces[6], an.elevation, "R", "i1"),
+      placeOnPiece(getAccessory("kato:ISLAND"), pieces[14 * 2 + 6], an.elevation, "R", "i2"),
+      ...extra(pieces, an),
+    ];
+    return { pieces, accessories, an, tracks: ys.flatMap((y) => line(y, 0, 0, 3500)) };
+  }
+
+  it("ホームが2本あって橋上駅舎がない駅に、両方のホームにかかる跨線橋を置き、各ホームから階段で上がれる", () => {
+    const { pieces, accessories, an, tracks } = twoIslands();
+    const stations = detectStations(pieces, accessories, an.elevation);
+    const fbs = autoFootbridges(stations, accessories);
+    expect(fbs).toHaveLength(1);
+    const fb = fbs[0];
+    expect(fb.height).toBe(FOOTBRIDGE_HEIGHT);
+    // 2本のホームの外側の縁まで届く
+    expect(fb.y - fb.width / 2).toBeLessThanOrEqual(624.75 - 13.5 + 0.01);
+    expect(fb.y + fb.width / 2).toBeGreaterThanOrEqual(707.25 + 13.5 - 0.01);
+    for (const a of accessories) {
+      const x = platformAccess(a, accessories, tracks, fbs)!;
+      expect(x.to).toBe("bridge");
+      expect(Math.abs(x.uBottom)).toBeLessThanOrEqual(getAccessory(a.itemId).length / 2);
+    }
+    // 柱は線路の上に立たない
+    for (const p of bridgePosts(fb, fb, tracks)) for (const y of [600, 649.5, 682.5, 732]) expect(Math.abs(fb.y + p.v - y)).toBeGreaterThanOrEqual(POST_CLEAR_MM);
+  });
+
+  it("製品の橋上駅舎が置いてある駅・ホームが1本の駅には置かない", () => {
+    const withBridge = twoIslands((pieces, an) => [placeOnPiece(getAccessory("kato:DX-BRIDGE-STATION"), pieces[14 + 7], an.elevation, "L", "b1")]);
+    expect(autoFootbridges(detectStations(withBridge.pieces, withBridge.accessories, withBridge.an.elevation), withBridge.accessories)).toEqual([]);
+    const one = twoIslands();
+    const single = one.accessories.slice(0, 1);
+    expect(autoFootbridges(detectStations(one.pieces, single, one.an.elevation), single)).toEqual([]);
   });
 });
