@@ -9,7 +9,8 @@ import type { BedType } from "../data/trackCatalog";
 import { PIER_MIN_MM, type Pier } from "./elevation";
 import type { Board, Piece } from "./geometry";
 import { makeSegment, N_CAR, type DriveGraph, type DrivePoint, type VehicleType } from "./drive";
-import { getPart } from "./parts";
+import { getPart, normDeg } from "./parts";
+import { PLATFORM_EDGE_MM } from "../data/accessories";
 import { accessoryCorners, getAccessory, hasAccessory, type Accessory } from "./accessories";
 
 /** ボードの面の高さ（地上の線路のレール面からの深さ） */
@@ -170,9 +171,12 @@ export function stripOutline(line: XY[], half: number): XY[] {
  * 地下の線路のうち、屋根のない掘割の所（ボードに開ける穴の輪郭）と、いちばん低いレール面の高さ。
  * 穴は部品の境目でつないで1つにする（接した穴どうしで三角形分割が崩れないように）。
  */
-export function undergroundOf(graph: DriveGraph, pieces: Piece[]): { holes: XY[][]; lowest: number } {
+export function undergroundOf(graph: DriveGraph, pieces: Piece[], halls: StationHall[] = []): { holes: XY[][]; lowest: number } {
   const runs: XY[][] = [];
   let lowest = 0;
+  // 掘割の地下駅は駅の広間ごと1つの穴にするので、線路の穴は広間の手前で切る（穴どうしが重ならないように）
+  const openHalls = halls.filter((h) => !h.covered);
+  const inOpenHall = (p: XY) => openHalls.some((h) => inHall(h, p, 0.5));
   for (const piece of pieces) {
     const part = getPart(piece.partId);
     // ポイント・交差は経路が重なるので直進側だけ
@@ -180,18 +184,162 @@ export function undergroundOf(graph: DriveGraph, pieces: Piece[]): { holes: XY[]
     for (let r = 0; r < routeCount; r++) {
       const seg = makeSegment(graph, { uid: piece.uid, routeIndex: r, reverse: false }, 4);
       let run: XY[] = [];
+      let prev: DrivePoint | null = null;
       for (const p of seg.points) {
         lowest = Math.min(lowest, p.z);
-        if (isCutting(p.z)) run.push({ x: p.x, y: p.y });
+        const open = isCutting(p.z) && !inOpenHall(p);
+        // 広間の手前で切るときは、切れ目を広間の縁のすぐ手前まで寄せる（ボードが細く残らないように）
+        if (prev && isCutting(p.z) && isCutting(prev.z) && open !== !inOpenHall(prev)) {
+          const outside = open ? p : prev;
+          const inside = open ? prev : p;
+          let lo = 0;
+          let hi = 1;
+          for (let k = 0; k < 12; k++) {
+            const t = (lo + hi) / 2;
+            if (inOpenHall({ x: outside.x + (inside.x - outside.x) * t, y: outside.y + (inside.y - outside.y) * t })) hi = t;
+            else lo = t;
+          }
+          run.push({ x: outside.x + (inside.x - outside.x) * lo, y: outside.y + (inside.y - outside.y) * lo });
+        }
+        if (open) run.push({ x: p.x, y: p.y });
         else if (run.length) {
           runs.push(run);
           run = [];
         }
+        prev = p;
       }
       if (run.length) runs.push(run);
     }
   }
-  return { holes: joinRuns(runs).map((line) => stripOutline(line, TUNNEL_HALF_WIDTH)), lowest };
+  const holes = joinRuns(runs).map((line) => stripOutline(line, TUNNEL_HALF_WIDTH));
+  for (const h of openHalls) holes.push(hallCorners(h));
+  return { holes, lowest };
+}
+
+// ---- 地下駅 ----
+
+/** 地下駅の広間の天井のレール面からの高さ(mm)。島式ホームの屋根（約31mm）より上 */
+const HALL_CLEAR = 36;
+/** 柱・壁を線路の中心から離す距離(mm)。車両の幅の半分＋柱の太さの半分＋すき間 */
+export const POST_CLEAR_MM = N_CAR.width / 2 + 3.5;
+
+/**
+ * 地下のホームのまわりの広間（ホームと、ホームに面する線路をまとめて囲む箱）。
+ * 中心 (x, y) と向き rot の座標で、線路に沿った方向 u と直角の方向 v（右が正）の範囲を持つ。
+ */
+export type StationHall = { x: number; y: number; rot: number; u0: number; u1: number; v0: number; v1: number; z: number; covered: boolean };
+
+/** ワールドの点を、中心 (x, y)・向き rot(度) の座標 (u=前, v=右) に直す */
+function toLocal(frame: { x: number; y: number; rot: number }, p: XY): { u: number; v: number } {
+  const r = (frame.rot * Math.PI) / 180;
+  const dx = p.x - frame.x;
+  const dy = p.y - frame.y;
+  return { u: dx * Math.cos(r) + dy * Math.sin(r), v: -dx * Math.sin(r) + dy * Math.cos(r) };
+}
+
+function toWorldXY(frame: { x: number; y: number; rot: number }, u: number, v: number): XY {
+  const r = (frame.rot * Math.PI) / 180;
+  return { x: frame.x + u * Math.cos(r) - v * Math.sin(r), y: frame.y + u * Math.sin(r) + v * Math.cos(r) };
+}
+
+/** 点が広間の中か（margin だけ広げて判定） */
+export function inHall(h: StationHall, p: XY, margin = 0): boolean {
+  const { u, v } = toLocal(h, p);
+  return u >= h.u0 - margin && u <= h.u1 + margin && v >= h.v0 - margin && v <= h.v1 + margin;
+}
+
+function hallCorners(h: StationHall): XY[] {
+  return [
+    toWorldXY(h, h.u0, h.v0),
+    toWorldXY(h, h.u1, h.v0),
+    toWorldXY(h, h.u1, h.v1),
+    toWorldXY(h, h.u0, h.v1),
+  ];
+}
+
+/**
+ * 地下に置いたホームごとに、ホームとそれに面する線路を囲む広間を作り、重なる広間は1つにまとめる。
+ * tracks は線路の中心線の点（高さ付き）
+ */
+export function stationHalls(accessories: Accessory[], tracks: DrivePoint[]): StationHall[] {
+  const halls: StationHall[] = [];
+  for (const a of accessories) {
+    if (!hasAccessory(a.itemId)) continue;
+    const def = getAccessory(a.itemId);
+    const z = a.z ?? 0;
+    if ((def.kind !== "platform" && def.kind !== "island") || z >= BELOW_BOARD_Z) continue;
+    const h: StationHall = { x: a.x, y: a.y, rot: a.rot, u0: -def.length / 2, u1: def.length / 2, v0: -def.width / 2, v1: def.width / 2, z, covered: isCovered(z) };
+    // ホームの縁に面する線路（ホームの縁から線路の中心まで PLATFORM_EDGE_MM ほど）を広間に入れる
+    const reach = def.width / 2 + PLATFORM_EDGE_MM + 6;
+    for (const p of tracks) {
+      if (Math.abs(p.z - z) > 12) continue;
+      const { u, v } = toLocal(h, p);
+      if (u < h.u0 || u > h.u1 || Math.abs(v) > reach) continue;
+      h.v0 = Math.min(h.v0, v - TUNNEL_HALF_WIDTH);
+      h.v1 = Math.max(h.v1, v + TUNNEL_HALF_WIDTH);
+    }
+    halls.push(h);
+  }
+  // 向きがそろっていて重なる（接する）広間は、1つの広間にまとめる（対向式ホーム2本・島式ホームが並ぶ駅）
+  for (let merged = true; merged; ) {
+    merged = false;
+    outer: for (let i = 0; i < halls.length; i++) {
+      for (let k = i + 1; k < halls.length; k++) {
+        const A = halls[i];
+        const B = halls[k];
+        const diff = Math.abs(normDeg(A.rot - B.rot));
+        if (Math.min(diff, 180 - diff) > 3 || Math.abs(A.z - B.z) > 12) continue;
+        const cs = hallCorners(B).map((c) => toLocal(A, c));
+        const bu0 = Math.min(...cs.map((c) => c.u));
+        const bu1 = Math.max(...cs.map((c) => c.u));
+        const bv0 = Math.min(...cs.map((c) => c.v));
+        const bv1 = Math.max(...cs.map((c) => c.v));
+        const tol = 2;
+        if (bu0 > A.u1 + tol || bu1 < A.u0 - tol || bv0 > A.v1 + tol || bv1 < A.v0 - tol) continue;
+        halls[i] = { ...A, u0: Math.min(A.u0, bu0), u1: Math.max(A.u1, bu1), v0: Math.min(A.v0, bv0), v1: Math.max(A.v1, bv1), z: Math.min(A.z, B.z), covered: A.covered && B.covered };
+        halls.splice(k, 1);
+        merged = true;
+        break outer;
+      }
+    }
+  }
+  return halls;
+}
+
+/**
+ * 橋上駅舎・跨線橋の柱の位置（パーツの座標 u=前, v=右）。
+ * 両端（u=±(長さ/2-4)）に、線路から POST_CLEAR_MM 以上離れた所だけに立てる。
+ * 外側の柱は駅舎の縁に、線路と線路の間はホームなど柱の立つ幅がある所のまんなかに置く。
+ */
+export function bridgePosts(a: Pick<Accessory, "x" | "y" | "rot" | "z">, def: { length: number; width: number }, tracks: DrivePoint[]): { u: number; v: number }[] {
+  const z = a.z ?? 0;
+  const edge = def.width / 2 - 4;
+  const frame = { x: a.x, y: a.y, rot: a.rot };
+  const local = tracks
+    .filter((p) => Math.abs(p.z - z) < 20)
+    .map((p) => toLocal(frame, p))
+    .filter((p) => Math.abs(p.v) <= edge + POST_CLEAR_MM && Math.abs(p.u) <= def.length / 2 + 10);
+  const out: { u: number; v: number }[] = [];
+  const step = 0.5;
+  for (const u of [-(def.length / 2 - 4), def.length / 2 - 4]) {
+    const near = local.filter((p) => Math.abs(p.u - u) < 8).map((p) => p.v);
+    const free = (v: number) => near.every((t) => Math.abs(v - t) >= POST_CLEAR_MM);
+    // 柱が立てられる v の区間
+    const spans: [number, number][] = [];
+    for (let v = -edge; v <= edge + 1e-6; v += step) {
+      if (!free(v)) continue;
+      const last = spans[spans.length - 1];
+      if (last && Math.abs(last[1] - (v - step)) < 1e-6) last[1] = v;
+      else spans.push([v, v]);
+    }
+    for (const [s0, s1] of spans) {
+      if (Math.abs(s0 + edge) < 1e-6) out.push({ u, v: -edge });
+      if (Math.abs(s1 - edge) < 1e-6) out.push({ u, v: edge });
+      // 内側のすき間は、柱の立つ幅（ホームくらい）がある所だけ
+      if (Math.abs(s0 + edge) > 1e-6 && Math.abs(s1 - edge) > 1e-6 && s1 - s0 >= 8) out.push({ u, v: (s0 + s1) / 2 });
+    }
+  }
+  return out;
 }
 
 /** 乱数（同じレイアウトなら同じ情景にする） */
@@ -242,8 +390,18 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
   // ボード（芝）とまわりの床
   const grass = grassTexture();
   disposables.push(grass);
+  // 線路の中心線（地下駅の広間と、橋上駅舎の柱の位置を決めるのに使う）
+  const centerline: DrivePoint[] = [];
+  for (const piece of pieces) {
+    getPart(piece.partId).routes.forEach((_, routeIndex) => {
+      centerline.push(...makeSegment(graph, { uid: piece.uid, routeIndex, reverse: false }, 4).points);
+    });
+  }
+  const placed = accessories.filter((a) => hasAccessory(a.itemId));
+  const halls = stationHalls(placed, centerline);
+  const inAnyHall = (p: XY) => halls.some((h) => inHall(h, p));
   // 地下の線路があれば、掘割の所はボードに穴を開け、床と枠をその下まで下げる
-  const { holes, lowest } = undergroundOf(graph, pieces);
+  const { holes, lowest } = undergroundOf(graph, pieces, halls);
   const boardShape = new THREE.Shape([
     new THREE.Vector2(0, 0),
     new THREE.Vector2(board.width, 0),
@@ -330,7 +488,8 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
         );
       }
       // 地下: 掘割は両側の壁、トンネルは壁と天井。坑口には地上に出る面を立てる
-      const below = (i: number) => seg.points[i].z < BELOW_BOARD_Z;
+      // 地下駅の広間の中は、線路ごとのトンネルではなく広間の壁と天井で囲む
+      const below = (i: number) => seg.points[i].z < BELOW_BOARD_Z && !inAnyHall(seg.points[i]);
       if (seg.points.some((_, i) => below(i))) {
         add(
           sweep(
@@ -352,7 +511,7 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
         );
         add(
           sweep(frames, (i) => {
-            const on = isCovered(seg.points[i].z);
+            const on = isCovered(seg.points[i].z) && !inAnyHall(seg.points[i]);
             const w = on ? TUNNEL_HALF_WIDTH + 1 : 0.01;
             const v = on ? TUNNEL_CLEAR : -3;
             return [
@@ -444,9 +603,10 @@ export function buildScene(graph: DriveGraph, pieces: Piece[], piers: Pier[], bo
     m.position.set(pier.x, BOARD_Y + h / 2, pier.y);
   }
 
+  // 地下駅の広間
+  buildHalls(halls, centerline, { add, mat, group, disposables, tracks: centerline });
   // 線路以外のパーツ（踏切・信号機・ホーム・駅舎・建物）
-  const placed = accessories.filter((a) => hasAccessory(a.itemId));
-  buildAccessories(placed, { add, mat, group, disposables });
+  buildAccessories(placed, { add, mat, group, disposables, tracks: centerline });
   for (const s of sims) {
     let geometry: THREE.BufferGeometry;
     const length = Math.max(0.1, s.length), width = Math.max(0.1, s.width), height = Math.max(0.1, s.height);
@@ -721,7 +881,87 @@ type SceneKit = {
   mat: (color: number, extra?: THREE.MeshStandardMaterialParameters) => THREE.Material;
   group: THREE.Group;
   disposables: { dispose: () => void }[];
+  /** 線路の中心線の点 */
+  tracks: DrivePoint[];
 };
+
+/** 広間の端の壁で、線路が通り抜ける所（v の範囲） */
+function hallOpenings(h: StationHall, u: number, tracks: DrivePoint[]): [number, number][] {
+  const vs = tracks
+    .filter((p) => Math.abs(p.z - h.z) < 12)
+    .map((p) => toLocal(h, p))
+    .filter((p) => Math.abs(p.u - u) < 6 && p.v > h.v0 - TUNNEL_HALF_WIDTH && p.v < h.v1 + TUNNEL_HALF_WIDTH)
+    .map((p) => p.v)
+    .sort((a, b) => a - b);
+  const out: [number, number][] = [];
+  for (const v of vs) {
+    const lo = Math.max(h.v0, v - TUNNEL_HALF_WIDTH);
+    const hi = Math.min(h.v1, v + TUNNEL_HALF_WIDTH);
+    const last = out[out.length - 1];
+    if (last && lo <= last[1]) last[1] = Math.max(last[1], hi);
+    else out.push([lo, hi]);
+  }
+  return out;
+}
+
+/**
+ * 地下駅の広間: 床・両側の壁・天井（掘割なら天井なし）と、両端の壁（線路の通る所はトンネルの口として開ける）。
+ * 天井にはホームの上に照明を並べる
+ */
+function buildHalls(halls: StationHall[], tracks: DrivePoint[], kit: SceneKit) {
+  if (!halls.length) return;
+  const { add, mat } = kit;
+  const wallMat = mat(0xd3cfc4, { emissive: 0x4a4740 });
+  const ceilMat = mat(0xd9d5cb, { emissive: 0x5a564e });
+  const floorMat = mat(0x8d8980, { emissive: 0x24221e });
+  const lightMat = mat(0xfff8e6, { emissive: 0xfff2cc, emissiveIntensity: 0.9 });
+  for (const h of halls) {
+    const holder = new THREE.Group();
+    holder.position.set(h.x, h.z, h.y);
+    holder.rotation.y = (-h.rot * Math.PI) / 180;
+    kit.group.add(holder);
+    const box = (w: number, ht: number, d: number, x: number, y: number, z: number, material: THREE.Material) => {
+      const mesh = add(new THREE.BoxGeometry(w, ht, d), material);
+      kit.group.remove(mesh);
+      mesh.position.set(x, y, z);
+      holder.add(mesh);
+    };
+    const L = h.u1 - h.u0;
+    const W = h.v1 - h.v0;
+    const cu = (h.u0 + h.u1) / 2;
+    const cv = (h.v0 + h.v1) / 2;
+    const floor = -3.5;
+    // 天井（トンネルの天井より高く、ボードの面より下）。掘割はボードの面まで壁を立てて天井なし
+    const top = h.covered ? Math.max(TUNNEL_CLEAR, Math.min(HALL_CLEAR, BOARD_Y - 1 - h.z)) : BOARD_Y - h.z;
+    box(L, 0.6, W, cu, floor - 0.3, cv, floorMat);
+    for (const v of [h.v0, h.v1]) box(L, top - floor, 1.5, cu, (top + floor) / 2, v + (v === h.v0 ? -0.75 : 0.75), wallMat);
+    if (h.covered) {
+      box(L + 3, 2, W + 3, cu, top + 1, cv, ceilMat);
+      // ホームの上（線路のない所）に照明
+      const openings = hallOpenings(h, 0, tracks);
+      let from = h.v0;
+      for (const [lo, hi] of [...openings, [h.v1, h.v1] as [number, number]]) {
+        if (lo - from >= 8) box(L - 20, 0.6, 3, cu, top - 0.3, (from + lo) / 2, lightMat);
+        from = Math.max(from, hi);
+      }
+    }
+    // 両端の壁
+    for (const u of [h.u0, h.u1]) {
+      const openings = hallOpenings(h, u, tracks);
+      const lintel = h.covered ? TUNNEL_CLEAR : top;
+      let from = h.v0;
+      const piece = (v0: number, v1: number, y0: number, y1: number) => {
+        if (v1 - v0 > 0.1 && y1 - y0 > 0.1) box(1.5, y1 - y0, v1 - v0, u + (u === h.u0 ? -0.75 : 0.75), (y0 + y1) / 2, (v0 + v1) / 2, wallMat);
+      };
+      for (const [lo, hi] of openings) {
+        piece(from, lo, floor, top);
+        piece(lo, hi, lintel, top);
+        from = hi;
+      }
+      piece(from, h.v1, floor, top);
+    }
+  }
+}
 
 /**
  * 線路以外のパーツの3Dの形。ローカル座標は中心が原点・線路の方向が +X、右が +Z（真上から見てレイアウトの図と同じ）。
@@ -811,7 +1051,8 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
         box(L, 18, W, 0, top + 9, 0, m.wall);
         box(L + 2, 1.5, W + 2, 0, top + 18.7, 0, m.roof);
         box(L + 0.4, 5, W - 10, 0, top + 10, 0, m.glass);
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(4, top - base, 4, sx * (L / 2 - 4), (top + base) / 2, sz * (W / 2 - 4), m.post);
+        // 柱は線路に重ならない所（駅舎の縁・ホームの上）にだけ立てる
+        for (const p of bridgePosts(a, def, kit.tracks)) box(4, top - base, 4, p.u, (top + base) / 2, p.v, m.post);
         break;
       }
       default: {
