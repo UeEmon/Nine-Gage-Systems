@@ -149,7 +149,55 @@ export function alreadyMail(base: string, username: string) {
     subject: "【SenroLab】このメールアドレスは登録済みです",
     text:
       `このメールアドレスで新しいユーザー登録がありましたが、すでにユーザー名「${username}」で登録されています。\n` +
-      `ログインはこちら: ${base}/login\n\n心当たりがない場合は、このメールを破棄してください。\n`,
+      `ログインはこちら: ${base}/login\n` +
+      `パスワードを忘れたときはこちら: ${base}/forgot\n\n心当たりがない場合は、このメールを破棄してください。\n`,
+  };
+}
+
+/** パスワード再設定のリンクの有効期限 */
+export const RESET_MINUTES = 60;
+
+export const ForgotSchema = z.object({ email: z.string().trim().max(254) });
+export const ResetSchema = z.object({ token: z.string().min(10).max(200), password: z.string().max(200) });
+
+/**
+ * パスワード再設定を頼む。そのメールアドレスの（確認済みの）ユーザーがいれば、リンクのトークンを作って返す。
+ * いなければ null（画面には同じ表示を返し、登録の有無を漏らさない）。
+ */
+export function requestPasswordReset(data: StoreData, emailInput: string, now = Date.now()): { user: StoredUser; token: string } | null {
+  const email = emailInput.trim().toLowerCase();
+  if (emailProblem(email)) throw new UserError("メールアドレスの形が正しくありません。");
+  const user = data.users.find((u) => u.email === email && !u.pendingVerify);
+  if (!user) return null;
+  const token = randomBytes(32).toString("base64url");
+  user.passwordReset = { tokenHash: hashToken(token), expiresAt: new Date(now + RESET_MINUTES * 60_000).toISOString() };
+  return { user, token };
+}
+
+/** メールのリンクのトークンで新しいパスワードにする。ほかの端末のログインは切れる */
+export async function resetPassword(data: StoreData, input: z.infer<typeof ResetSchema>, now = Date.now()): Promise<StoredUser> {
+  const hash = hashToken(input.token);
+  const user = data.users.find((u) => u.passwordReset?.tokenHash === hash);
+  if (!user || Date.parse(user.passwordReset!.expiresAt) <= now) {
+    throw new UserError("リンクが無効か、期限が切れています。もう一度「パスワードを忘れた」からやり直してください。", 400);
+  }
+  const problem = passwordProblem(input.password);
+  if (problem) throw new UserError(problem);
+  user.passwordHash = await hashPassword(input.password);
+  user.sessionVersion += 1;
+  delete user.passwordReset;
+  return user;
+}
+
+export function resetMail(base: string, username: string, token: string) {
+  return {
+    subject: "【SenroLab】パスワードの再設定",
+    text:
+      `${username} さん\n\nSenroLab（センロラボ）のパスワードの再設定を受け付けました。\n` +
+      `次のリンクを開いて、新しいパスワードを決めてください（${RESET_MINUTES}分有効、1回だけ使えます）。\n\n` +
+      `${base}/reset#${token}\n\n` +
+      `ユーザー名: ${username}\n\n` +
+      `心当たりがない場合は、このメールを破棄してください。パスワードは変わりません。\n`,
   };
 }
 
@@ -184,6 +232,7 @@ export async function updateUser(data: StoreData, id: string, input: z.infer<typ
     if (problem) throw new UserError(problem);
     user.passwordHash = await hashPassword(input.password);
     user.sessionVersion += 1;
+    delete user.passwordReset;
   }
   return row(user);
 }
@@ -205,5 +254,6 @@ export async function changeOwnPassword(data: StoreData, id: string, input: z.in
   if (problem) throw new UserError(problem);
   user.passwordHash = await hashPassword(input.next);
   user.sessionVersion += 1;
+  delete user.passwordReset;
   return user;
 }

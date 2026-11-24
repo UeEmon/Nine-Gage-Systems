@@ -167,7 +167,7 @@ export function OwnAiForm({ premium = false }: { premium?: boolean }) {
       {state.error && <p className="error">{state.error}</p>}
       {state.done && (
         <p className="ok-text">
-          {state.done} <a href="/">エディタでAI提案を使う</a>
+          {state.done} <a href="/editor">プラットフォームでAI提案を使う</a>
         </p>
       )}
       <div className="row">

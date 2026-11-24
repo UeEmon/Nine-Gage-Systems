@@ -36,7 +36,16 @@ export function userFromToken(token: string | undefined, data: StoreData, now = 
   return user;
 }
 
-export function sessionCookie(token: string, secure: boolean) {
+/**
+ * トップページ（www.）とプラットフォーム（platform.）でログインを共有するための Cookie のドメイン
+ * （NINEGAGE_COOKIE_DOMAIN。例 senrolab.com）。なければ、そのアドレスだけの Cookie にする。
+ */
+export function cookieDomain(env: Record<string, string | undefined> = process.env): string | undefined {
+  const d = env.NINEGAGE_COOKIE_DOMAIN?.trim().replace(/^\./, "").toLowerCase();
+  return d && /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d) ? d : undefined;
+}
+
+export function sessionCookie(token: string, secure: boolean, domain = cookieDomain()) {
   return {
     name: SESSION_COOKIE,
     value: token,
@@ -45,5 +54,26 @@ export function sessionCookie(token: string, secure: boolean) {
     secure,
     path: "/",
     maxAge: SESSION_DAYS * 86400,
+    ...(domain ? { domain } : {}),
   };
+}
+
+/**
+ * ログアウトで消す Cookie（Set-Cookie の値）。共有の Cookie と、以前のそのアドレスだけの Cookie の両方を消す。
+ */
+export function clearSessionCookies(secure: boolean, domain = cookieDomain()): string[] {
+  const base = `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+  return domain ? [base, `${base}; Domain=${domain}`] : [base];
+}
+
+/**
+ * 同じ名前の Cookie が複数届くことがある（共有の Cookie と、そのアドレスだけの Cookie）。
+ * 有効なものを先に見つけた順で使う。
+ */
+export function userFromTokens(tokens: (string | undefined)[], data: StoreData, now = Date.now()): StoredUser | null {
+  for (const t of tokens) {
+    const user = userFromToken(t, data, now);
+    if (user) return user;
+  }
+  return null;
 }

@@ -182,7 +182,7 @@ export default async function ApiKeyGuidePage() {
             <li>モデルはふつう空欄のままで大丈夫です（空欄なら各社のおすすめのモデルを使います）。別のモデルを使いたいときだけ、モデル名を入力します。</li>
             <li>「APIキー」の欄にコピーしたキーを貼り付けて、「保存する」を押します。</li>
             <li>
-              <Link href="/">エディタ</Link>のAI欄に「（自分のAPIキー）」と出ていれば完了です。AI提案を試してみてください。
+              <a href="/editor">プラットフォーム</a>のAI欄に「（自分のAPIキー）」と出ていれば完了です。AI提案を試してみてください。
             </li>
           </ol>
           <p className="hint">
