@@ -128,6 +128,13 @@
 /src/app/admin/ @UeEmon
 /src/app/api/admin/users/ @UeEmon
 /src/components/AdminUsersPanel.tsx @UeEmon
+/src/app/api/admin/analytics/ @UeEmon
+/src/app/api/events/ @UeEmon
+/src/components/AdminAnalyticsPanel.tsx @UeEmon
+/src/components/PageView.tsx @UeEmon
+/src/lib/analytics.ts @UeEmon
+/src/lib/server/analytics.ts @UeEmon
+/tests/analytics.test.ts @UeEmon
 
 # ── お知らせ・リリースノート（feature:notices）
 /src/data/releases.ts @UeEmon

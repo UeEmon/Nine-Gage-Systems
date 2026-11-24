@@ -27,7 +27,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 | デジタルツイン | `feature:twin` | @UeEmon | 実物のレイアウト（実機・模擬の実機）とつなぎ、列車の位置・ポイント・センサーの状態を映して、アプリから操作する機能 |
 | AIレイアウト提案 | `feature:ai` | @UeEmon | AIへの指示と検査・修正のループ、AIプロバイダの切り替え、自分のAPIキー、利用量と料金 |
 | アカウント・ログイン・ロール | `feature:auth` | @UeEmon | トップページ（www.）とプラットフォームの振り分け、ユーザー登録とメール確認、ログイン、パスワードとその再設定、ロール（管理者・プレミアム・一般） |
-| 管理画面 | `feature:admin` | @UeEmon | 管理画面の枠とユーザー管理（AI設定・お知らせの管理画面はそれぞれの機能の担当） |
+| 管理画面 | `feature:admin` | @UeEmon | 管理画面の枠とユーザー管理、アクセス解析（AI設定・お知らせの管理画面はそれぞれの機能の担当） |
 | お知らせ・リリースノート | `feature:notices` | @UeEmon | ベルの未読通知、更新履歴（/news）、管理者からのお知らせ、リリースノート |
 | ターミナル（レイアウトの共有） | `feature:terminal` | @UeEmon | レイアウトの投稿・共有と、投稿どうしをボードの端の線路でつなぐ仕組み（別コンテナの terminal/）、プラットフォームからのログインの受け渡し |
 | 改善リクエスト | `feature:feedback` | @UeEmon | 利用者がアプリから送る改善リクエストと、GitHub の Issue への自動登録、管理画面の一覧 |
@@ -172,6 +172,13 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/app/admin/`
 - `/src/app/api/admin/users/`
 - `/src/components/AdminUsersPanel.tsx`
+- `/src/app/api/admin/analytics/`
+- `/src/app/api/events/`
+- `/src/components/AdminAnalyticsPanel.tsx`
+- `/src/components/PageView.tsx`
+- `/src/lib/analytics.ts`
+- `/src/lib/server/analytics.ts`
+- `/tests/analytics.test.ts`
 
 ### お知らせ・リリースノート（`feature:notices`）
 

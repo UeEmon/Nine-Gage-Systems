@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@/lib/analytics";
 import type { Layout } from "@/lib/geometry";
 import { mergePatterns, newPatternId, parsePatternFile, toPatternFile, type SavedPattern } from "@/lib/patternFile";
 
@@ -14,6 +15,7 @@ type Props = {
 };
 
 function downloadJson(name: string, data: unknown) {
+  track("export");
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -34,12 +36,14 @@ export function LibraryPanel({ layout, patterns, setPatterns, currentId, setCurr
     const p: SavedPattern = { id: newPatternId(), name: name || "パターン", savedAt: new Date().toISOString(), layout: clone(layout) };
     setPatterns((ps) => [p, ...ps]);
     setCurrentId(p.id);
+    track("save", "new");
   };
   const overwrite = () => {
     if (!current) return;
     setPatterns((ps) =>
       ps.map((p) => (p.id === current.id ? { ...p, savedAt: new Date().toISOString(), layout: clone(layout) } : p)),
     );
+    track("save", "overwrite");
   };
   const rename = (p: SavedPattern) => {
     const name = prompt("新しい名前", p.name);
@@ -54,6 +58,7 @@ export function LibraryPanel({ layout, patterns, setPatterns, currentId, setCurr
     try {
       const incoming = parsePatternFile(await file.text());
       setPatterns((ps) => mergePatterns(ps, incoming));
+      track("import");
       if (incoming.length === 1) {
         onOpen(clone(incoming[0].layout));
       }

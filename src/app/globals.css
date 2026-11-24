@@ -451,6 +451,16 @@ button.link-button { border: none; background: none; padding: 0 0 0 4px; color: 
 .usage-bar.on span, .usage-bar:focus span { opacity: 1; box-shadow: 0 0 0 2px var(--accent-weak); }
 .usage-bars-axis { display: flex; gap: 2px; font-size: 10px; color: var(--muted); }
 .usage-bars-axis span { flex: 1; white-space: nowrap; overflow: visible; }
+.funnel { display: grid; gap: 6px; margin: 8px 0 4px; }
+.funnel-row { display: grid; grid-template-columns: minmax(120px, 12em) 1fr auto; grid-template-areas: "label track num" ". sub sub"; column-gap: 10px; align-items: center; font-size: 13px; }
+.funnel-label { grid-area: label; }
+.funnel-track { grid-area: track; height: 14px; background: var(--accent-weak); border-radius: 4px; overflow: hidden; }
+.funnel-bar { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.funnel-num { grid-area: num; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.funnel-sub { grid-area: sub; font-size: 11px; min-height: 0; }
+@media (max-width: 560px) {
+  .funnel-row { grid-template-columns: 1fr auto; grid-template-areas: "label num" "track track" "sub sub"; }
+}
 .usage-settings { margin-top: 12px; align-items: center; }
 .usage-settings label.inline { display: flex; flex-direction: row; align-items: center; gap: 4px; font-size: 13px; color: inherit; }
 .usage-settings input { width: 90px; }

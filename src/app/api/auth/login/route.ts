@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { recordServerEvent } from "@/lib/server/analytics";
 import { clearLoginFailures, clientKey, loginBlocked, recordLoginFailure, sameOrigin, secureCookies } from "@/lib/server/auth";
 import { DUMMY_HASH, verifyPassword } from "@/lib/server/password";
 import { createSessionToken, publicUser, sessionCookie } from "@/lib/server/session";
@@ -42,5 +43,6 @@ export async function POST(req: Request) {
     );
   }
   (await cookies()).set(sessionCookie(createSessionToken(user, data.sessionSecret), secureCookies(req)));
+  recordServerEvent(req, "login", user.id);
   return Response.json({ user: publicUser(user) });
 }

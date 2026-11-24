@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { track } from "@/lib/analytics";
 import {
   analyze,
   newUid,
@@ -258,6 +259,17 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [driveTrainId, setDriveTrainId] = useState<string | null>(null);
   const [showOperation, setShowOperation] = useState(false);
   const [showTwin, setShowTwin] = useState(false);
+  // アクセス解析: 運転席・運行計画・デジタルツインを開いたとき
+  useEffect(() => {
+    if (showDrive) track("drive", driveTrainId ? "plan" : "free");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDrive]);
+  useEffect(() => {
+    if (showOperation) track("operation");
+  }, [showOperation]);
+  useEffect(() => {
+    if (showTwin) track("twin");
+  }, [showTwin]);
   const twinVisible = user?.role === "admin";
   const [showPiers, setShowPiers] = useState(true);
   const [placeHeight, setPlaceHeight] = useState<PlaceHeight>("auto");
@@ -637,6 +649,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
     }
     if (aiMode === "replica" && replicaLevel === "faithful" && !window.confirm(FAITHFUL_CONFIRM)) return;
     setAi({ status: "loading" });
+    track("ai", aiMode);
     try {
       const res = await fetch("/api/propose", {
         method: "POST",
@@ -699,6 +712,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       layout: { maker, board: layout.board, ...patternLayout(p) },
     };
     setLibrary((ps) => [saved, ...ps]);
+    track("save", "ai");
   };
 
   const saveAiLayout = (e: AiLayoutEntry) => {
@@ -710,6 +724,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       layout: { ...entryBase(e), ...patternLayout(p) },
     };
     setLibrary((ps) => [saved, ...ps]);
+    track("save", "ai-history");
     alert(`「${saved.name}」をパターンに登録しました`);
   };
 
