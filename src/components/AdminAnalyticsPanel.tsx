@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { SITE_LABELS } from "@/lib/analytics";
 import { api } from "@/lib/roles";
+import { LineChart } from "./LineChart";
 import type { AnalyticsPeriod, AnalyticsView, FunnelStep } from "@/lib/server/analytics";
 
 const PERIOD_LABELS: Record<AnalyticsPeriod, string> = {
@@ -87,8 +88,25 @@ export function AdminAnalyticsPanel() {
             <Stat label="過去30日" value={`${num(view.active.month.visitors)} ／ ${num(view.active.month.users)}`} />
           </div>
 
-          <h3>日別の訪問者</h3>
-          <Bars data={view.daily} />
+          <h3>ユーザー登録数（累計）</h3>
+          <LineChart
+            data={view.daily}
+            series={[{ key: "registered", label: "登録数", color: "var(--series-1)" }]}
+            unit="人"
+            ariaLabel="ユーザー登録数の累計の推移"
+            extra={(d) => (d.signups ? `この日の新規登録 ${num(d.signups)}人` : "この日の新規登録なし")}
+          />
+          <h3>訪問者とログインした人（日別）</h3>
+          <LineChart
+            data={view.daily}
+            series={[
+              { key: "visitors", label: "訪問者", color: "var(--series-1)" },
+              { key: "users", label: "ログイン", color: "var(--series-2)" },
+            ]}
+            unit="人"
+            ariaLabel="日別の訪問者とログインした人の推移"
+            extra={(d) => `ページ表示 ${num(d.views)}回・新規登録 ${num(d.signups)}人`}
+          />
 
           <h3>到達率: 登録した人のその後（{label}に登録した人）</h3>
           <p className="hint">
@@ -219,43 +237,6 @@ function Funnel({ steps, withDays }: { steps: FunnelStep[]; withDays?: boolean }
           </span>
         </div>
       ))}
-    </div>
-  );
-}
-
-/** 日別の訪問者の棒グラフ。棒にマウスを乗せると内訳を出す */
-function Bars({ data }: { data: AnalyticsView["daily"] }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const max = Math.max(...data.map((d) => d.visitors), 0);
-  const shown = hover === null ? null : data[hover];
-  const step = Math.ceil(data.length / 6);
-  const label = (day: string) => day.slice(5).replace("-", "/");
-  return (
-    <div className="usage-bars-wrap">
-      <p className="hint usage-bars-caption">
-        {shown
-          ? `${label(shown.day)}: 訪問者 ${num(shown.visitors)}人 ／ ログイン ${num(shown.users)}人 ／ 表示 ${num(shown.views)}回 ／ 登録 ${num(shown.signups)}人`
-          : `最大 ${num(max)}人`}
-      </p>
-      <div className="usage-bars" role="img" aria-label="日別の訪問者の推移" onMouseLeave={() => setHover(null)}>
-        {data.map((d, i) => (
-          <div
-            key={d.day}
-            className={`usage-bar${i === hover ? " on" : ""}`}
-            onMouseEnter={() => setHover(i)}
-            onFocus={() => setHover(i)}
-            tabIndex={0}
-            title={`${label(d.day)}: 訪問者 ${num(d.visitors)}人`}
-          >
-            <span style={{ height: max > 0 ? `${Math.max((d.visitors / max) * 100, d.visitors > 0 ? 2 : 0)}%` : 0 }} />
-          </div>
-        ))}
-      </div>
-      <div className="usage-bars-axis">
-        {data.map((d, i) => (
-          <span key={d.day}>{i % step === 0 || i === data.length - 1 ? label(d.day) : ""}</span>
-        ))}
-      </div>
     </div>
   );
 }

@@ -175,6 +175,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/app/api/admin/analytics/`
 - `/src/app/api/events/`
 - `/src/components/AdminAnalyticsPanel.tsx`
+- `/src/components/LineChart.tsx`
 - `/src/components/PageView.tsx`
 - `/src/lib/analytics.ts`
 - `/src/lib/server/analytics.ts`

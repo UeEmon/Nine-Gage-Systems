@@ -126,7 +126,10 @@ describe("アクセス解析: 集計", () => {
     expect(v.active.today).toEqual({ visitors: 1, users: 0 });
     expect(v.active.week).toEqual({ visitors: 3, users: 1 });
     expect(v.daily).toHaveLength(7);
-    expect(v.daily.find((d) => d.day === "2026-11-20")).toMatchObject({ visitors: 1, views: 2, signups: 1 });
+    expect(v.daily.find((d) => d.day === "2026-11-20")).toMatchObject({ visitors: 1, views: 2, signups: 1, registered: 2 });
+    // 累計は期間の前の登録（old）から始まり、管理者は入れない
+    expect(v.daily[0].registered).toBe(1);
+    expect(v.daily[v.daily.length - 1].registered).toBe(3);
     expect(v.referrers).toEqual([{ host: "x.com", visitors: 1 }]);
   });
 
@@ -171,7 +174,10 @@ describe("アクセス解析: 集計", () => {
     const v = view("all");
     expect(v.totals.signups).toBe(3);
     expect(v.cohortBeforeMeasure).toBe(1);
-    expect(v.daily).toHaveLength(90);
+    // 全期間のグラフは最初の登録（old、2026-05-01）から今日まで
+    expect(v.daily[0].day).toBe("2026-04-30");
+    expect(v.daily[0].registered).toBe(0);
+    expect(v.daily[v.daily.length - 1]).toMatchObject({ day: "2026-11-25", registered: 3 });
   });
 });
 

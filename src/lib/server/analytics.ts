@@ -259,7 +259,12 @@ export function analyticsView(input: Input) {
   };
 
   // 日別
-  const nDays = PERIOD_DAYS[input.period] ?? 90;
+  // 全期間は、最初の登録（か計測の開始）から今日まで（30〜365日）
+  const members = input.users.filter((u) => u.role !== "admin");
+  const earliest = [input.measuredSince, ...members.map((u) => u.createdAt)].filter((x): x is string => !!x).sort()[0];
+  const nDays =
+    PERIOD_DAYS[input.period] ??
+    Math.min(365, Math.max(30, earliest ? Math.floor((now.getTime() - new Date(earliest).getTime()) / DAY_MS) + 2 : 30));
   const byDay = new Map<string, StoredEvent[]>();
   for (const e of events) {
     const d = jstDay(e.at);
@@ -268,8 +273,11 @@ export function analyticsView(input: Input) {
     l.push(e);
   }
   const signupsByDay = new Map<string, number>();
-  for (const u of cohort) signupsByDay.set(jstDay(u.createdAt), (signupsByDay.get(jstDay(u.createdAt)) ?? 0) + 1);
-  const daily = lastDays(now, nDays).map((day) => {
+  for (const u of members) signupsByDay.set(jstDay(u.createdAt), (signupsByDay.get(jstDay(u.createdAt)) ?? 0) + 1);
+  const days = lastDays(now, nDays);
+  /** グラフの最初の日より前に登録した人（累計の出発点） */
+  let registered = members.filter((u) => jstDay(u.createdAt) < days[0]).length;
+  const daily = days.map((day) => {
     const l = byDay.get(day) ?? [];
     const ps = uniq(l);
     return {
@@ -278,6 +286,8 @@ export function analyticsView(input: Input) {
       visitors: ps.size,
       users: [...ps].filter(isUser).length,
       signups: signupsByDay.get(day) ?? 0,
+      /** その日の終わりまでに登録した人の累計（管理者を除く） */
+      registered: (registered += signupsByDay.get(day) ?? 0),
     };
   });
 
