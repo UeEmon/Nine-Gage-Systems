@@ -12,7 +12,7 @@ export function UserMenu({ user }: { user: SessionUser | null }) {
         <span>
           <span className="role-badge guest">{GUEST_LABEL}</span>
         </span>
-        <a href="/share">みんなのレイアウト</a>
+        <a href="/terminal">ターミナル</a>
         <Link href="/login">ログイン</Link>
         <Link href="/signup">ユーザー登録</Link>
       </nav>
@@ -29,7 +29,7 @@ export function UserMenu({ user }: { user: SessionUser | null }) {
         {user.username}
         <span className={`role-badge ${user.role}`}>{ROLE_LABELS[user.role]}</span>
       </span>
-      <a href="/share">みんなのレイアウト</a>
+      <a href="/terminal">ターミナル</a>
       <Link href="/feedback">改善リクエスト</Link>
       {user.role === "admin" && <Link href="/admin">管理</Link>}
       <Link href="/account">{user.role === "admin" ? "アカウント" : "アカウント・AI設定"}</Link>

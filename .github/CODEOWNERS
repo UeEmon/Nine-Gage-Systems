@@ -132,15 +132,15 @@
 /src/components/AdminNoticesPanel.tsx @UeEmon
 /tests/notices.test.ts @UeEmon
 
-# ── みんなのレイアウト（共有サイト）（feature:share）
-/share/ @UeEmon
+# ── ターミナル（レイアウトの共有）（feature:terminal）
+/terminal/ @UeEmon
 /src/lib/modules.ts @UeEmon
-/src/lib/shareLink.ts @UeEmon
-/src/lib/server/share.ts @UeEmon
-/src/app/api/share/ @UeEmon
-/src/app/share/ @UeEmon
+/src/lib/terminalLink.ts @UeEmon
+/src/lib/server/terminal.ts @UeEmon
+/src/app/api/terminal/ @UeEmon
+/src/app/terminal/ @UeEmon
 /tests/modules.test.ts @UeEmon
-/tests/share.test.ts @UeEmon
+/tests/terminal.test.ts @UeEmon
 
 # ── 改善リクエスト（feature:feedback）
 /src/lib/feedback.ts @UeEmon
@@ -152,7 +152,7 @@
 /src/components/AdminFeedbackPanel.tsx @UeEmon
 /tests/feedback.test.ts @UeEmon
 
-# ── 基盤・運用（feature:platform）
+# ── 基盤・運用（feature:infra）
 /src/lib/server/db.ts @UeEmon
 /src/lib/server/store.ts @UeEmon
 /src/lib/server/secretBox.ts @UeEmon
@@ -195,8 +195,8 @@
 /src/app/api/ @UeEmon
 /src/lib/llm/ @UeEmon
 /scripts/ @UeEmon
-/share/Dockerfile @UeEmon
-/share/next.config.ts @UeEmon
-/share/src/app/api/ @UeEmon
-/share/src/app/auth/ @UeEmon
-/share/src/lib/ @UeEmon
+/terminal/Dockerfile @UeEmon
+/terminal/next.config.ts @UeEmon
+/terminal/src/app/api/ @UeEmon
+/terminal/src/app/auth/ @UeEmon
+/terminal/src/lib/ @UeEmon

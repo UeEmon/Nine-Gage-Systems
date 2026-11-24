@@ -103,7 +103,7 @@ export default async function ApiKeyGuidePage() {
         <section className="card">
           <h2>APIキー登録のチュートリアル</h2>
           <p>
-            SenroLab の「AI提案」は、Claude・ChatGPT（OpenAI）・Gemini といった生成AIを使ってレイアウト案を作ります。
+            プラットフォームの「AI提案」は、Claude・ChatGPT（OpenAI）・Gemini といった生成AIを使ってレイアウト案を作ります。
             生成AIを使うには、各社のサイトで<strong>APIキー</strong>（AIを使うための合言葉のような文字列）を作り、SenroLab に登録します。
             この手順は5〜10分ほどで終わります。
           </p>

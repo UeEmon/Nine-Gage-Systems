@@ -19,11 +19,11 @@
       "/src/app/api/",
       "/src/lib/llm/",
       "/scripts/",
-      "/share/Dockerfile",
-      "/share/next.config.ts",
-      "/share/src/app/api/",
-      "/share/src/app/auth/",
-      "/share/src/lib/"
+      "/terminal/Dockerfile",
+      "/terminal/next.config.ts",
+      "/terminal/src/app/api/",
+      "/terminal/src/app/auth/",
+      "/terminal/src/lib/"
     ]
   },
   "features": [
@@ -240,20 +240,20 @@
       ]
     },
     {
-      "id": "share",
-      "name": "みんなのレイアウト（共有サイト）",
+      "id": "terminal",
+      "name": "ターミナル（レイアウトの共有）",
       "color": "2fbf71",
-      "description": "レイアウトの投稿・共有と、投稿どうしをボードの端の線路でつなぐ仕組み（別コンテナの share/）、本体からのログインの受け渡し",
+      "description": "レイアウトの投稿・共有と、投稿どうしをボードの端の線路でつなぐ仕組み（別コンテナの terminal/）、プラットフォームからのログインの受け渡し",
       "owners": ["@UeEmon"],
       "paths": [
-        "/share/",
+        "/terminal/",
         "/src/lib/modules.ts",
-        "/src/lib/shareLink.ts",
-        "/src/lib/server/share.ts",
-        "/src/app/api/share/",
-        "/src/app/share/",
+        "/src/lib/terminalLink.ts",
+        "/src/lib/server/terminal.ts",
+        "/src/app/api/terminal/",
+        "/src/app/terminal/",
         "/tests/modules.test.ts",
-        "/tests/share.test.ts"
+        "/tests/terminal.test.ts"
       ]
     },
     {
@@ -274,7 +274,7 @@
       ]
     },
     {
-      "id": "platform",
+      "id": "infra",
       "name": "基盤・運用",
       "color": "555555",
       "description": "データの保存（SQLite）・暗号化・バックアップ・死活確認、画面の共通部分とブランド、ビルド・CI・デプロイ、文書",
