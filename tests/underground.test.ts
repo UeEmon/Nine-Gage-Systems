@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { systemPrompt, undergroundProblems } from "../src/lib/ai";
 import { getAccessory, placeOnPiece, type Accessory } from "../src/lib/accessories";
 import { buildDriveGraph, makeSegment, type DrivePoint } from "../src/lib/drive";
-import { bridgePosts, FURNITURE_EDGE_MM, platformLabels, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
+import { bridgePosts, FURNITURE_EDGE_MM, platformAccess, platformLabels, STAIR_RUN_PER_RISE, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
 import { levelOf, standardDepth } from "../src/lib/elevation";
 import { analyze, placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { getPart } from "../src/lib/parts";
@@ -336,5 +336,55 @@ describe("番線の表示", () => {
     expect(isl.station).toBe("A駅");
     const named = platformLabels(pieces, accessories, graph.elevation, { [[...labels.keys()].sort()[0]]: "大和" });
     expect(named.get("isl")!.station).toBe("大和");
+  });
+});
+
+describe("ホームと駅舎を結ぶ階段・エスカレーター・エレベーター", () => {
+  const within = (lane: [number, number], W: number) => lane[0] >= -W / 2 + FURNITURE_EDGE_MM - 1e-6 && lane[1] <= W / 2 - FURNITURE_EDGE_MM + 1e-6;
+
+  it("橋上駅舎がかかる島式ホームから、駅舎の縁へ上がる。階段はホームの中に収まる", () => {
+    const island = getAccessory("kato:ISLAND");
+    const isl: Accessory = { uid: "i", itemId: island.key, x: 1500, y: 624.75, rot: 0, side: "R" };
+    const bridge: Accessory = { uid: "b", itemId: "kato:DX-BRIDGE-STATION", x: 1300, y: 649.5, rot: 0, side: "L" };
+    const x = platformAccess(isl, [isl, bridge], [...line(600), ...line(649.5)])!;
+    expect(x.to).toBe("bridge");
+    const bd = getAccessory("kato:DX-BRIDGE-STATION");
+    expect(x.rise).toBeCloseTo(bd.height - island.height);
+    // 駅舎の縁（ホームの座標で u=-200+124=-76）から、ホームの長いほう（+u）へ下ろす
+    expect(x.uTop).toBeCloseTo(-76);
+    expect(x.dir).toBe(-1);
+    expect(x.uBottom - x.uTop).toBeCloseTo(x.rise * STAIR_RUN_PER_RISE);
+    expect(Math.max(x.uTop, x.uBottom)).toBeLessThanOrEqual(island.length / 2);
+    expect(within(x.stair, island.width)).toBe(true);
+    expect(x.escalator && within(x.escalator, island.width)).toBe(true);
+    // エレベーターは駅舎の下
+    expect(x.elevator!.u).toBeLessThan(x.uTop);
+    expect(x.elevator!.u).toBeGreaterThan(-200 - 124);
+  });
+
+  it("橋上駅舎のないホームには置かない", () => {
+    const def = getAccessory("kato:SIDE");
+    const a: Accessory = { uid: "p", itemId: def.key, x: 1500, y: 700 - def.offset!, rot: 0, side: "L" };
+    expect(platformAccess(a, [a], line(700))).toBeNull();
+  });
+
+  it("地下駅のホームからは地上へ上がり、出入口は地上の線路の上を避ける", () => {
+    const { accessories, tracks } = undergroundStation(-50);
+    const isl = accessories.find((a) => a.uid === "isl")!;
+    const x = platformAccess(isl, accessories, tracks)!;
+    expect(x.to).toBe("surface");
+    expect(x.entrance).not.toBeNull();
+    expect(x.rise).toBeCloseTo(-6 + 50 - getAccessory("kato:ISLAND").height);
+    // 出入口の側（+u の端）の真上を地上の線路が横切ると、反対の端に出入口を作る
+    const end = x.entrance!.u;
+    const cross: DrivePoint[] = [];
+    for (let y = 400; y <= 1000; y += 4) cross.push({ x: isl.x + end, y, z: 0 });
+    const y2 = platformAccess(isl, accessories, [...tracks, ...cross])!;
+    expect(Math.sign(y2.entrance!.u)).toBe(-Math.sign(end));
+  });
+
+  it("階段・エレベーターのある所にはベンチなどを置かない", () => {
+    const blocked: [number, number][] = [[100, 170]];
+    for (const f of platformFurniture(896, 27, [-1, 1], true, 280, blocked)) expect(f.u > 92 && f.u < 178).toBe(false);
   });
 });
