@@ -218,7 +218,7 @@ export function undergroundOf(graph: DriveGraph, pieces: Piece[], halls: Station
 
 // ---- 地下駅 ----
 
-/** 地下駅の広間の天井のレール面からの高さ(mm)。島式ホームの屋根（約31mm）より上 */
+/** 地下駅の広間の天井のレール面からの高さ(mm)。車両の屋根（26mm）より十分上 */
 const HALL_CLEAR = 36;
 /** 柱・壁を線路の中心から離す距離(mm)。車両の幅の半分＋柱の太さの半分＋すき間 */
 export const POST_CLEAR_MM = N_CAR.width / 2 + 3.5;
@@ -1038,7 +1038,8 @@ function buildAccessories(accessories: Accessory[], kit: SceneKit) {
         // 線路側の縁の黄色い線
         const edges = def.kind === "island" ? [-1, 1] : [a.side === "R" ? -1 : 1];
         for (const e of edges) box(L - 4, 0.3, 1.6, 0, h + 0.15, e * (W / 2 - 1.5), m.edge);
-        if (def.roof) {
+        // 地下のホームは構内の天井の下にあるので、ホームの屋根（上屋）は付けない
+        if (def.roof && (a.z ?? 0) >= BELOW_BOARD_Z) {
           const rl = Math.min(L, 280);
           for (let x = -rl / 2 + 20; x <= rl / 2 - 20; x += 40) box(1.4, 22, 1.4, x, h + 11, 0, m.post);
           box(rl, 1.2, W - 2, 0, h + 22.6, 0, m.roof);
