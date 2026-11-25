@@ -31,6 +31,13 @@ function formatDate(iso: string) {
 }
 
 /** トップページ（www.）。サービスの入口とログイン */
+/** 公式 SNS。フッターに並べる */
+const SNS_LINKS = [
+  { label: "X", href: "https://x.com/senrolab" },
+  { label: "YouTube", href: "https://www.youtube.com/@senrolab" },
+  { label: "Instagram", href: "https://www.instagram.com/senrolab_jp/" },
+];
+
 export default async function HomePage() {
   const user = await currentUser();
   const now = Date.now();
@@ -122,7 +129,16 @@ export default async function HomePage() {
           </section>
         )}
       </main>
-      <footer className="top-footer">© SenroLab</footer>
+      <footer className="top-footer">
+        <nav className="top-sns" aria-label="SenroLab の SNS">
+          {SNS_LINKS.map((l) => (
+            <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer">
+              {l.label}
+            </a>
+          ))}
+        </nav>
+        <div>© SenroLab</div>
+      </footer>
     </div>
   );
 }
