@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-26-realtrainmod-freight",
+    date: "2026-11-26T07:30:00+09:00",
+    title: "RealTrainMod の貨車は、そのまま列車として選べます",
+    body: "貨車（トキ・コキ・タキ・ワムなど）は先頭車・中間車に分けず、走らせる車両の一覧から選べます。機関車の「中間車」に貨車を選ぶこともできます。",
+  },
+  {
     id: "2026-11-26-sim-object-gltf-obj",
     date: "2026-11-26T06:30:00+09:00",
     title: "仮オブジェクトの 3D モデルに glTF（.glb）と OBJ を使えるようになりました",

@@ -6,7 +6,7 @@ import { buildTrain } from "../src/lib/driveScene";
 import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { assignCarRoles, consistSizeOf, findFile, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
+import { assignCarRoles, consistSizeOf, findFile, isFreightCar, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
 import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
@@ -380,6 +380,17 @@ describe("RealTrainMod の車両パック", () => {
     kit.dispose();
   });
 
+  it("貨車を見分ける", () => {
+    const v = (name: string, trainType = "DC") => ({ name, config: { trainType, body: { modelFile: `${name}.mqo`, textures: [] } } }) as never;
+    expect(isFreightCar(v("Hr_JNRtoki15004_F"))).toBe(true);
+    expect(isFreightCar(v("コキ106"))).toBe(true);
+    expect(isFreightCar(v("wamu80000"))).toBe(true);
+    expect(isFreightCar(v("container", "CC"))).toBe(true);
+    expect(isFreightCar(v("Hr_JR701_1001"))).toBe(false);
+    expect(isFreightCar(v("クハ103"))).toBe(false);
+    expect(isFreightCar(v("trta010_7001"))).toBe(false);
+  });
+
   it("形式名から先頭車と中間車を見分ける", () => {
     expect(roleFromName("Hr_JR701_Tc")).toBe("cab");
     expect(roleFromName("Hr_JR701_Mc2")).toBe("cab");
@@ -411,6 +422,8 @@ describe("RealTrainMod の車両パック", () => {
       ...car("Hr_X_1002", "s1000/Hr_X_M.mqo"),
       ...car("Hr_X_0001", "s0/Hr_X_Tc.mqo"),
       ...car("Hr_X_0002", "s0/Hr_X_T.mqo"),
+      ...car("toki15001", "toki_T.mqo", 5.25),
+      ...car("toki15002", "toki_Tc.mqo", 5.25),
       ...common,
     ]);
     // 運転席の位置で見分けるパック（先頭車だけ運転席が前寄り）
@@ -434,6 +447,10 @@ describe("RealTrainMod の車両パック", () => {
     ]);
     const get = (n: string) => vehicles.find((v) => v.name === n)!;
     expect(get("g_Ts232").role).toBe("middle");
+    // 貨車は先頭車・中間車に分けず、そのまま列車として選べる
+    expect(get("toki15001").role).toBeUndefined();
+    expect(get("toki15002").role).toBeUndefined();
+    expect(get("Hr_X_1001").middleId).not.toBe(vehicleId("toki15001"));
     expect(get("Hr_X_1001").role).toBe("cab");
     expect(get("Hr_X_1001").middleId).toBe(vehicleId("Hr_X_1002"));
     expect(get("Hr_X_0001").middleId).toBe(vehicleId("Hr_X_0002"));
@@ -449,7 +466,7 @@ describe("RealTrainMod の車両パック", () => {
     expect(kept[0].middleId).toBe("vmine");
     // 列車として選べるのは先頭車と見分けられない車両だけ。中間車の選択肢に先頭車は出さない
     const names = (l: { name: string }[]) => l.map((v) => v.name).sort();
-    expect(names(leadVehicles(vehicles))).toEqual(["Hr_X_0001", "Hr_X_1001", "m_7001", "m_7101", "w_1", "w_2"]);
+    expect(names(leadVehicles(vehicles))).toEqual(["Hr_X_0001", "Hr_X_1001", "m_7001", "m_7101", "toki15001", "toki15002", "w_1", "w_2"]);
     expect(leadVehicles(vehicles, vehicleId("m_7201")).some((v) => v.name === "m_7201")).toBe(true);
     const mids = middleCandidates(vehicles, get("Hr_X_1001"));
     expect(mids[0].role).toBe("middle");

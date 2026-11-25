@@ -431,6 +431,17 @@ export function roleFromName(text: string): RtmCarRole | null {
   return cab === middle ? null : cab ? "cab" : "middle";
 }
 
+/**
+ * 貨車か。貨車は1両でも、同じ貨車をつないだだけでも走らせるので、先頭車・中間車に分けない。
+ * trainType（CC:コンテナ車・TC:タンク車）か、形式名（トキ・コキ・タキ・ワム・ヨ、toki・koki・taki・wamu など）で見分ける
+ */
+export function isFreightCar(v: Pick<RtmVehicle, "name" | "config">): boolean {
+  if (v.config.trainType === "CC" || v.config.trainType === "TC") return true;
+  const roman = /(^|[^a-z])(to|wa|yo|ko|ta|ho|chi|shi|se|re|tsu|ku|ri|hi)(mu|ra|sa|ki|so)?\d{2,}/i;
+  const kana = /(^|[^ァ-ヶー])[トワヨコタホチシセレツクリヒ][ムラサキソ]?\d{2,}/;
+  return [v.name, baseName(v.config.body.modelFile)].some((t) => kana.test(t) || roman.test(t.replace(/^(.*?)(jnr|jr|jrf)/i, "$1_")));
+}
+
 function guessRoles(group: RtmVehicle[]): Map<string, RtmCarRole> {
   const roles = new Map<string, RtmCarRole>();
   for (const v of group) {
@@ -497,7 +508,7 @@ export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
   for (const v of vehicles) groups.set(v.source, [...(groups.get(v.source) ?? []), v]);
   const out = new Map<RtmVehicle, RtmVehicle>();
   for (const group of groups.values()) {
-    const roles = guessRoles(group);
+    const roles = guessRoles(group.filter((v) => !isFreightCar(v)));
     const middles = group.filter((v) => roles.get(v.id) === "middle");
     for (const v of group) {
       const role = roles.get(v.id);
@@ -510,11 +521,11 @@ export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
 }
 
 /**
- * 列車として選べる車両（中間車は単独では走らないので外す。いま選んでいる車両は残す）。
+ * 列車として選べる車両（中間車は単独では走らないので外す。貨車と、いま選んでいる車両は残す）。
  * 中間車は先頭車の「中間車」で選ぶ
  */
 export function leadVehicles(vehicles: RtmVehicle[], selectedId?: string | null): RtmVehicle[] {
-  return vehicles.filter((v) => v.role !== "middle" || v.id === selectedId);
+  return vehicles.filter((v) => v.role !== "middle" || isFreightCar(v) || v.id === selectedId);
 }
 
 /** 先頭車の「中間車」に選べる車両（先頭車として見分けた車両は外す） */
