@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type ConsistSize, type VehicleType } from "@/lib/drive";
 import { consistSizeOf } from "@/lib/rtm/pack";
-import { useRtmVehicles } from "../rtm/RtmVehicles";
+import { RtmVehiclesDialog, useRtmVehicles } from "../rtm/RtmVehicles";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
 import {
@@ -391,6 +391,7 @@ function TrainEditor({
     onChange({ stops: s });
   };
   const rtmVehicles = useRtmVehicles();
+  const [rtmOpen, setRtmOpen] = useState(false);
   /** RealTrainMod の車両の編成の長さ（このブラウザにその車両がなければ null = 分からない） */
   const rtmSize = (type: VehicleType | undefined): ConsistSize | undefined | null => {
     const id = rtmVehicleId(type);
@@ -466,6 +467,25 @@ function TrainEditor({
             )}
           </select>
         </label>
+        {rtmAllowed ? (
+          <button className="mini op-rtm-button" onClick={() => setRtmOpen(true)} title="RealTrainMod の車両パックを読み込んで、この列車の映像の車両にする">
+            RTMの車両…
+          </button>
+        ) : (
+          <button className="mini op-rtm-button" disabled title="RealTrainMod の車両は、プレミアムユーザー・プレミアムプラス・管理者が使えます">
+            RTMの車両…
+          </button>
+        )}
+        {rtmOpen && rtmAllowed && (
+          <RtmVehiclesDialog
+            onClose={() => setRtmOpen(false)}
+            pickLabel="この列車に使う"
+            onPick={(id) => {
+              setVehicle(rtmVehicleType(id));
+              setRtmOpen(false);
+            }}
+          />
+        )}
         <label>
           線の色
           <input type="color" value={train.color} onChange={(e) => onChange({ color: e.target.value })} />

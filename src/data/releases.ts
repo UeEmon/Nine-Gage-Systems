@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-26-realtrainmod-operation-plan",
+    date: "2026-11-26T05:30:00+09:00",
+    title: "運行計画の画面でも RealTrainMod の車両を読み込めるようになりました",
+    body: "運行計画の「列車の設定」にある「RTMの車両…」から車両パックを読み込み、「この列車に使う」を押すと、その列車の映像の車両になります。編成の長さも、その車両の長さで計算されます（プレミアムユーザー・プレミアムプラス・管理者）。",
+  },
+  {
     id: "2026-11-26-realtrainmod-more-packs",
     date: "2026-11-26T01:30:00+09:00",
     title: "RealTrainMod の車両パックを読み込みやすくし、車両の長さを実物どおりにしました",
