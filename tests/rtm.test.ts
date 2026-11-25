@@ -6,7 +6,7 @@ import { buildTrain } from "../src/lib/driveScene";
 import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { assignCarRoles, consistSizeOf, findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
+import { assignCarRoles, consistSizeOf, findFile, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
 import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
@@ -424,12 +424,16 @@ describe("RealTrainMod の車両パック", () => {
     ]);
     // 見分けられないパック（貨車だけ）には何も付けない
     const none = makeZip([...car("w_1", "w1.mqo"), ...car("w_2", "w2.mqo"), ...common]);
+    // 中間車だけのパック（グリーン車など）は中間車として扱う
+    const greens = makeZip([...car("g_Ts232", "g_Ts232.mqo"), ...car("g_Ts233", "g_Ts233.mqo"), ...common]);
     const { vehicles } = await readVehicleFiles([
       { name: "byName.zip", data: byName },
       { name: "byPos.zip", data: byPos },
       { name: "none.zip", data: none },
+      { name: "greens.zip", data: greens },
     ]);
     const get = (n: string) => vehicles.find((v) => v.name === n)!;
+    expect(get("g_Ts232").role).toBe("middle");
     expect(get("Hr_X_1001").role).toBe("cab");
     expect(get("Hr_X_1001").middleId).toBe(vehicleId("Hr_X_1002"));
     expect(get("Hr_X_0001").middleId).toBe(vehicleId("Hr_X_0002"));
@@ -443,5 +447,13 @@ describe("RealTrainMod の車両パック", () => {
     // 自分で選んだ中間車はそのまま
     const kept = assignCarRoles([{ ...get("Hr_X_1001"), role: undefined, middleId: "vmine" }, get("Hr_X_1002")]);
     expect(kept[0].middleId).toBe("vmine");
+    // 列車として選べるのは先頭車と見分けられない車両だけ。中間車の選択肢に先頭車は出さない
+    const names = (l: { name: string }[]) => l.map((v) => v.name).sort();
+    expect(names(leadVehicles(vehicles))).toEqual(["Hr_X_0001", "Hr_X_1001", "m_7001", "m_7101", "w_1", "w_2"]);
+    expect(leadVehicles(vehicles, vehicleId("m_7201")).some((v) => v.name === "m_7201")).toBe(true);
+    const mids = middleCandidates(vehicles, get("Hr_X_1001"));
+    expect(mids[0].role).toBe("middle");
+    expect(mids.some((v) => v.role === "cab")).toBe(false);
+    expect(mids.some((v) => v.name === "w_1")).toBe(true);
   });
 });
