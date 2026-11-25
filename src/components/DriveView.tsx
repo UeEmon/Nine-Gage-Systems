@@ -10,6 +10,7 @@ import {
   VEHICLE_TYPES,
   defaultVehicleType,
   type VehicleType,
+  type ConsistSize,
   makeSegment,
   rtmVehicleId,
   rtmVehicleType,
@@ -23,7 +24,7 @@ import {
 } from "@/lib/drive";
 import { bedStyle, buildScene, buildTrain } from "@/lib/driveScene";
 import type { Layout } from "@/lib/geometry";
-import type { RtmVehicle } from "@/lib/rtm/pack";
+import { consistSizeOf, type RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, type VehicleKit } from "@/lib/rtm/three";
 import { RtmVehiclesDialog, useRtmVehicles } from "./rtm/RtmVehicles";
 import { getPart } from "@/lib/parts";
@@ -187,6 +188,15 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
     const middle = middleId ? kitFor(middleId) ?? undefined : undefined;
     return { front, middle };
   };
+  /** 読み込んだ RealTrainMod の車両の編成の長さ（組み込みの車両なら undefined） */
+  const rtmSizeFor = (type: VehicleType | undefined): ConsistSize | undefined => {
+    const id = rtmVehicleId(type);
+    const v = id ? rtmRef.current.find((x) => x.id === id) : undefined;
+    if (!v) return undefined;
+    return consistSizeOf(v, v.middleId ? rtmRef.current.find((x) => x.id === v.middleId) : undefined);
+  };
+  const rtmSizeForRef = useRef(rtmSizeFor);
+  rtmSizeForRef.current = rtmSizeFor;
   const rtmKitsForRef = useRef(rtmKitsFor);
   rtmKitsForRef.current = rtmKitsFor;
   useEffect(() => {
@@ -271,7 +281,8 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
     }
     const planMode = mode === "plan" && op.trains.length > 0;
     if (planMode && !(ctl.current.t >= op.startT && ctl.current.t <= op.endT)) ctl.current.t = op.startT;
-    const drive = new Drive(graph, ref, Math.random, trainLength(CARS) + CHASE_BACK_MM + 20);
+    // 車両の長さは選んだ車両で変わるので、長い車両（25m級）でも足りる分の走った跡を残す
+    const drive = new Drive(graph, ref, Math.random, Math.max(trainLength(CARS), CARS * 175) + CHASE_BACK_MM + 20);
     drive.policy = policy;
     driveRef.current = drive;
     ctl.current.kmh = 0;
@@ -303,6 +314,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
     scene.add(world.group);
     let currentVehicleType = vehicleTypeRef.current;
     let currentRtm = rtmKitsForRef.current(currentVehicleType);
+    let currentSize = currentRtm ? rtmSizeForRef.current(currentVehicleType) : undefined;
     let train = buildTrain(CARS, 0x2f6fb5, currentVehicleType, currentRtm);
     scene.add(train.group);
     // 運行計画の列車（線の色で塗る）。読み込んだ RealTrainMod の車両がこの端末になければ列車種別に合わせる
@@ -375,6 +387,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
           train.dispose();
           currentVehicleType = vehicleTypeRef.current;
           currentRtm = wantRtm;
+          currentSize = currentRtm ? rtmSizeForRef.current(currentVehicleType) : undefined;
           train = buildTrain(CARS, 0x2f6fb5, currentVehicleType, currentRtm);
           scene.add(train.group);
         }
@@ -409,7 +422,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
           const st = x.playback.stateAt(c.t);
           mesh.group.visible = !st.hidden && !(x === ride && c.view === "cab");
           if (!mesh.group.visible) return;
-          carPlacements(x.playback.at(c.t), x.train.cars).forEach((p, k) => {
+          carPlacements(x.playback.at(c.t), x.train.cars, x.train.carSize).forEach((p, k) => {
             const car = mesh.cars[k];
             car.position.copy(v(p));
             car.rotation.set(0, -(p.heading * Math.PI) / 180, p.pitch, "YXZ");
@@ -431,12 +444,12 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
         if (c.kmh > 0) drive.advance(Math.min(scaleKmhToMmPerSec(c.kmh) * dt, Math.max(0, remaining)), 80);
         pose = drive.poseAt(0);
         ahead = drive.poseAt(45);
-        behind = drive.poseAt(-(trainLength(CARS) + CHASE_BACK_MM));
+        behind = drive.poseAt(-(trainLength(CARS, currentSize) + CHASE_BACK_MM));
 
         // 車両は現在位置を先頭の前端にして、各車両を前後の台車の位置で線路に沿わせる
         train.group.visible = c.view !== "cab";
         if (c.view !== "cab") {
-          carPlacements(drive, CARS).forEach((p, i) => {
+          carPlacements(drive, CARS, currentSize).forEach((p, i) => {
             const car = train.cars[i];
             car.position.copy(v(p));
             car.rotation.set(0, -(p.heading * Math.PI) / 180, p.pitch, "YXZ");
@@ -493,7 +506,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
                   points: bodyPoints((o) => x.playback.poseAt(c.t, o), x.playback.length),
                   ride: x === ride,
                 }))
-            : [{ id: "", color: "#2f6fb5", points: bodyPoints((o) => drive.poseAt(o), trainLength(CARS)), ride: true }],
+            : [{ id: "", color: "#2f6fb5", points: bodyPoints((o) => drive.poseAt(o), trainLength(CARS, currentSize)), ride: true }],
           c.view === "fixed" ? fixedPositionRef.current : null,
         );
       }

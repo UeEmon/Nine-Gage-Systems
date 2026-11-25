@@ -3,16 +3,21 @@
 // 車両パックは作者ごとに利用条件が違うので、SenroLab には同梱しない。
 // 利用者が自分の持っている車両パックを選び、ブラウザの中だけで読む（サーバーには送らない）。
 
-import { SUPPORTED_MODEL } from "./model";
-import { decodeText } from "./model";
+import { decodeText, parseModelFile, SUPPORTED_MODEL } from "./model";
+import { N_CAR, type CarSize, type ConsistSize } from "../drive";
 import { readZip, type ZipEntry } from "./zip";
+
+/** 実物 1m → 模型の mm（1/150） */
+export const MM_PER_M = 1000 / 150;
 
 export type RtmTexture = {
   /** マテリアル名（"default" は、ほかに当てはまらないマテリアル全部） */
   material: string;
   path: string;
-  /** "Light"（光る）・"AlphaBlend"（半透明）など */
+  /** "Light"（前照灯・尾灯のテクスチャを重ねて光らせる）・"AlphaBlend"（半透明）など */
   option: string;
+  /** Light のとき重ねるテクスチャ（[消灯, 前照灯, 尾灯]。パックの中のパス、見つからなければ null） */
+  lights?: (string | null)[];
 };
 
 export type RtmModelSource = { modelFile: string; textures: RtmTexture[] };
@@ -47,34 +52,102 @@ export type RtmVehicle = {
   addedAt: number;
 };
 
-/** Gson と同じくらいゆるく json を読む（コメント・末尾のカンマ・単引用符を許す） */
+/**
+ * Gson の lenient モードと同じくらいゆるく json を読む（RTM の車両パックは Gson で読むので、厳密な json でないものが多い）。
+ * コメント（行コメント・ブロックコメント・#）・末尾のカンマ・単引用符・引用符のないキーや値（trta010_7001 など）・区切りの ; と = を許す
+ */
 export function parseLenientJson(text: string): unknown {
-  let out = "";
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' || c === "'") {
-      let s = '"';
-      for (i++; i < text.length && text[i] !== c; i++) {
-        if (text[i] === "\\") {
-          s += text[i] + (text[i + 1] ?? "");
-          i++;
-        } else if (text[i] === '"') s += '\\"';
-        else if (text[i] === "\n" || text[i] === "\r") s += text[i] === "\n" ? "\\n" : "";
-        else s += text[i];
+  let i = 0;
+  const fail = (msg: string): never => {
+    throw new Error(`${msg}（${i}文字目）`);
+  };
+  const skip = () => {
+    for (;;) {
+      const c = text[i];
+      if (c === undefined) return;
+      if (c === " " || c === "\t" || c === "\n" || c === "\r" || c === "\uFEFF") i++;
+      else if (c === "/" && text[i + 1] === "/") while (i < text.length && text[i] !== "\n") i++;
+      else if (c === "#") while (i < text.length && text[i] !== "\n") i++;
+      else if (c === "/" && text[i + 1] === "*") {
+        const e = text.indexOf("*/", i + 2);
+        i = e < 0 ? text.length : e + 2;
+      } else return;
+    }
+  };
+  const quoted = (q: string): string => {
+    let out = "";
+    for (i++; i < text.length && text[i] !== q; i++) {
+      if (text[i] !== "\\") {
+        out += text[i];
+        continue;
       }
-      out += s + '"';
-    } else if (c === "/" && text[i + 1] === "/") {
-      while (i < text.length && text[i] !== "\n") i++;
-      out += "\n";
-    } else if (c === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      i = end < 0 ? text.length : end + 1;
-    } else if (c === "#") {
-      while (i < text.length && text[i] !== "\n") i++;
-      out += "\n";
-    } else out += c;
-  }
-  return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
+      const e = text[++i];
+      if (e === "u") {
+        out += String.fromCharCode(parseInt(text.slice(i + 1, i + 5), 16) || 0);
+        i += 4;
+      } else out += ({ n: "\n", t: "\t", r: "\r", b: "\b", f: "\f" } as Record<string, string>)[e] ?? e;
+    }
+    if (text[i] !== q) fail("文字列が閉じていません");
+    i++;
+    return out;
+  };
+  const literal = (): string => {
+    const m = /^[^\s,:;={}[\]"'#/]+/.exec(text.slice(i, i + 4096));
+    if (!m) fail("値がありません");
+    i += m![0].length;
+    return m![0];
+  };
+  const value = (): unknown => {
+    skip();
+    const c = text[i];
+    if (c === "{") {
+      i++;
+      const o: Record<string, unknown> = {};
+      for (;;) {
+        skip();
+        if (text[i] === "}") {
+          i++;
+          return o;
+        }
+        if (text[i] === "," || text[i] === ";") {
+          i++;
+          continue;
+        }
+        const key = text[i] === '"' || text[i] === "'" ? quoted(text[i]) : literal();
+        skip();
+        if (text[i] === ":") i++;
+        else if (text[i] === "=") i += text[i + 1] === ">" ? 2 : 1;
+        else fail("キーのあとに : がありません");
+        o[key] = value();
+      }
+    }
+    if (c === "[") {
+      i++;
+      const a: unknown[] = [];
+      for (;;) {
+        skip();
+        if (text[i] === "]") {
+          i++;
+          return a;
+        }
+        if (text[i] === "," || text[i] === ";") {
+          i++;
+          continue;
+        }
+        a.push(value());
+      }
+    }
+    if (c === '"' || c === "'") return quoted(c);
+    if (c === undefined) fail("途中で終わっています");
+    const lit = literal();
+    if (lit === "true") return true;
+    if (lit === "false") return false;
+    if (lit === "null") return null;
+    const n = Number(lit);
+    return /^[-+]?(\d|\.\d)/.test(lit) && Number.isFinite(n) ? n : lit;
+  };
+  const v = value();
+  return v;
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -87,7 +160,10 @@ function source(v: unknown): RtmModelSource | null {
   if (!modelFile) return null;
   const textures = (Array.isArray(o.textures) ? o.textures : [])
     .filter((t): t is unknown[] => Array.isArray(t) && t.length >= 2 && typeof t[1] === "string")
-    .map((t) => ({ material: str(t[0]) || "default", path: str(t[1]), option: str(t[2]) }));
+    .map((t) => {
+      const lights = t.slice(3).filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => x.trim());
+      return { material: str(t[0]) || "default", path: str(t[1]), option: str(t[2]), ...(lights.length ? { lights } : {}) };
+    });
   return { modelFile, textures };
 }
 
@@ -149,17 +225,37 @@ export function findFile(paths: string[], wanted: string): string | null {
   return paths.find((p) => p.split("/").pop()!.toLowerCase() === base) ?? null;
 }
 
-/** 前照灯・尾灯で差し替えるテクスチャ（xxx.png → xxx0.png 消灯, xxx1.png 前照灯, xxx2.png 尾灯）の候補 */
-export function lightVariants(path: string): string[] {
+/** 前照灯・尾灯を光らせるテクスチャの名前（RTM と同じく xxx.png → xxx_light0.png 消灯, xxx_light1.png 前照灯, xxx_light2.png 尾灯） */
+export function lightTextureNames(path: string): string[] {
   const m = /^(.*?)(\.[^./]+)$/.exec(path);
-  if (!m) return [path];
-  return [path, `${m[1]}0${m[2]}`, `${m[1]}1${m[2]}`, `${m[1]}2${m[2]}`];
+  const [stem, ext] = m ? [m[1], m[2]] : [path, ".png"];
+  return [0, 1, 2].map((n) => `${stem}_light${n}${ext}`);
+}
+
+/**
+ * 車両の模型での長さ（mm、1/150）。RTM の trainDistance（車体長の半分）の2倍を連結面の間とし、
+ * そこから連結のすきまを引いたものを車体の長さにする（SenroLab の編成の長さの計算と同じ考え方）
+ */
+export function carSizeOf(v: Pick<RtmVehicle, "config">): CarSize {
+  const length = Math.max(20, v.config.trainDistance * 2 * MM_PER_M - N_CAR.gap);
+  const zs = v.config.bogiePos.map((p) => p[2]);
+  const bogie = zs.length >= 2 ? (Math.max(...zs) - Math.min(...zs)) * MM_PER_M : length * 0.7;
+  return { length: Math.round(length * 10) / 10, bogieCenters: Math.round(Math.min(length, bogie) * 10) / 10 };
+}
+
+/** 先頭・最後尾がこの車両、中間車が middle（なければ同じ車両）の編成の長さ */
+export function consistSizeOf(v: Pick<RtmVehicle, "config">, middle?: Pick<RtmVehicle, "config">): ConsistSize {
+  const end = carSizeOf(v);
+  const mid = middle ? carSizeOf(middle) : null;
+  return mid && (mid.length !== end.length || mid.bogieCenters !== end.bogieCenters) ? { end, middle: mid } : { end };
 }
 
 export type PackResult = { vehicles: RtmVehicle[]; problems: string[] };
 
 const isJson = (p: string) => /\.json$/i.test(p);
-const wantedEntry = (p: string) => isJson(p) || SUPPORTED_MODEL.test(p) || /\.(png|jpe?g|mtl|npm|ngto)$/i.test(p);
+/** macOS の圧縮で入る付属ファイル（__MACOSX/ と ._ で始まるもの）は中身ではない */
+const isMacJunk = (p: string) => /(^|\/)__MACOSX\//.test(p) || /(^|\/)\._[^/]*$/.test(p) || /(^|\/)\.DS_Store$/.test(p);
+const wantedEntry = (p: string) => !isMacJunk(p) && (isJson(p) || SUPPORTED_MODEL.test(p) || /\.(png|jpe?g|mtl|npm|ngto)$/i.test(p));
 
 /** 読み込んだファイル（ZIP を開いた中身、または直接選んだファイル）から車両を取り出す */
 export function vehiclesFromEntries(entries: ZipEntry[], sourceName: string, now = Date.now()): PackResult {
@@ -192,14 +288,20 @@ export function vehiclesFromEntries(entries: ZipEntry[], sourceName: string, now
       }
       const model = take(src.modelFile);
       if (!model) {
-        problems.push(`${config.name}: ${what}のモデル ${src.modelFile} が見つかりません`);
+        problems.push(
+          what === "台車"
+            ? `${config.name}: 台車のモデル ${src.modelFile} がこのパックにないので、簡易な台車で表示します（ほかの車両パックの台車を使う車両）`
+            : `${config.name}: ${what}のモデル ${src.modelFile} が見つかりません`,
+        );
         return null;
       }
       if (/\.obj$/i.test(model)) take(model.replace(/\.obj$/i, ".mtl"));
-      const textures = src.textures.map((t) => {
-        const found = lightVariants(t.path).map(take).filter((x): x is string => !!x);
-        if (found.length === 0) problems.push(`${config.name}: テクスチャ ${t.path} が見つかりません`);
-        return { ...t, path: found[0] ?? t.path };
+      const textures = src.textures.map((t): RtmTexture => {
+        const found = take(t.path);
+        if (!found) problems.push(`${config.name}: テクスチャ ${t.path} が見つかりません`);
+        if (!/light/i.test(t.option)) return { ...t, path: found ?? t.path };
+        const lights = (t.lights?.filter((x): x is string => !!x) ?? lightTextureNames(t.path)).map((x) => take(x));
+        return { ...t, path: found ?? t.path, lights };
       });
       return { modelFile: model, textures };
     };
@@ -220,26 +322,74 @@ export function vehiclesFromEntries(entries: ZipEntry[], sourceName: string, now
   return { vehicles, problems };
 }
 
-/** 選んだファイル（車両パックの ZIP、または json・モデル・テクスチャをまとめて選んだもの）から車両を取り出す */
-export async function readVehicleFiles(files: { name: string; data: Uint8Array }[]): Promise<PackResult> {
+const isArchive = (p: string) => /\.(zip|jar)$/i.test(p);
+
+/**
+ * 車両パックの ZIP を読む。配布用の ZIP の中に車両パックの ZIP が入っている形（readme と一緒に配る形）も、
+ * 2段まで開いて読む
+ */
+async function vehiclesFromZip(data: Uint8Array, sourceName: string, depth = 0): Promise<PackResult> {
+  const entries = await readZip(data, (p) => wantedEntry(p) || (depth < 2 && isArchive(p) && !isMacJunk(p)));
+  const inner = entries.filter((e) => isArchive(e.path));
+  const own = vehiclesFromEntries(entries.filter((e) => !isArchive(e.path)), sourceName);
+  const vehicles = [...own.vehicles];
+  const problems = own.vehicles.length > 0 || inner.length === 0 ? [...own.problems] : own.problems.filter((p) => !p.endsWith("見つかりませんでした"));
+  for (const e of inner) {
+    try {
+      const r = await vehiclesFromZip(e.data, `${sourceName}/${e.path.split("/").pop()}`, depth + 1);
+      vehicles.push(...r.vehicles);
+      // 中の ZIP が車両パックでない（音のパックなど）ときは黙って飛ばす
+      problems.push(...(r.vehicles.length > 0 ? r.problems : r.problems.filter((p) => !p.endsWith("見つかりませんでした"))));
+    } catch {
+      /* 壊れた ZIP は飛ばす */
+    }
+  }
+  if (vehicles.length === 0 && problems.length === 0) problems.push(`${sourceName}: RealTrainMod の車両（ModelTrain の json）が見つかりませんでした`);
+  return { vehicles, problems };
+}
+
+/** 車体のモデルを実際に読んでみて、読めない車両は理由を付けて外す */
+async function checkModels(r: PackResult): Promise<PackResult> {
+  const vehicles: RtmVehicle[] = [];
+  const problems = [...r.problems];
+  for (const v of r.vehicles) {
+    const file = v.config.body.modelFile;
+    try {
+      const model = await parseModelFile(file, v.files[file]);
+      if (model && model.parts.length > 0) vehicles.push(v);
+      else problems.push(`${v.name}: 車体のモデル ${file} に読める形（三角形・四角形の面）がありません`);
+    } catch {
+      problems.push(`${v.name}: 車体のモデル ${file} を読めませんでした`);
+    }
+  }
+  return { vehicles, problems };
+}
+
+/**
+ * 選んだファイル（車両パックの ZIP、展開したフォルダの中身、または json・モデル・テクスチャをまとめて選んだもの）から車両を取り出す。
+ * path はフォルダを選んだときのフォルダからのパス（なければファイル名）
+ */
+export async function readVehicleFiles(files: { name: string; path?: string; data: Uint8Array }[]): Promise<PackResult> {
   const vehicles: RtmVehicle[] = [];
   const problems: string[] = [];
   const loose: ZipEntry[] = [];
   for (const f of files) {
-    if (/\.(zip|jar)$/i.test(f.name)) {
+    if (isArchive(f.name)) {
       try {
-        const r = vehiclesFromEntries(await readZip(f.data, wantedEntry), f.name);
+        const r = await vehiclesFromZip(f.data, f.name);
         vehicles.push(...r.vehicles);
         problems.push(...r.problems);
       } catch (e) {
         problems.push(`${f.name}: ${e instanceof Error ? e.message : "読めませんでした"}`);
       }
-    } else loose.push({ path: f.name, data: f.data });
+    } else if (wantedEntry(f.path ?? f.name)) loose.push({ path: (f.path ?? f.name).replace(/\\/g, "/"), data: f.data });
+    else if (/\.(rar|7z|lzh)$/i.test(f.name)) problems.push(`${f.name}: この圧縮形式は読めません。展開してフォルダを選ぶか、ZIP にしてください`);
   }
   if (loose.length > 0) {
-    const r = vehiclesFromEntries(loose, loose.find((e) => isJson(e.path))?.path ?? loose[0].path);
+    const r = vehiclesFromEntries(loose, (loose[0].path.includes("/") ? loose[0].path.split("/")[0] : loose.find((e) => isJson(e.path))?.path) ?? loose[0].path);
     vehicles.push(...r.vehicles);
     problems.push(...r.problems);
   }
-  return { vehicles, problems };
+  const r = await checkModels({ vehicles, problems });
+  return { vehicles: r.vehicles, problems: [...new Set(r.problems)] };
 }

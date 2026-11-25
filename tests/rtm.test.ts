@@ -1,13 +1,13 @@
 import { deflateRawSync } from "node:zlib";
-import { Box3, Vector3 } from "three";
+import { Box3, Object3D, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { isVehicleType, N_CAR, rtmVehicleId, rtmVehicleType } from "../src/lib/drive";
+import { carPlacements, isVehicleType, N_CAR, rtmVehicleId, rtmVehicleType, trainLength } from "../src/lib/drive";
 import { buildTrain } from "../src/lib/driveScene";
-import { normalizeOperation } from "../src/lib/operation";
+import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, vehicleId } from "../src/lib/rtm/pack";
-import { buildVehicleKit, lightTexturePath, MM_PER_M } from "../src/lib/rtm/three";
+import { consistSizeOf, findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, vehicleId } from "../src/lib/rtm/pack";
+import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
 /** テスト用の ZIP（deflate）を作る */
@@ -124,9 +124,10 @@ function samplePack(): Uint8Array {
     { path: "assets/minecraft/models/test_103.mqo", data: BODY_MQO },
     { path: "assets/minecraft/models/test_bogie.obj", data: BOGIE_OBJ },
     { path: "assets/minecraft/textures/train/test_103.png", data: PNG },
-    { path: "assets/minecraft/textures/train/test_103_light0.png", data: PNG },
-    { path: "assets/minecraft/textures/train/test_103_light1.png", data: PNG },
-    { path: "assets/minecraft/textures/train/test_103_light2.png", data: PNG },
+    { path: "assets/minecraft/textures/train/test_103_light.png", data: PNG },
+    { path: "assets/minecraft/textures/train/test_103_light_light0.png", data: PNG },
+    { path: "assets/minecraft/textures/train/test_103_light_light1.png", data: PNG },
+    { path: "assets/minecraft/textures/train/test_103_light_light2.png", data: PNG },
     { path: "assets/minecraft/textures/train/test_bogie.png", data: PNG },
     { path: "assets/minecraft/sounds/test.ogg", data: "x" },
   ]);
@@ -196,8 +197,12 @@ describe("RealTrainMod の車両パック", () => {
     expect(v.source).toBe("test-pack.zip");
     expect(v.config.body.modelFile).toBe("assets/minecraft/models/test_103.mqo");
     expect(Object.keys(v.files).some((p) => p.endsWith(".ogg"))).toBe(false);
-    expect(lightTexturePath(v.files, v.config.body.textures[1].path, "rear")).toBe("assets/minecraft/textures/train/test_103_light2.png");
-    expect(lightTexturePath(v.files, v.config.body.textures[1].path, "front")).toBe("assets/minecraft/textures/train/test_103_light1.png");
+    // Light のテクスチャは xxx_light0〜2.png を重ねる（先頭は前照灯、最後尾は尾灯）
+    const lights = v.config.body.textures[1].lights!;
+    expect(lights).toEqual([0, 1, 2].map((n) => `assets/minecraft/textures/train/test_103_light_light${n}.png`));
+    expect(lights[lightIndex("rear")]).toMatch(/light2\.png$/);
+    expect(lights[lightIndex("front")]).toMatch(/light1\.png$/);
+    expect(lights[lightIndex("middle")]).toMatch(/light0\.png$/);
   });
 
   it("見つからないモデルや暗号化されたモデルは理由を返す", async () => {
@@ -224,7 +229,7 @@ describe("RealTrainMod の車両パック", () => {
     expect(r.problems.some((p) => p.includes("test_bogie.png"))).toBe(true);
   });
 
-  it("映像の車両は幅・高さが 1/150、長さは1両分（編成の長さの計算と同じ）になる", async () => {
+  it("映像の車両は実物の 1/150 になる", async () => {
     const { vehicles } = await readVehicleFiles([{ name: "test-pack.zip", data: samplePack() }]);
     const kit = await buildVehicleKit(vehicles[0]);
     const train = buildTrain(3, 0x2f6fb5, rtmVehicleType(vehicles[0].id), { front: kit });
@@ -232,8 +237,8 @@ describe("RealTrainMod の車両パック", () => {
     train.group.updateMatrixWorld(true);
     const box = new Box3().setFromObject(train.cars[0].children[0].children[0].children[0]);
     const size = box.getSize(new Vector3());
-    // 連結面の間（20m）が N_CAR の全長 + すきま になる
-    expect(size.x).toBeCloseTo(20 * ((N_CAR.length + N_CAR.gap) / 20), 1);
+    // 長さも実物の 1/150（20m → 133.3mm）
+    expect(size.x).toBeCloseTo(20 * MM_PER_M, 1);
     expect(size.z).toBeCloseTo(2.9 * MM_PER_M, 1);
     // 台車の車輪の下（y=0）がレール面。車体の床下は 1m の高さ
     expect(box.min.y).toBeCloseTo(1 * MM_PER_M, 1);
@@ -266,5 +271,112 @@ describe("RealTrainMod の車両パック", () => {
     expect(canUseRtm("ai")).toBe(true);
     expect(canUseRtm("user")).toBe(false);
     expect(canUseRtm(null)).toBe(false);
+  });
+
+  it("引用符のない値・; 区切りなど、Gson なら読める json も読む", () => {
+    const j = parseLenientJson(`{\r\n"trainName": trta010_7001,\r\n'a' = 1.5; b: [x, -2, true,],\r\n"c": "AlphaBlend,Light"}`);
+    expect(j).toEqual({ trainName: "trta010_7001", a: 1.5, b: ["x", -2, true], c: "AlphaBlend,Light" });
+  });
+
+  it("macOS で圧縮し直したパック（フォルダ付き・__MACOSX 入り）や、ZIP の中の ZIP も読む", async () => {
+    const pack = samplePack();
+    const entries = await readZip(pack);
+    const mac = makeZip([
+      ...entries.map((e) => ({ path: `MyPack/${e.path}`, data: e.data })),
+      { path: "__MACOSX/MyPack/._ModelTrain_test103.json", data: new Uint8Array([0, 5, 22, 7, 0, 2]) },
+      { path: "__MACOSX/MyPack/assets/minecraft/models/._test_103.mqo", data: new Uint8Array([0, 5, 22, 7]) },
+    ]);
+    const r = await readVehicleFiles([{ name: "mac.zip", data: mac }]);
+    expect(r.problems).toEqual([]);
+    expect(r.vehicles.map((v) => v.name)).toEqual(["テスト103系 クハ"]);
+    const outer = makeZip([{ path: "readme.txt", data: "読んでね" }, { path: "pack/test-pack.zip", data: pack }]);
+    const n = await readVehicleFiles([{ name: "配布.zip", data: outer }]);
+    expect(n.problems).toEqual([]);
+    expect(n.vehicles[0].source).toBe("配布.zip/test-pack.zip");
+  });
+
+  it("ほかのパックの台車を使う車両は、簡易な台車で表示する", async () => {
+    const zip = makeZip([
+      { path: "ModelTrain_x.json", data: `{"trainName":"X","trainModel2":{"modelFile":"test_103.mqo","textures":[["default","t.png"]]},"bogieModel2":{"modelFile":"Other/bogie_DT71.mqo","textures":[]},"bogiePos":[[0,0,7],[0,0,-7]],"trainDistance":10}` },
+      { path: "models/test_103.mqo", data: BODY_MQO },
+      { path: "t.png", data: PNG },
+    ]);
+    const r = await readVehicleFiles([{ name: "x.zip", data: zip }]);
+    expect(r.vehicles).toHaveLength(1);
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toMatch(/簡易な台車/);
+    const kit = await buildVehicleKit(r.vehicles[0]);
+    const car = kit.makeCar("front");
+    car.updateMatrixWorld(true);
+    const bogies: Object3D[] = [];
+    car.traverse((o) => o.name === "rtm-simple-bogie" && bogies.push(o));
+    expect(bogies).toHaveLength(2);
+    // 台車がなくても、RTM の標準どおり y=-1.04m をレール面にする
+    expect(new Box3().setFromObject(bogies[0]).min.y).toBeCloseTo(0, 1);
+    kit.dispose();
+  });
+
+  it("展開したフォルダを選んでも読める", async () => {
+    const entries = await readZip(samplePack());
+    const r = await readVehicleFiles(entries.map((e) => ({ name: e.path.split("/").pop()!, path: `MyPack/${e.path}`, data: e.data })));
+    expect(r.problems).toEqual([]);
+    expect(r.vehicles[0].source).toBe("MyPack");
+    expect(r.vehicles[0].config.bogies[0]?.modelFile).toBe("MyPack/assets/minecraft/models/test_bogie.obj");
+  });
+
+  it("編成の長さは車両ごとの長さで計算する（短い貨車・長い車両）", () => {
+    const toki = { config: { ...parseTrainConfig({ trainName: "toki", trainModel: "a.mqo", bogiePos: [[0, 0, 5], [0, 0, -5]], trainDistance: 7 })! } };
+    const size = consistSizeOf(toki);
+    // 連結面の間 14m → 93.3mm から連結のすきまを引く
+    expect(size.end.length).toBeCloseTo(14 * MM_PER_M - N_CAR.gap, 0);
+    expect(size.end.bogieCenters).toBeCloseTo(10 * MM_PER_M, 0);
+    expect(size.middle).toBeUndefined();
+    // 5両: 両端と中間が同じ長さ
+    expect(trainLength(5, size)).toBeCloseTo(5 * size.end.length + 4 * N_CAR.gap);
+    expect(trainLength(5)).toBe(5 * N_CAR.length + 4 * N_CAR.gap);
+    // 600mm のホームに、20m級は4両、トキは6両入る
+    expect(carsFitting(600)).toBe(4);
+    expect(carsFitting(600, size)).toBe(6);
+    // 中間車が違う長さの編成
+    const long = { config: { ...toki.config, trainDistance: 12.5, bogiePos: [[0, 0, 8.75], [0, 0, -8.75]] as [number, number, number][] } };
+    const mixed = consistSizeOf(toki, long);
+    expect(mixed.middle!.length).toBeCloseTo(25 * MM_PER_M - N_CAR.gap, 0);
+    expect(trainLength(3, mixed)).toBeCloseTo(2 * mixed.end.length + mixed.middle!.length + 2 * N_CAR.gap);
+  });
+
+  it("車両の置き方は車両ごとの長さで並ぶ", () => {
+    const straight = { poseAt: (o = 0) => ({ x: o, y: 0, z: 0 }) as never };
+    const size = { end: { length: 90, bogieCenters: 60 }, middle: { length: 160, bogieCenters: 110 } };
+    const [a, b, c] = carPlacements(straight, 3, size);
+    expect(a.x).toBeCloseTo(-45);
+    expect(b.x).toBeCloseTo(-(90 + 3 + 80));
+    expect(c.x).toBeCloseTo(-(90 + 3 + 160 + 3 + 45));
+  });
+
+  it("運行計画に車両の長さを保存できる（おかしな値は捨てる）", () => {
+    const base = { id: "a", name: "A", kind: "local", color: "#2f6fb5", cars: 4, speedKmh: 80, departSec: 0, laps: 1, stops: [] };
+    const plan = normalizeOperation({
+      stationNames: {},
+      trains: [
+        { ...base, carSize: { end: { length: 90.3, bogieCenters: 66.7 } } },
+        { ...base, id: "b", carSize: { end: { length: 5, bogieCenters: 1 } } },
+        { ...base, id: "c", carSize: { end: { length: 133, bogieCenters: 92 }, middle: { length: 160, bogieCenters: 999 } } },
+      ],
+    })!;
+    expect(plan.trains[0].carSize).toEqual({ end: { length: 90.3, bogieCenters: 66.7 } });
+    expect(plan.trains[1].carSize).toBeUndefined();
+    expect(plan.trains[2].carSize).toEqual({ end: { length: 133, bogieCenters: 92 } });
+  });
+
+  it("台車の幅だけ 9mm の線路に合わせる（車体は 1/150 のまま）", async () => {
+    const { vehicles } = await readVehicleFiles([{ name: "test-pack.zip", data: samplePack() }]);
+    const kit = await buildVehicleKit(vehicles[0]);
+    const car = kit.makeCar("front");
+    car.updateMatrixWorld(true);
+    const bogie = car.getObjectByName("rtm-bogie")!;
+    // 台車の幅 2m → 1/150 で 13.3mm、9mm の線路に合わせて 1067mm → 9mm の倍率で広げる
+    expect(new Box3().setFromObject(bogie).getSize(new Vector3()).z).toBeCloseTo(2 * MM_PER_M * BOGIE_GAUGE_FIT, 1);
+    expect(new Box3().setFromObject(car.getObjectByName("rtm-body")!).getSize(new Vector3()).z).toBeCloseTo(2.9 * MM_PER_M, 1);
+    kit.dispose();
   });
 });

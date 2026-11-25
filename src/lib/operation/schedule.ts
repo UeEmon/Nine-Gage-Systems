@@ -318,7 +318,7 @@ function scheduleTrain(
   }
 
   const v = scaleKmhToMmPerSec(train.speedKmh);
-  const len = trainLength(train.cars);
+  const len = trainLength(train.cars, train.carSize);
   const first = stops[0];
   const origin = stations.get(first.stop.stationId)!;
   const cands = originCandidates(cache, origin, first.stop.track, len);
@@ -346,7 +346,7 @@ function scheduleTrain(
   const checkPlatform = (st: Station, track: number): boolean => {
     const pl = st.tracks.find((x) => x.number === track)?.platformLength;
     if (pl === undefined || pl + 1 >= len) return false;
-    const w = `${stationName(st.id)} ${track}番線のホーム（約${Math.round(pl)}mm・${carsFitting(pl)}両まで）より編成（${train.cars}両・約${Math.round(len)}mm）が長く、はみ出します`;
+    const w = `${stationName(st.id)} ${track}番線のホーム（約${Math.round(pl)}mm・${carsFitting(pl, train.carSize)}両まで）より編成（${train.cars}両・約${Math.round(len)}mm）が長く、はみ出します`;
     if (!result.warnings.includes(w)) result.warnings.push(w);
     return true;
   };
