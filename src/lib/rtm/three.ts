@@ -19,6 +19,13 @@ export type VehicleKit = {
   dispose(): void;
 };
 
+/**
+ * 台車の幅の倍率。RTM の台車は実物の線路幅（1067mm）に合わせて作られているが、Nゲージの線路は 9mm
+ * （1067mm の 1/150 = 7.1mm より広い）。製品のNゲージと同じく、車体は 1/150 のまま台車の幅だけ広げて、
+ * 車輪がレールの上に乗るようにする
+ */
+export const BOGIE_GAUGE_FIT = 9 / (1.067 * MM_PER_M);
+
 /** RTM の車両の、台車の上面（y=0）からレール面までの深さ(m) */
 const RTM_RAIL_DEPTH_M = 1.04;
 
@@ -229,7 +236,7 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
           const simple = new THREE.Mesh(simpleBogieGeo, simpleBogieMat);
           simple.name = "rtm-simple-bogie";
           simple.position.set(pos[0] / t.unit, (pos[1] - RTM_RAIL_DEPTH_M + 0.45) / t.unit, pos[2] / t.unit);
-          simple.scale.set(1 / t.unit, 1 / t.unit, t.scale / t.lengthScale / t.unit);
+          simple.scale.set(BOGIE_GAUGE_FIT / t.unit, 1 / t.unit, t.scale / t.lengthScale / t.unit);
           model.add(simple);
           return;
         }
@@ -237,6 +244,7 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
         // 台車の形は縮めず、置く位置だけ車体の長さに合わせる
         b.position.set(pos[0] / t.unit, pos[1] / t.unit, pos[2] / t.unit);
         b.scale.z = t.scale / t.lengthScale;
+        b.scale.x = BOGIE_GAUGE_FIT;
         if (i === 1) b.rotation.y = Math.PI;
         model.add(b);
       });

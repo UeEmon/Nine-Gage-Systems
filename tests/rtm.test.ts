@@ -7,7 +7,7 @@ import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
 import { consistSizeOf, findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, vehicleId } from "../src/lib/rtm/pack";
-import { buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
+import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
 /** テスト用の ZIP（deflate）を作る */
@@ -366,5 +366,17 @@ describe("RealTrainMod の車両パック", () => {
     expect(plan.trains[0].carSize).toEqual({ end: { length: 90.3, bogieCenters: 66.7 } });
     expect(plan.trains[1].carSize).toBeUndefined();
     expect(plan.trains[2].carSize).toEqual({ end: { length: 133, bogieCenters: 92 } });
+  });
+
+  it("台車の幅だけ 9mm の線路に合わせる（車体は 1/150 のまま）", async () => {
+    const { vehicles } = await readVehicleFiles([{ name: "test-pack.zip", data: samplePack() }]);
+    const kit = await buildVehicleKit(vehicles[0]);
+    const car = kit.makeCar("front");
+    car.updateMatrixWorld(true);
+    const bogie = car.getObjectByName("rtm-bogie")!;
+    // 台車の幅 2m → 1/150 で 13.3mm、9mm の線路に合わせて 1067mm → 9mm の倍率で広げる
+    expect(new Box3().setFromObject(bogie).getSize(new Vector3()).z).toBeCloseTo(2 * MM_PER_M * BOGIE_GAUGE_FIT, 1);
+    expect(new Box3().setFromObject(car.getObjectByName("rtm-body")!).getSize(new Vector3()).z).toBeCloseTo(2.9 * MM_PER_M, 1);
+    kit.dispose();
   });
 });
