@@ -6,7 +6,7 @@ import { buildTrain } from "../src/lib/driveScene";
 import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { consistSizeOf, findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, vehicleId } from "../src/lib/rtm/pack";
+import { assignCarRoles, consistSizeOf, findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
 import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
@@ -378,5 +378,70 @@ describe("RealTrainMod の車両パック", () => {
     expect(new Box3().setFromObject(bogie).getSize(new Vector3()).z).toBeCloseTo(2 * MM_PER_M * BOGIE_GAUGE_FIT, 1);
     expect(new Box3().setFromObject(car.getObjectByName("rtm-body")!).getSize(new Vector3()).z).toBeCloseTo(2.9 * MM_PER_M, 1);
     kit.dispose();
+  });
+
+  it("形式名から先頭車と中間車を見分ける", () => {
+    expect(roleFromName("Hr_JR701_Tc")).toBe("cab");
+    expect(roleFromName("Hr_JR701_Mc2")).toBe("cab");
+    expect(roleFromName("Hr_JR701_T")).toBe("middle");
+    expect(roleFromName("Hr_JR701_M")).toBe("middle");
+    expect(roleFromName("E233_Ts232")).toBe("middle");
+    expect(roleFromName("クハ103")).toBe("cab");
+    expect(roleFromName("モハ102")).toBe("middle");
+    expect(roleFromName("ModelTrain_MT_trta7001")).toBeNull();
+    expect(roleFromName("Hr_JNRtoki15000_F")).toBeNull();
+  });
+
+  it("パックの中の先頭車に、合う中間車を自動で選ぶ", async () => {
+    const car = (name: string, model: string, playerZ = 9) => {
+      const json = TRAIN_JSON.replace("テスト103系 クハ", name).replace("test_103.mqo", model).replace('"trainDistance"', `"playerPos": [[0.5, 0.5, ${playerZ}]], "trainDistance"`);
+      return [
+        { path: `ModelTrain_${name}.json`, data: json },
+        { path: `assets/minecraft/models/${model}`, data: BODY_MQO },
+      ];
+    };
+    const common = [
+      { path: "assets/minecraft/models/test_bogie.obj", data: BOGIE_OBJ },
+      { path: "assets/minecraft/textures/train/test_103.png", data: PNG },
+      { path: "assets/minecraft/textures/train/test_bogie.png", data: PNG },
+    ];
+    // 形式名で見分けるパック（1001 と 1002、0001 と 0002 が組）
+    const byName = makeZip([
+      ...car("Hr_X_1001", "s1000/Hr_X_Tc.mqo"),
+      ...car("Hr_X_1002", "s1000/Hr_X_M.mqo"),
+      ...car("Hr_X_0001", "s0/Hr_X_Tc.mqo"),
+      ...car("Hr_X_0002", "s0/Hr_X_T.mqo"),
+      ...common,
+    ]);
+    // 運転席の位置で見分けるパック（先頭車だけ運転席が前寄り）
+    const byPos = makeZip([
+      ...car("m_7001", "m7001.mqo", 8.6),
+      ...car("m_7101", "m7101.mqo", 8.6),
+      ...car("m_7201", "m7201.mqo", 9.2),
+      ...car("m_7301", "m7301.mqo", 9.2),
+      ...car("m_7401", "m7401.mqo", 9.2),
+      ...common,
+    ]);
+    // 見分けられないパック（貨車だけ）には何も付けない
+    const none = makeZip([...car("w_1", "w1.mqo"), ...car("w_2", "w2.mqo"), ...common]);
+    const { vehicles } = await readVehicleFiles([
+      { name: "byName.zip", data: byName },
+      { name: "byPos.zip", data: byPos },
+      { name: "none.zip", data: none },
+    ]);
+    const get = (n: string) => vehicles.find((v) => v.name === n)!;
+    expect(get("Hr_X_1001").role).toBe("cab");
+    expect(get("Hr_X_1001").middleId).toBe(vehicleId("Hr_X_1002"));
+    expect(get("Hr_X_0001").middleId).toBe(vehicleId("Hr_X_0002"));
+    expect(get("Hr_X_0002").role).toBe("middle");
+    expect(get("Hr_X_0002").middleId).toBeUndefined();
+    expect(get("m_7001").role).toBe("cab");
+    expect(get("m_7101").middleId).toBe(vehicleId("m_7201"));
+    expect(get("m_7301").role).toBe("middle");
+    expect(get("w_1").role).toBeUndefined();
+    expect(get("w_1").middleId).toBeUndefined();
+    // 自分で選んだ中間車はそのまま
+    const kept = assignCarRoles([{ ...get("Hr_X_1001"), role: undefined, middleId: "vmine" }, get("Hr_X_1002")]);
+    expect(kept[0].middleId).toBe("vmine");
   });
 });

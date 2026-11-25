@@ -33,7 +33,14 @@ export type RtmTrainConfig = {
   bogiePos: [number, number, number][];
   /** 車体長の半分（m）。連結面までの距離 */
   trainDistance: number;
+  /** 運転席の位置 {x, y, z}（m。先頭車と中間車を見分ける手がかりに使う） */
+  playerPos?: [number, number, number];
+  /** true で運転台を表示しない（中間車） */
+  notDisplayCab?: boolean;
 };
+
+/** 先頭車（運転台のある車両）か中間車か。パックの中で見分けられたときだけ付ける */
+export type RtmCarRole = "cab" | "middle";
 
 /** 読み込んだ車両。ブラウザ（IndexedDB）に保存する */
 export type RtmVehicle = {
@@ -49,6 +56,8 @@ export type RtmVehicle = {
   flip?: boolean;
   /** 中間車に使う車両の ID（なければこの車両を中間車にも使う） */
   middleId?: string;
+  /** 先頭車か中間車か（読み込んだときにパックの中で見分けられたら付ける） */
+  role?: RtmCarRole;
   addedAt: number;
 };
 
@@ -187,6 +196,10 @@ export function parseTrainConfig(json: unknown): RtmTrainConfig | null {
     ? (pos as number[][]).map((p) => [p[0], p[1], p[2]] as [number, number, number])
     : [[0, 0, 7.125], [0, 0, -7.125]] as [number, number, number][];
   const d = num(o.trainDistance);
+  const pp = Array.isArray(o.playerPos) ? o.playerPos[0] : null;
+  const playerPos = Array.isArray(pp) && pp.length >= 3 && pp.slice(0, 3).every((x) => Number.isFinite(num(x)))
+    ? ([pp[0], pp[1], pp[2]] as [number, number, number])
+    : null;
   return {
     name: name.slice(0, 60),
     trainType: str(o.trainType) || "EC",
@@ -194,6 +207,8 @@ export function parseTrainConfig(json: unknown): RtmTrainConfig | null {
     bogies,
     bogiePos,
     trainDistance: d > 0 ? d : 10.125,
+    ...(playerPos ? { playerPos } : {}),
+    ...(o.notDisplayCab === true ? { notDisplayCab: true } : {}),
   };
 }
 
@@ -391,5 +406,104 @@ export async function readVehicleFiles(files: { name: string; path?: string; dat
     problems.push(...r.problems);
   }
   const r = await checkModels({ vehicles, problems });
-  return { vehicles: r.vehicles, problems: [...new Set(r.problems)] };
+  return { vehicles: assignCarRoles(r.vehicles), problems: [...new Set(r.problems)] };
+}
+
+// ---- 先頭車と中間車の振り分け ----
+
+const baseName = (p: string) => p.split("/").pop()!.replace(/\.[^.]+$/, "");
+const dirName = (p: string) => p.split("/").slice(0, -1).join("/");
+
+/**
+ * 形式名（Tc・Mc・T・M'・クハ・モハ など）から先頭車か中間車かを決める。
+ * モデルのファイル名と車両名を _ や - で区切った語を見る（決められなければ null）
+ */
+export function roleFromName(text: string): RtmCarRole | null {
+  const words = text.split(/[_\-\s.()（）[\]【】]+/).filter(Boolean);
+  let cab = false;
+  let middle = false;
+  for (const w of words) {
+    // 運転台付き：Tc・Mc・Tsc・Mzc・Tc2・cT など（c が運転台）。日本語の記号：クハ・クモハ・クロ など
+    if (/^[MT][a-z]{0,2}c\d*'*$/.test(w) || /^c[MT]\d*'*$/.test(w) || /^(ク[モハロ]|クロハ|クモ)/.test(w)) cab = true;
+    // 運転台なし：T・M・M'・Ts・Mp・T2 など。日本語：モハ・サハ・サロ など
+    else if (/^[MT][a-bd-z]{0,2}\d*'*$/.test(w) || /^(モハ|サハ|サロ|サシ|モロ)/.test(w)) middle = true;
+  }
+  return cab === middle ? null : cab ? "cab" : "middle";
+}
+
+function guessRoles(group: RtmVehicle[]): Map<string, RtmCarRole> {
+  const roles = new Map<string, RtmCarRole>();
+  for (const v of group) {
+    const r = v.config.notDisplayCab ? "middle" : roleFromName(baseName(v.config.body.modelFile)) ?? roleFromName(v.name);
+    if (r) roles.set(v.id, r);
+  }
+  if ([...roles.values()].includes("cab") && [...roles.values()].includes("middle")) return roles;
+  // 名前で見分けられないとき：運転席の位置が2通りに分かれていれば、少ないほう（同じ数なら前寄りのほう）を先頭車とする
+  const withPos = group.filter((v) => v.config.playerPos);
+  if (withPos.length < 3 || withPos.length !== group.length) return new Map();
+  const key = (v: RtmVehicle) => Math.round(Math.abs(v.config.playerPos![2]) * 10) / 10;
+  const kinds = [...new Set(withPos.map(key))];
+  if (kinds.length !== 2) return new Map();
+  const [a, b] = kinds.map((k) => withPos.filter((v) => key(v) === k));
+  const cabSet = a.length !== b.length ? (a.length < b.length ? a : b) : key(a[0]) < key(b[0]) ? a : b;
+  return new Map(withPos.map((v) => [v.id, cabSet.includes(v) ? "cab" : "middle"]));
+}
+
+const commonPrefix = (a: string, b: string) => {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i;
+};
+const lastNumber = (s: string) => {
+  const m = /(\d+)(?!.*\d)/.exec(s);
+  return m ? Number(m[1]) : NaN;
+};
+
+/** 先頭車に合う中間車を選ぶ（モデルが同じフォルダにあるもの、名前が似ているもの、番号が近いものの順） */
+function pickMiddle(cab: RtmVehicle, middles: RtmVehicle[]): RtmVehicle | undefined {
+  const dir = dirName(cab.config.body.modelFile);
+  const n = lastNumber(cab.name);
+  const score = (m: RtmVehicle) => {
+    const d = Math.abs(lastNumber(m.name) - n);
+    return [
+      dir && dirName(m.config.body.modelFile) === dir ? 1 : 0,
+      commonPrefix(cab.name, m.name),
+      Number.isFinite(d) ? -d : -Infinity,
+    ];
+  };
+  const greater = (a: number[], b: number[]) => {
+    const i = a.findIndex((x, k) => x !== b[k]);
+    return i >= 0 && a[i] > b[i];
+  };
+  let best: RtmVehicle | undefined;
+  let bestScore: number[] = [];
+  for (const m of middles) {
+    const s = score(m);
+    if (!best || greater(s, bestScore)) {
+      best = m;
+      bestScore = s;
+    }
+  }
+  return best;
+}
+
+/**
+ * 読み込んだ車両を、パックごとに先頭車と中間車に振り分ける。
+ * パックの中に先頭車と中間車の両方が見分けられたときだけ role を付け、先頭車には合う中間車（middleId）を選んでおく
+ */
+export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
+  const groups = new Map<string, RtmVehicle[]>();
+  for (const v of vehicles) groups.set(v.source, [...(groups.get(v.source) ?? []), v]);
+  const out = new Map<RtmVehicle, RtmVehicle>();
+  for (const group of groups.values()) {
+    const roles = guessRoles(group);
+    const middles = group.filter((v) => roles.get(v.id) === "middle");
+    for (const v of group) {
+      const role = roles.get(v.id);
+      if (!role) continue;
+      const middle = role === "cab" && !v.middleId ? pickMiddle(v, middles) : undefined;
+      out.set(v, { ...v, role, ...(middle ? { middleId: middle.id } : {}) });
+    }
+  }
+  return vehicles.map((v) => out.get(v) ?? v);
 }
