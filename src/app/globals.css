@@ -731,3 +731,4 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .rtm-actions label { display: flex; gap: 4px; align-items: center; }
 .rtm-actions select { max-width: 200px; }
 .rtm-help { font-size: 12px; }
+.rtm-files { display: flex; flex-wrap: wrap; gap: 8px; }

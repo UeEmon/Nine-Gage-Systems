@@ -38,7 +38,11 @@ export function RtmVehiclesDialog({ onClose, onPick }: { onClose: () => void; on
     setBusy(true);
     setMessage(null);
     try {
-      const files = await Promise.all([...list].map(async (f) => ({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) })));
+      // フォルダを選んだときは、使うファイルだけ読む（音などは読まない）
+      const picked = [...list].filter((f) => /\.(zip|jar|json|mqo|mqoz|obj|mtl|png|jpe?g|npm|ngto|rar|7z|lzh)$/i.test(f.name));
+      const files = await Promise.all(
+        picked.map(async (f) => ({ name: f.name, path: f.webkitRelativePath || f.name, data: new Uint8Array(await f.arrayBuffer()) })),
+      );
       const r = await readVehicleFiles(files);
       if (r.vehicles.length > 0) await saveRtmVehicles(r.vehicles);
       setMessage({ added: r.vehicles.map((v) => v.name), problems: r.problems });
@@ -64,21 +68,38 @@ export function RtmVehiclesDialog({ onClose, onPick }: { onClose: () => void; on
           車両パックはそれぞれの作者の利用規約に従って使ってください。読み込んだ車両はこのブラウザの中だけに保存され、SenroLab のサーバーには送られません。
           録画した映像を公開するときは、車両パックの規約で許されているか確かめてください。
         </p>
-        <label className="rtm-file">
-          {busy ? "読み込み中…" : "車両パックを選ぶ"}
-          <input
-            type="file"
-            multiple
-            disabled={busy}
-            accept=".zip,.jar,.json,.mqo,.mqoz,.obj,.mtl,.png"
-            onChange={(e) => {
-              const files = e.currentTarget.files;
-              void onFiles(files).finally(() => {
-                e.target.value = "";
-              });
-            }}
-          />
-        </label>
+        <div className="rtm-files">
+          <label className="rtm-file">
+            {busy ? "読み込み中…" : "車両パックを選ぶ"}
+            <input
+              type="file"
+              multiple
+              disabled={busy}
+              accept=".zip,.jar,.json,.mqo,.mqoz,.obj,.mtl,.png"
+              onChange={(e) => {
+                const input = e.currentTarget;
+                void onFiles(input.files).finally(() => {
+                  input.value = "";
+                });
+              }}
+            />
+          </label>
+          <label className="rtm-file" title="展開した車両パックのフォルダを選びます">
+            展開したフォルダを選ぶ
+            <input
+              type="file"
+              disabled={busy}
+              // フォルダを選ぶ（React の型にないので属性で渡す）
+              {...({ webkitdirectory: "" } as Record<string, string>)}
+              onChange={(e) => {
+                const input = e.currentTarget;
+                void onFiles(input.files).finally(() => {
+                  input.value = "";
+                });
+              }}
+            />
+          </label>
+        </div>
         {message && (
           <div className="rtm-result">
             {message.added.length > 0 && <p>{message.added.length}両を読み込みました：{message.added.join("、")}</p>}

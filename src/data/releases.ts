@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-26-realtrainmod-more-packs",
+    date: "2026-11-26T01:30:00+09:00",
+    title: "読み込める RealTrainMod の車両パックが増えました",
+    body: "Mac で圧縮し直した車両パック、引用符のない値を含む設定ファイル、配布用の ZIP の中にもう1つ ZIP が入っている形の車両パックも読み込めるようになりました。ほかの車両パックの台車を使う車両は、簡易な台車で表示します。前照灯・尾灯のテクスチャは、先頭車で前照灯、最後尾で尾灯が光るように重ねて表示します。",
+  },
+  {
     id: "2026-11-25-realtrainmod-vehicles",
     date: "2026-11-25T23:00:00+09:00",
     title: "走行の映像で RealTrainMod の車両を使えるようになりました",

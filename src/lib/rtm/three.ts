@@ -19,6 +19,9 @@ export type VehicleKit = {
   dispose(): void;
 };
 
+/** RTM の車両の、台車の上面（y=0）からレール面までの深さ(m) */
+const RTM_RAIL_DEPTH_M = 1.04;
+
 /** 実物 1m → 模型の mm（1/150） */
 export const MM_PER_M = 1000 / 150;
 
@@ -52,9 +55,10 @@ export function kitTransform(vehicle: Pick<RtmVehicle, "config">, body: ParsedMo
     // 台車の車輪の下をレール面にする
     const bottom = (bogiePos[0]?.[1] ?? 0) / unit + bb.min[1];
     if (Math.abs(bottom * unit) < 1.5) offsetY = -bottom;
-  } else if (b) {
-    const bottom = b.min[1] * unit;
-    if (bottom < -0.2 || bottom > 1.5) offsetY = (0.3 - bottom) / unit;
+  } else {
+    // 台車がないときは RTM の標準（台車の上面が y=0、レール面は約 1.04m 下）とする
+    offsetY = RTM_RAIL_DEPTH_M / unit;
+    if (b && (b.min[1] * unit < -2.5 || b.min[1] * unit > 1)) offsetY = (0.3 - b.min[1] * unit) / unit;
   }
   return { scale, lengthScale, offsetY, unit };
 }
@@ -69,17 +73,9 @@ export function textureFor(src: RtmModelSource, material: string): RtmTexture | 
   );
 }
 
-/** 前照灯・尾灯のテクスチャを、車両の位置に合わせて選ぶ（先頭は前照灯、最後尾は尾灯、中間は消灯） */
-export function lightTexturePath(files: Record<string, unknown>, path: string, role: CarRole): string {
-  const digit = role === "rear" ? "2" : role === "middle" ? "0" : "1";
-  const m = /^(.*?)(\.[^./]+)$/.exec(path);
-  if (!m) return path;
-  const stems = [m[1], m[1].replace(/[012]$/, "")];
-  for (const stem of stems) {
-    const p = `${stem}${digit}${m[2]}`;
-    if (p in files) return p;
-  }
-  return path;
+/** 前照灯・尾灯のテクスチャ（[消灯, 前照灯, 尾灯]）のどれを使うか。先頭は前照灯、最後尾は尾灯、中間は消灯 */
+export function lightIndex(role: CarRole): number {
+  return role === "rear" ? 2 : role === "middle" ? 0 : 1;
 }
 
 async function loadTexture(data: Uint8Array): Promise<THREE.Texture | null> {
@@ -140,35 +136,46 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
     return p;
   };
   const materials = new Map<string, THREE.Material>();
-  const materialFor = (tx: RtmTexture | null, role: CarRole): THREE.Material => {
-    const light = !!tx && /light/i.test(tx.option);
-    const path = tx ? (light ? lightTexturePath(files, tx.path, role) : tx.path) : "";
-    const key = `${path}|${tx?.option ?? ""}`;
+  const withTexture = (mat: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial, path: string | null | undefined, showWhenLoaded: boolean) => {
+    if (!path) return;
+    texture(path).then((tex) => {
+      if (!tex || disposed) return;
+      mat.map = tex;
+      mat.color.set(0xffffff);
+      if (showWhenLoaded) mat.visible = true;
+      mat.needsUpdate = true;
+    });
+  };
+  /** 車体の色（RTM と同じく、透明な所は描かない。AlphaBlend も RTM ではまず不透明に描くので同じ扱い） */
+  const materialFor = (tx: RtmTexture | null): THREE.Material => {
+    const key = `body|${tx?.path ?? ""}`;
     let m = materials.get(key);
-    if (m) return m;
-    const alpha = !!tx && /alpha/i.test(tx.option);
-    const mat: THREE.MeshBasicMaterial | THREE.MeshStandardMaterial = light
-      ? new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, visible: false })
-      : new THREE.MeshStandardMaterial({
-          color: 0xb8bcc2,
-          roughness: 0.55,
-          metalness: 0.05,
-          side: THREE.DoubleSide,
-          ...(alpha ? { transparent: true, depthWrite: false } : { alphaTest: 0.1 }),
-        });
-    m = mat;
-    materials.set(key, mat);
-    disposables.push(mat);
-    if (path) {
-      texture(path).then((tex) => {
-        if (!tex || disposed) return;
-        mat.map = tex;
-        mat.color.set(0xffffff);
-        mat.visible = true;
-        mat.needsUpdate = true;
-      });
+    if (!m) {
+      const mat = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide, alphaTest: 0.1 });
+      withTexture(mat, tx?.path, false);
+      materials.set(key, (m = mat));
+      disposables.push(mat);
     }
-    return mat;
+    return m;
+  };
+  /** 前照灯・尾灯（Light）のテクスチャを、明るさに関係なく光らせて車体に重ねる */
+  const lightMaterialFor = (tx: RtmTexture | null, role: CarRole): THREE.Material | null => {
+    const lights = tx?.lights;
+    if (!lights) return null;
+    const path = lights[lightIndex(role)] ?? lights[0];
+    if (!path) return null;
+    const key = `light|${path}`;
+    let m = materials.get(key);
+    if (!m) {
+      const mat = new THREE.MeshBasicMaterial({
+        side: THREE.DoubleSide, alphaTest: 0.1, visible: false,
+        polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+      });
+      withTexture(mat, path, true);
+      materials.set(key, (m = mat));
+      disposables.push(mat);
+    }
+    return m;
   };
   const geometries = new Map<ParsedModel, THREE.BufferGeometry[]>();
   const geometriesOf = (model: ParsedModel) => {
@@ -185,12 +192,23 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
     g.name = name;
     geometriesOf(model).forEach((geo, i) => {
       const part = model.parts[i];
-      const mesh = new THREE.Mesh(geo, materialFor(textureFor(src, part.material), role));
+      const tx = textureFor(src, part.material);
+      const mesh = new THREE.Mesh(geo, materialFor(tx));
       mesh.name = part.object;
       g.add(mesh);
+      const light = lightMaterialFor(tx, role);
+      if (light) {
+        const lit = new THREE.Mesh(geo, light);
+        lit.name = `${part.object}-light`;
+        g.add(lit);
+      }
     });
     return g;
   };
+  // 台車のモデルがパックにないとき（ほかのパックの台車を使う車両）の簡易な台車
+  const simpleBogieGeo = new THREE.BoxGeometry(2.2, 0.9, 2.8);
+  const simpleBogieMat = new THREE.MeshStandardMaterial({ color: 0x30343a, roughness: 0.7 });
+  disposables.push(simpleBogieGeo, simpleBogieMat);
 
   return {
     id: vehicle.id,
@@ -207,7 +225,15 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
       [bogieFront, bogieBack].forEach((bogie, i) => {
         const src = config.bogies[i];
         const pos = config.bogiePos[i];
-        if (!bogie || !src || !pos) return;
+        if (!pos) return;
+        if (!bogie || !src) {
+          const simple = new THREE.Mesh(simpleBogieGeo, simpleBogieMat);
+          simple.name = "rtm-simple-bogie";
+          simple.position.set(pos[0] / t.unit, (pos[1] - RTM_RAIL_DEPTH_M + 0.45) / t.unit, pos[2] / t.unit);
+          simple.scale.set(1 / t.unit, 1 / t.unit, t.scale / t.lengthScale / t.unit);
+          model.add(simple);
+          return;
+        }
         const b = meshes(bogie, src, role, "rtm-bogie");
         // 台車の形は縮めず、置く位置だけ車体の長さに合わせる
         b.position.set(pos[0] / t.unit, pos[1] / t.unit, pos[2] / t.unit);
