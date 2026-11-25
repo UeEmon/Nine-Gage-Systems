@@ -1,0 +1,128 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { readVehicleFiles, type RtmVehicle } from "@/lib/rtm/pack";
+import { deleteRtmVehicle, listRtmVehicles, RTM_CHANGED_EVENT, saveRtmVehicles, updateRtmVehicle } from "@/lib/rtm/store";
+
+/** このブラウザに読み込んだ RealTrainMod の車両（読み込み中は null） */
+export function useRtmVehicles(): RtmVehicle[] | null {
+  const [vehicles, setVehicles] = useState<RtmVehicle[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      listRtmVehicles()
+        .then((v) => alive && setVehicles(v))
+        .catch(() => alive && setVehicles([]));
+    load();
+    window.addEventListener(RTM_CHANGED_EVENT, load);
+    return () => {
+      alive = false;
+      window.removeEventListener(RTM_CHANGED_EVENT, load);
+    };
+  }, []);
+  return vehicles;
+}
+
+const TRAIN_TYPES: Record<string, string> = {
+  EC: "電車", DC: "気動車", EL: "電気機関車", DL: "ディーゼル機関車", SL: "蒸気機関車", CC: "コンテナ車", TC: "タンク車",
+};
+
+/** RealTrainMod の車両パックを読み込む・管理するダイアログ */
+export function RtmVehiclesDialog({ onClose, onPick }: { onClose: () => void; onPick?: (id: string) => void }) {
+  const vehicles = useRtmVehicles();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ added: string[]; problems: string[] } | null>(null);
+
+  const onFiles = async (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const files = await Promise.all([...list].map(async (f) => ({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) })));
+      const r = await readVehicleFiles(files);
+      if (r.vehicles.length > 0) await saveRtmVehicles(r.vehicles);
+      setMessage({ added: r.vehicles.map((v) => v.name), problems: r.problems });
+    } catch (e) {
+      setMessage({ added: [], problems: [e instanceof Error ? e.message : "読み込めませんでした"] });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rtm-backdrop" onClick={onClose}>
+      <div className="rtm-dialog" role="dialog" aria-label="RealTrainMod の車両" onClick={(e) => e.stopPropagation()}>
+        <header>
+          <h3>RealTrainMod の車両</h3>
+          <button onClick={onClose}>閉じる</button>
+        </header>
+        <p className="muted">
+          お持ちの RealTrainMod の車両パック（.zip）を選ぶと、その車両で走行の映像を見られます。
+          json・モデル（.mqo / .mqoz / .obj）・テクスチャ（.png）をまとめて選んでも読み込めます。
+        </p>
+        <p className="rtm-note">
+          車両パックはそれぞれの作者の利用規約に従って使ってください。読み込んだ車両はこのブラウザの中だけに保存され、SenroLab のサーバーには送られません。
+          録画した映像を公開するときは、車両パックの規約で許されているか確かめてください。
+        </p>
+        <label className="rtm-file">
+          {busy ? "読み込み中…" : "車両パックを選ぶ"}
+          <input
+            type="file"
+            multiple
+            disabled={busy}
+            accept=".zip,.jar,.json,.mqo,.mqoz,.obj,.mtl,.png"
+            onChange={(e) => {
+              const files = e.currentTarget.files;
+              void onFiles(files).finally(() => {
+                e.target.value = "";
+              });
+            }}
+          />
+        </label>
+        {message && (
+          <div className="rtm-result">
+            {message.added.length > 0 && <p>{message.added.length}両を読み込みました：{message.added.join("、")}</p>}
+            {message.problems.length > 0 && (
+              <ul className="warn-text">
+                {message.problems.slice(0, 8).map((p, i) => <li key={i}>{p}</li>)}
+                {message.problems.length > 8 && <li>ほか{message.problems.length - 8}件</li>}
+              </ul>
+            )}
+          </div>
+        )}
+        {vehicles && vehicles.length > 0 && (
+          <ul className="rtm-list">
+            {vehicles.map((v) => (
+              <li key={v.id}>
+                <div className="rtm-name">
+                  <b>{v.name}</b>
+                  <span className="muted">{TRAIN_TYPES[v.config.trainType] ?? v.config.trainType}・{v.source}</span>
+                </div>
+                <div className="rtm-actions">
+                  <label title="先頭が後ろ向きに表示されるときに使います">
+                    <input type="checkbox" checked={!!v.flip} onChange={(e) => void updateRtmVehicle(v.id, { flip: e.target.checked })} />
+                    前後を入れ替える
+                  </label>
+                  <label>
+                    中間車
+                    <select value={v.middleId ?? ""} onChange={(e) => void updateRtmVehicle(v.id, { middleId: e.target.value || undefined })}>
+                      <option value="">この車両と同じ</option>
+                      {vehicles.filter((x) => x.id !== v.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                    </select>
+                  </label>
+                  {onPick && <button onClick={() => onPick(v.id)}>この車両で走る</button>}
+                  <button className="danger" onClick={() => void deleteRtmVehicle(v.id)}>削除</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {vehicles && vehicles.length === 0 && !message && <p className="muted">まだ車両を読み込んでいません。</p>}
+        <p className="muted rtm-help">
+          先頭車と最後尾はこの車両（最後尾は向きを逆に）、中間車は「中間車」で選んだ車両になります。車両の長さは編成の長さの計算に合わせて1両分にそろえます。
+          ドアやパンタグラフの動き（スクリプト）と、暗号化されたモデル（.npm）には対応していません。
+        </p>
+      </div>
+    </div>
+  );
+}

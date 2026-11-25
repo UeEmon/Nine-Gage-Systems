@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
+import { rtmVehicleId, rtmVehicleType, trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
+import { useRtmVehicles } from "../rtm/RtmVehicles";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
 import {
@@ -383,6 +384,7 @@ function TrainEditor({
     [s[i], s[j]] = [s[j], s[i]];
     onChange({ stops: s });
   };
+  const rtmVehicles = useRtmVehicles();
   const setKind = (kind: TrainKind) => {
     const oldDefault = TRAIN_KINDS.find((k) => k.value === train.kind)?.color;
     const color = train.color === oldDefault ? TRAIN_KINDS.find((k) => k.value === kind)!.color : train.color;
@@ -426,6 +428,14 @@ function TrainEditor({
           <select value={train.vehicleType ?? ""} onChange={(e) => onChange({ vehicleType: (e.target.value || undefined) as VehicleType | undefined })}>
             <option value="">自動（列車種別に合わせる）</option>
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            {((rtmVehicles && rtmVehicles.length > 0) || rtmVehicleId(train.vehicleType)) && (
+              <optgroup label="読み込んだ車両（RealTrainMod）">
+                {rtmVehicles?.map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
+                {rtmVehicleId(train.vehicleType) && !rtmVehicles?.some((v) => rtmVehicleType(v.id) === train.vehicleType) && (
+                  <option value={train.vehicleType}>この端末に読み込まれていない車両（列車種別に合わせて表示）</option>
+                )}
+              </optgroup>
+            )}
           </select>
         </label>
         <label>

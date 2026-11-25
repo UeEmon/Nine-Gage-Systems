@@ -11,6 +11,8 @@ import {
   defaultVehicleType,
   type VehicleType,
   makeSegment,
+  rtmVehicleId,
+  rtmVehicleType,
   trainLength,
   scaleKmhToMmPerSec,
   startRef,
@@ -21,6 +23,9 @@ import {
 } from "@/lib/drive";
 import { bedStyle, buildScene, buildTrain } from "@/lib/driveScene";
 import type { Layout } from "@/lib/geometry";
+import type { RtmVehicle } from "@/lib/rtm/pack";
+import { buildVehicleKit, type VehicleKit } from "@/lib/rtm/three";
+import { RtmVehiclesDialog, useRtmVehicles } from "./rtm/RtmVehicles";
 import { getPart } from "@/lib/parts";
 import {
   computeSchedule,
@@ -46,6 +51,10 @@ type Props = {
 };
 
 type ViewMode = "cab" | "chase" | "fixed";
+
+/** 映像の車両に使う、読み込んだ RealTrainMod の車両の型 */
+type RtmKits = { front: VehicleKit; middle?: VehicleKit };
+const sameKits = (a: RtmKits | undefined, b: RtmKits | undefined) => a?.front === b?.front && a?.middle === b?.middle;
 /** free: 自分で運転する / plan: 運行計画どおりに全部の列車を走らせる */
 type RunMode = "free" | "plan";
 
@@ -130,6 +139,65 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
   const [vehicleType, setVehicleType] = useState<VehicleType>("commuter");
   const vehicleTypeRef = useRef(vehicleType);
   vehicleTypeRef.current = vehicleType;
+  const rtmVehicles = useRtmVehicles();
+  const rtmRef = useRef<RtmVehicle[]>([]);
+  rtmRef.current = rtmVehicles ?? [];
+  const [rtmOpen, setRtmOpen] = useState(false);
+  const rtmOpenRef = useRef(rtmOpen);
+  rtmOpenRef.current = rtmOpen;
+  // 読み込んだ車両のモデルとテクスチャ（車両ごとに1つ作って使い回す）
+  const kitsRef = useRef(new Map<string, { vehicle: RtmVehicle; kit: VehicleKit | null }>());
+  const retiredKitsRef = useRef<VehicleKit[]>([]);
+  /** 車両の型（まだ読み込み中・見つからないときは null。読み込みは始める） */
+  const kitFor = (id: string): VehicleKit | null => {
+    const vehicle = rtmRef.current.find((x) => x.id === id);
+    const kits = kitsRef.current;
+    let entry = kits.get(id);
+    if (entry && entry.vehicle !== vehicle) {
+      // 設定を変えた・消した車両は、映像の車両を作り直してから解放する
+      if (entry.kit) retiredKitsRef.current.push(entry.kit);
+      kits.delete(id);
+      entry = undefined;
+    }
+    if (!vehicle) return null;
+    if (!entry) {
+      const e: { vehicle: RtmVehicle; kit: VehicleKit | null } = { vehicle, kit: null };
+      kits.set(id, e);
+      buildVehicleKit(vehicle)
+        .then((kit) => {
+          if (kits.get(id) === e) e.kit = kit;
+          else kit.dispose();
+        })
+        .catch(() => {});
+      entry = e;
+    }
+    return entry.kit;
+  };
+  /** 映像の車両が読み込んだ RealTrainMod の車両なら、その型（使えなければ undefined） */
+  const rtmKitsFor = (type: VehicleType | undefined): RtmKits | undefined => {
+    const id = rtmVehicleId(type);
+    const front = id ? kitFor(id) : null;
+    if (!id || !front) return undefined;
+    const middleId = rtmRef.current.find((x) => x.id === id)?.middleId;
+    const middle = middleId ? kitFor(middleId) ?? undefined : undefined;
+    return { front, middle };
+  };
+  const rtmKitsForRef = useRef(rtmKitsFor);
+  rtmKitsForRef.current = rtmKitsFor;
+  useEffect(() => {
+    const kits = kitsRef.current;
+    const retired = retiredKitsRef.current;
+    return () => {
+      for (const e of kits.values()) e.kit?.dispose();
+      for (const k of retired.splice(0)) k.dispose();
+      kits.clear();
+    };
+  }, []);
+  // 選んでいた車両を消したら、組み込みの車両に戻す
+  useEffect(() => {
+    const id = rtmVehicleId(vehicleType);
+    if (id && rtmVehicles && !rtmVehicles.some((v) => v.id === id)) setVehicleType("commuter");
+  }, [rtmVehicles, vehicleType]);
   const [fixedPosition, setFixedPosition] = useState(() => ({
     x: layout.board.width / 2,
     y: -200,
@@ -229,12 +297,19 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
     const world = buildScene(graph, layout.pieces, piers, layout.board, layout.accessories ?? [], layout.sims ?? [], (normalizeOperation(layout.operation) ?? EMPTY_OPERATION).stationNames);
     scene.add(world.group);
     let currentVehicleType = vehicleTypeRef.current;
-    let train = buildTrain(CARS, 0x2f6fb5, currentVehicleType);
+    let currentRtm = rtmKitsForRef.current(currentVehicleType);
+    let train = buildTrain(CARS, 0x2f6fb5, currentVehicleType, currentRtm);
     scene.add(train.group);
-    // 運行計画の列車（線の色で塗る）
+    // 運行計画の列車（線の色で塗る）。読み込んだ RealTrainMod の車両がこの端末になければ列車種別に合わせる
+    const planVehicle = (x: PlanTrain) => {
+      const rtm = rtmKitsForRef.current(x.train.vehicleType);
+      const type = rtm || !rtmVehicleId(x.train.vehicleType) ? x.train.vehicleType ?? defaultVehicleType(x.train.kind) : defaultVehicleType(x.train.kind);
+      return { type, rtm };
+    };
     const planMeshes = planMode
       ? op.trains.map((x) => {
-          const mesh = buildTrain(x.train.cars, parseInt(x.train.color.slice(1), 16), x.train.vehicleType ?? defaultVehicleType(x.train.kind));
+          const { type, rtm } = planVehicle(x);
+          const mesh = { ...buildTrain(x.train.cars, parseInt(x.train.color.slice(1), 16), type, rtm), rtm };
           mesh.group.visible = false;
           scene.add(mesh.group);
           return mesh;
@@ -288,13 +363,32 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const c = ctl.current;
-      if (!planMode && currentVehicleType !== vehicleTypeRef.current) {
-        scene.remove(train.group);
-        train.dispose();
-        currentVehicleType = vehicleTypeRef.current;
-        train = buildTrain(CARS, 0x2f6fb5, currentVehicleType);
-        scene.add(train.group);
+      if (!planMode) {
+        const wantRtm = rtmKitsForRef.current(vehicleTypeRef.current);
+        if (currentVehicleType !== vehicleTypeRef.current || !sameKits(currentRtm, wantRtm)) {
+          scene.remove(train.group);
+          train.dispose();
+          currentVehicleType = vehicleTypeRef.current;
+          currentRtm = wantRtm;
+          train = buildTrain(CARS, 0x2f6fb5, currentVehicleType, currentRtm);
+          scene.add(train.group);
+        }
+      } else {
+        // 読み込みが終わった（または設定を変えた）RealTrainMod の車両に差し替える
+        op.trains.forEach((x, i) => {
+          if (!rtmVehicleId(x.train.vehicleType)) return;
+          const { type, rtm } = planVehicle(x);
+          const old = planMeshes[i];
+          if (sameKits(old.rtm, rtm)) return;
+          scene.remove(old.group);
+          old.dispose();
+          const mesh = { ...buildTrain(x.train.cars, parseInt(x.train.color.slice(1), 16), type, rtm), rtm };
+          mesh.group.visible = false;
+          scene.add(mesh.group);
+          planMeshes[i] = mesh;
+        });
       }
+      for (const k of retiredKitsRef.current.splice(0)) k.dispose();
 
       let pose: DrivePose;
       let ahead: DrivePose;
@@ -510,6 +604,11 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      // RealTrainMod の車両のダイアログを開いている間は、そちらだけを閉じる
+      if (rtmOpenRef.current) {
+        if (e.key === "Escape") setRtmOpen(false);
+        return;
+      }
       if (e.key === "Escape") onClose();
       else if (e.key === " ") {
         e.preventDefault();
@@ -693,8 +792,14 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
         {!planMode && <label>映像の車両
           <select value={vehicleType} onChange={(e) => setVehicleType(e.target.value as VehicleType)}>
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            {rtmVehicles && rtmVehicles.length > 0 && (
+              <optgroup label="読み込んだ車両（RealTrainMod）">
+                {rtmVehicles.map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
+              </optgroup>
+            )}
           </select>
         </label>}
+        <button onClick={() => setRtmOpen(true)} title="RealTrainMod の車両パックを読み込む">RTMの車両…</button>
         {!planMode && <button onClick={turnBack}>⇄ 逆向き</button>}
         <button
           onClick={() => {
@@ -712,6 +817,16 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
           閉じる
         </button>
       </div>
+      {rtmOpen && (
+        <RtmVehiclesDialog
+          onClose={() => setRtmOpen(false)}
+          onPick={planMode ? undefined : (id) => {
+            setVehicleType(rtmVehicleType(id));
+            setRtmOpen(false);
+            if (view === "cab") setView("chase");
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -49,6 +49,9 @@
 /src/lib/driveScene.ts @UeEmon
 /src/components/DriveView.tsx @UeEmon
 /tests/drive.test.ts @UeEmon
+/src/lib/rtm/ @UeEmon
+/src/components/rtm/ @UeEmon
+/tests/rtm.test.ts @UeEmon
 
 # ── 運行計画（feature:operation）
 /src/lib/operation/ @UeEmon
