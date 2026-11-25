@@ -486,8 +486,8 @@ function TrainEditor({
             }}
           />
         )}
-        <label>
-          線の色
+        <label title={rtmVehicleId(train.vehicleType) ? "RealTrainMod の車両は車両パックの色のまま表示し、線の色はダイヤグラムと地図の印だけに使います" : undefined}>
+          線の色{rtmVehicleId(train.vehicleType) && <span className="muted">（ダイヤグラムだけ）</span>}
           <input type="color" value={train.color} onChange={(e) => onChange({ color: e.target.value })} />
         </label>
         <div className="op-cars">

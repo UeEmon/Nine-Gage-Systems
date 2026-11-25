@@ -1073,6 +1073,7 @@ export function buildTrain(
   const { length, width, bogieCenters } = N_CAR;
   const group = new THREE.Group();
   if (rtm) {
+    // RealTrainMod の車両は車両パックの色のまま（color は使わない。運行計画の線の色はダイヤグラムだけ）
     // 型（モデルとテクスチャ）は呼び出し側が持つので、ここでは解放しない
     const list: THREE.Group[] = [];
     for (let i = 0; i < cars; i++) {
