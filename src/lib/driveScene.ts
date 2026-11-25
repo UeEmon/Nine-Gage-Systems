@@ -728,6 +728,8 @@ export function buildScene(
   accessories: Accessory[] = [],
   sims: SimObject[] = [],
   stationNames: Record<string, string> = {},
+  /** 木と建物を置かない所（読み込んだ 3D モデルを置いた所など。ボードの座標の四隅） */
+  keepClear: { x: number; y: number }[][] = [],
 ): Built {
   const group = new THREE.Group();
   const disposables: { dispose: () => void }[] = [];
@@ -1013,6 +1015,9 @@ export function buildScene(
     const cs = accessoryCorners(a, getAccessory(a.itemId));
     return { x0: Math.min(...cs.map((c) => c.x)), x1: Math.max(...cs.map((c) => c.x)), y0: Math.min(...cs.map((c) => c.y)), y1: Math.max(...cs.map((c) => c.y)) };
   });
+  for (const cs of keepClear) {
+    if (cs.length) accBoxes.push({ x0: Math.min(...cs.map((c) => c.x)), x1: Math.max(...cs.map((c) => c.x)), y0: Math.min(...cs.map((c) => c.y)), y1: Math.max(...cs.map((c) => c.y)) });
+  }
   const farFromTrack = (x: number, y: number, r: number) =>
     allPoints.every((p) => Math.abs(p.x - x) > r || Math.abs(p.y - y) > r || Math.hypot(p.x - x, p.y - y) > r) &&
     accBoxes.every((b) => x < b.x0 - r || x > b.x1 + r || y < b.y0 - r || y > b.y1 + r);

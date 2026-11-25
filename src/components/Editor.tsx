@@ -22,7 +22,9 @@ import { heightText, PIER_SYSTEMS } from "@/data/piers";
 import { isRamp, levelOf as pieceLevel, PIER_MIN_MM, standardDepth, zRange } from "@/lib/elevation";
 import { BED_INFO, bedVariantsOf, CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import type { BedType, PartCategory } from "@/data/trackCatalog";
-import { canUseRtm, type SessionUser } from "@/lib/roles";
+import { canUseModels, canUseRtm, type SessionUser } from "@/lib/roles";
+import { ModelsSection, PlacedModelShape, useModels3d } from "./models3d/Models3d";
+import type { PlacedModel } from "@/lib/models3d/placed";
 import { AiStatus } from "./AiStatus";
 import { UserMenu } from "./UserMenu";
 import { TrackPiece, type Level } from "./TrackPiece";
@@ -279,6 +281,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
     | { kind: "piece"; uid: string; dx: number; dy: number; moved: boolean }
     | { kind: "pan"; sx: number; sy: number; vx: number; vy: number }
     | { kind: "acc"; uid: string; dx: number; dy: number }
+    | { kind: "model"; uid: string; dx: number; dy: number }
     | null
   >(null);
 
@@ -312,6 +315,21 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const analysis = useMemo(() => analyze(layout), [layout]);
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
   const sims = useMemo(() => layout.sims ?? [], [layout.sims]);
+  // 読み込んだ 3D モデルを置いたもの（プレミアムユーザー・プレミアムプラス・管理者の特典）
+  const modelsAllowed = canUseModels(user?.role);
+  const placedModels = useMemo(() => layout.models ?? [], [layout.models]);
+  const localModels = useModels3d(modelsAllowed);
+  const localModelIds = useMemo(() => new Set((localModels ?? []).map((m) => m.id)), [localModels]);
+  const [selectedModelUid, setSelectedModelUid] = useState<string | null>(null);
+  const setPlacedModels = (fn: (ms: PlacedModel[]) => PlacedModel[]) => setLayout((l) => ({ ...l, models: fn(l.models ?? []) }));
+  // 線路やパーツを選んだら、3D モデルの選択は外す
+  useEffect(() => {
+    if (selection) setSelectedModelUid(null);
+  }, [selection]);
+  const selectModel = (uid: string | null) => {
+    setSelection(null);
+    setSelectedModelUid(uid);
+  };
   const bom = useMemo(() => billOfMaterials(layout.pieces, accessories), [layout.pieces, accessories]);
   const stock = useMemo(() => stockFromInventory(inventory, maker), [inventory, maker]);
   const hasStock = stock.size > 0;
@@ -461,6 +479,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
     setPieces((ps) => ps.map((p) => (p.uid === selectedUid ? fn(p) : p)));
   };
   const deleteSelected = () => {
+    if (selectedModelUid) {
+      setPlacedModels((ms) => ms.filter((m) => m.uid !== selectedModelUid));
+      setSelectedModelUid(null);
+      return;
+    }
     if (selectedAccUid) {
       setAccessories((as) => as.filter((a) => a.uid !== selectedAccUid));
       setSelection(null);
@@ -512,7 +535,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
     );
   };
   const rotateSelected = (d: number) =>
-    selectedAccUid
+    selectedModelUid
+      ? setPlacedModels((ms) => ms.map((m) => (m.uid === selectedModelUid ? { ...m, rot: normDeg(m.rot + d) } : m)))
+      : selectedAccUid
       ? updateSelectedAcc((a) => ({ ...a, rot: normDeg(a.rot + d) }))
       : updateSelected((p) => ({ ...p, rot: normDeg(p.rot + d) }));
 
@@ -523,7 +548,10 @@ export function Editor({ user }: { user: SessionUser | null }) {
       else if (e.key === "f" || e.key === "F") flipSelected();
       else if (e.key === "r") rotateSelected(15);
       else if (e.key === "R") rotateSelected(-15);
-      else if (e.key === "Escape") setSelection(null);
+      else if (e.key === "Escape") {
+        setSelection(null);
+        setSelectedModelUid(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -555,6 +583,14 @@ export function Editor({ user }: { user: SessionUser | null }) {
     setSelection({ kind: "acc", uid: acc.uid });
   };
 
+  const onModelPointerDown = (m: PlacedModel) => (e: React.PointerEvent<SVGGElement>) => {
+    e.stopPropagation();
+    const p = toSvg(e);
+    drag.current = { kind: "model", uid: m.uid, dx: p.x - m.x, dy: p.y - m.y };
+    svgRef.current?.setPointerCapture(e.pointerId);
+    selectModel(m.uid);
+  };
+
   const onBgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
     svgRef.current?.setPointerCapture(e.pointerId);
@@ -570,6 +606,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
       return;
     }
     const p = toSvg(e);
+    if (d.kind === "model") {
+      const at = { x: Math.round(p.x - d.dx), y: Math.round(p.y - d.dy) };
+      setPlacedModels((ms) => ms.map((m) => (m.uid === d.uid ? { ...m, ...at } : m)));
+      return;
+    }
     if (d.kind === "acc") {
       // 線路に吸着するパーツは近くの線路に合わせる（離すと自由に動く）
       const at = { x: p.x - d.dx, y: p.y - d.dy };
@@ -596,10 +637,13 @@ export function Editor({ user }: { user: SessionUser | null }) {
     drag.current = null;
     if (!d) return;
     if (d.kind === "pan") {
-      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 3) setSelection(null);
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 3) {
+        setSelection(null);
+        setSelectedModelUid(null);
+      }
       return;
     }
-    if (d.kind === "acc" || !d.moved) return;
+    if (d.kind === "acc" || d.kind === "model" || !d.moved) return;
     // 近くの空き端に吸着させる
     setPieces((ps) => {
       const piece = ps.find((q) => q.uid === d.uid);
@@ -927,6 +971,16 @@ export function Editor({ user }: { user: SessionUser | null }) {
           </div>
         </section>
 
+        <ModelsSection
+          allowed={modelsAllowed}
+          placed={placedModels}
+          models={localModels}
+          selectedUid={selectedModelUid}
+          center={{ x: layout.board.width / 2, y: layout.board.height / 2 }}
+          onChange={(models) => setLayout((l) => ({ ...l, models }))}
+          onSelect={selectModel}
+        />
+
         <section>
           <h2>選択中の部品</h2>
           {selectedAcc ? (
@@ -1079,7 +1133,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
               className="danger"
               onClick={() => {
                 if (confirm("すべての線路とパーツを消しますか？")) {
-                  setLayout((l) => ({ ...l, pieces: [], accessories: [], sims: [], replica: undefined }));
+                  setLayout((l) => ({ ...l, pieces: [], accessories: [], sims: [], models: [], replica: undefined }));
                   setSelection(null);
                 }
               }}
@@ -1113,6 +1167,17 @@ export function Editor({ user }: { user: SessionUser | null }) {
           {/* 仮オブジェクトは線路の下に描く（線路をクリックできるように） */}
           {sims.map((s) => (
             <SimObjectShape key={s.uid} sim={s} fontSize={Math.max(view.w / 110, 9)} layer="body" />
+          ))}
+          {/* 3D モデルの枠も線路の下に描く（線路をクリックできるように）。選んだものだけ上に描く */}
+          {placedModels.filter((m) => m.uid !== selectedModelUid).map((m) => (
+            <PlacedModelShape
+              key={m.uid}
+              model={m}
+              selected={false}
+              missing={!modelsAllowed || (localModels !== null && !localModelIds.has(m.modelId))}
+              fontSize={Math.max(view.w / 110, 9)}
+              onPointerDown={modelsAllowed ? onModelPointerDown(m) : undefined}
+            />
           ))}
           {drawOrder.map((p) => {
             const visible = isVisible(p.uid);
@@ -1175,6 +1240,16 @@ export function Editor({ user }: { user: SessionUser | null }) {
           })}
           {sims.map((s) => (
             <SimObjectShape key={`l${s.uid}`} sim={s} fontSize={Math.max(view.w / 110, 9)} layer="label" />
+          ))}
+          {placedModels.filter((m) => m.uid === selectedModelUid).map((m) => (
+            <PlacedModelShape
+              key={m.uid}
+              model={m}
+              selected
+              missing={localModels !== null && !localModelIds.has(m.modelId)}
+              fontSize={Math.max(view.w / 110, 9)}
+              onPointerDown={modelsAllowed ? onModelPointerDown(m) : undefined}
+            />
           ))}
           {layout.pieces.filter((p) => isVisible(p.uid)).flatMap((p) =>
             worldJoints(p)
@@ -1270,7 +1345,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <button onClick={() => fitView(b)}>全体表示</button>
         </div>
       </main>
-      {showDrive && <DriveView layout={layout} startUid={selectedUid} planTrainId={driveTrainId} rtmAllowed={canUseRtm(user?.role)} onClose={() => setShowDrive(false)} />}
+      {showDrive && <DriveView layout={layout} startUid={selectedUid} planTrainId={driveTrainId} rtmAllowed={canUseRtm(user?.role)} modelsAllowed={modelsAllowed} onClose={() => setShowDrive(false)} />}
       {showOperation && (
         <OperationView
           layout={layout}

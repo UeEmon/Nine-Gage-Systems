@@ -4,6 +4,7 @@ import { getPart, localJoints, normDeg, type Joint, type Maker, type PartDef } f
 import { routeSamples, routeSvg } from "./shapes";
 import type { Accessory } from "./accessories";
 import type { ReplicaInfo, SimObject } from "./replica";
+import type { PlacedModel } from "./models3d/placed";
 import type { OperationPlan } from "./operation/model";
 
 export type Piece = {
@@ -40,6 +41,8 @@ export type Layout = {
   sims?: SimObject[];
   /** 「再現してみた」で再現した路線・駅と特徴 */
   replica?: ReplicaInfo;
+  /** 読み込んだ 3D モデルを置いたもの（モデルの中身は読み込んだブラウザにだけある）。古い保存データにはない */
+  models?: PlacedModel[];
 };
 
 export type WorldJoint = Joint & { pieceUid: string; index: number };

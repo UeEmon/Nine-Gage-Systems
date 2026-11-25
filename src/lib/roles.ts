@@ -52,6 +52,11 @@ export function canUseRtm(role: RoleId | null | undefined): boolean {
   return role === "admin" || role === "plus" || role === "ai";
 }
 
+/** 3D モデル（RealTrainMod の設置物・glTF・OBJ など）を読み込んでレイアウトに置けるロール（RealTrainMod の車両と同じ） */
+export function canUseModels(role: RoleId | null | undefined): boolean {
+  return canUseRtm(role);
+}
+
 /** 月の上限があるロール（サーバーのAIを上限まで使う） */
 export function hasAiLimit(role: RoleId | null | undefined): boolean {
   return role === "plus" || role === "ai";

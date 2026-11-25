@@ -84,13 +84,16 @@
       "id": "accessories",
       "name": "線路以外のパーツ",
       "color": "c5def5",
-      "description": "踏切・信号機・ホーム・駅舎・建物などのストラクチャーのデータと置き方",
+      "description": "踏切・信号機・ホーム・駅舎・建物などのストラクチャーのデータと置き方、読み込んだ 3D モデルの配置",
       "owners": ["@UeEmon"],
       "paths": [
         "/src/data/accessories.ts",
         "/src/lib/accessories.ts",
         "/src/components/AccessoryShape.tsx",
-        "/tests/accessories.test.ts"
+        "/tests/accessories.test.ts",
+        "/src/lib/models3d/",
+        "/src/components/models3d/",
+        "/tests/models3d.test.ts"
       ]
     },
     {

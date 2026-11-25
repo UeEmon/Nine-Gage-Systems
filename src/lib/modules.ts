@@ -379,6 +379,7 @@ export function mergeAssembly(
   const pieces: Piece[] = [];
   const accessories: NonNullable<Layout["accessories"]> = [];
   const sims: NonNullable<Layout["sims"]> = [];
+  const models: NonNullable<Layout["models"]> = [];
   // 運行計画は、ボードごとの列車をそのまま引き継ぐ（駅のIDはホームの uid なので、uid と同じ接頭辞を付ける）
   const operation: OperationPlan = { stationNames: {}, trains: [] };
   items.forEach(({ m, src }, i) => {
@@ -395,6 +396,10 @@ export function mergeAssembly(
     for (const s of src.layout.sims ?? []) {
       const q = applyPlacement(pl, s);
       sims.push({ ...s, uid: prefix + s.uid, host: s.host && prefix + s.host, x: q.x, y: q.y, rot: normDeg(s.rot + pl.rot) });
+    }
+    for (const m of src.layout.models ?? []) {
+      const q = applyPlacement(pl, m);
+      models.push({ ...m, uid: prefix + m.uid, x: q.x, y: q.y, rot: normDeg(m.rot + pl.rot) });
     }
     const op = src.layout.operation;
     if (op) {
@@ -430,6 +435,7 @@ export function mergeAssembly(
     pieces,
     ...(accessories.length ? { accessories } : {}),
     ...(sims.length ? { sims } : {}),
+    ...(models.length ? { models } : {}),
     ...(operation.trains.length ? { operation } : {}),
   };
   // offset: 合成したレイアウトの原点が、置き方の座標でどこにあるか
