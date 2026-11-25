@@ -140,7 +140,7 @@ export function RtmVehiclesDialog({ onClose, onPick }: { onClose: () => void; on
         )}
         {vehicles && vehicles.length === 0 && !message && <p className="muted">まだ車両を読み込んでいません。</p>}
         <p className="muted rtm-help">
-          先頭車と最後尾はこの車両（最後尾は向きを逆に）、中間車は「中間車」で選んだ車両になります。車両の長さは編成の長さの計算に合わせて1両分にそろえます。
+          先頭車と最後尾はこの車両（最後尾は向きを逆に）、中間車は「中間車」で選んだ車両になります。車両は実物の 1/150 の長さで表示し、運行計画の編成の長さやホームに収まる両数も、その車両の長さで計算します。
           ドアやパンタグラフの動き（スクリプト）と、暗号化されたモデル（.npm）には対応していません。
         </p>
       </div>

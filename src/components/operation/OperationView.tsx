@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { rtmVehicleId, rtmVehicleType, trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
+import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type ConsistSize, type VehicleType } from "@/lib/drive";
+import { consistSizeOf } from "@/lib/rtm/pack";
 import { useRtmVehicles } from "../rtm/RtmVehicles";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
@@ -247,7 +248,7 @@ export function OperationView({ layout, elevation, canUseAi, rtmAllowed = false,
               routeNames={routeNames}
               autoLine={selectedSchedule ? trainLine({}, selectedSchedule.events, lines) : undefined}
               stations={stations.map((s) => ({ id: s.id, name: stationName(s.id), tracks: s.tracks.length }))}
-              platform={selectedSchedule && !selectedSchedule.errors.length ? platformLimit(selectedSchedule, stations) : null}
+              platform={selectedSchedule && !selectedSchedule.errors.length ? platformLimit(selectedSchedule, stations, selected.carSize) : null}
               stationName={stationName}
               onChange={(patch) => updateTrain(selected.id, patch)}
               onStop={(i, patch) => updateStop(selected, i, patch)}
@@ -390,6 +391,26 @@ function TrainEditor({
     onChange({ stops: s });
   };
   const rtmVehicles = useRtmVehicles();
+  /** RealTrainMod の車両の編成の長さ（このブラウザにその車両がなければ null = 分からない） */
+  const rtmSize = (type: VehicleType | undefined): ConsistSize | undefined | null => {
+    const id = rtmVehicleId(type);
+    if (!id) return undefined;
+    const v = rtmVehicles?.find((x) => x.id === id);
+    if (!v) return null;
+    return consistSizeOf(v, v.middleId ? rtmVehicles?.find((x) => x.id === v.middleId) : undefined);
+  };
+  const setVehicle = (vehicleType: VehicleType | undefined) => {
+    const size = rtmSize(vehicleType);
+    // 組み込みの車両に戻したら20m級。分からない（この端末にない）ときは今の長さのまま
+    onChange({ vehicleType, ...(size === null ? {} : { carSize: size }) });
+  };
+  // 車両パックを読み込み直した・中間車を変えたときは、編成の長さを合わせ直す
+  useEffect(() => {
+    if (!rtmAllowed) return;
+    const size = rtmSize(train.vehicleType);
+    if (size !== null && size !== undefined && !sameConsistSize(size, train.carSize)) onChange({ carSize: size });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rtmVehicles, train.vehicleType, rtmAllowed]);
   const setKind = (kind: TrainKind) => {
     const oldDefault = TRAIN_KINDS.find((k) => k.value === train.kind)?.color;
     const color = train.color === oldDefault ? TRAIN_KINDS.find((k) => k.value === kind)!.color : train.color;
@@ -430,7 +451,7 @@ function TrainEditor({
         </label>
         <label>
           映像の車両
-          <select value={train.vehicleType ?? ""} onChange={(e) => onChange({ vehicleType: (e.target.value || undefined) as VehicleType | undefined })}>
+          <select value={train.vehicleType ?? ""} onChange={(e) => setVehicle((e.target.value || undefined) as VehicleType | undefined)}>
             <option value="">自動（列車種別に合わせる）</option>
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
             {((rtmAllowed && rtmVehicles && rtmVehicles.length > 0) || rtmVehicleId(train.vehicleType)) && (
@@ -452,7 +473,10 @@ function TrainEditor({
         <div className="op-cars">
           <span className="op-cars-label">編成の長さ</span>
           <CarsInput value={train.cars} onChange={(cars) => onChange({ cars })} />
-          <span className="muted">約{Math.round(trainLength(train.cars))}mm</span>
+          <span className="muted">
+            約{Math.round(trainLength(train.cars, train.carSize))}mm
+            {train.carSize && `（1両 約${Math.round(train.carSize.end.length)}mm${train.carSize.middle ? `・中間車 約${Math.round(train.carSize.middle.length)}mm` : ""}）`}
+          </span>
           {platform && (
             <span className={train.cars > platform.maxCars ? "warn-text op-cars-fit" : "muted op-cars-fit"}>
               {platform.maxCars > 0

@@ -1,12 +1,12 @@
 import { deflateRawSync } from "node:zlib";
 import { Box3, Object3D, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { isVehicleType, N_CAR, rtmVehicleId, rtmVehicleType } from "../src/lib/drive";
+import { carPlacements, isVehicleType, N_CAR, rtmVehicleId, rtmVehicleType, trainLength } from "../src/lib/drive";
 import { buildTrain } from "../src/lib/driveScene";
-import { normalizeOperation } from "../src/lib/operation";
+import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, vehicleId } from "../src/lib/rtm/pack";
+import { consistSizeOf, findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, vehicleId } from "../src/lib/rtm/pack";
 import { buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
@@ -229,7 +229,7 @@ describe("RealTrainMod の車両パック", () => {
     expect(r.problems.some((p) => p.includes("test_bogie.png"))).toBe(true);
   });
 
-  it("映像の車両は幅・高さが 1/150、長さは1両分（編成の長さの計算と同じ）になる", async () => {
+  it("映像の車両は実物の 1/150 になる", async () => {
     const { vehicles } = await readVehicleFiles([{ name: "test-pack.zip", data: samplePack() }]);
     const kit = await buildVehicleKit(vehicles[0]);
     const train = buildTrain(3, 0x2f6fb5, rtmVehicleType(vehicles[0].id), { front: kit });
@@ -237,8 +237,8 @@ describe("RealTrainMod の車両パック", () => {
     train.group.updateMatrixWorld(true);
     const box = new Box3().setFromObject(train.cars[0].children[0].children[0].children[0]);
     const size = box.getSize(new Vector3());
-    // 連結面の間（20m）が N_CAR の全長 + すきま になる
-    expect(size.x).toBeCloseTo(20 * ((N_CAR.length + N_CAR.gap) / 20), 1);
+    // 長さも実物の 1/150（20m → 133.3mm）
+    expect(size.x).toBeCloseTo(20 * MM_PER_M, 1);
     expect(size.z).toBeCloseTo(2.9 * MM_PER_M, 1);
     // 台車の車輪の下（y=0）がレール面。車体の床下は 1m の高さ
     expect(box.min.y).toBeCloseTo(1 * MM_PER_M, 1);
@@ -322,5 +322,49 @@ describe("RealTrainMod の車両パック", () => {
     expect(r.problems).toEqual([]);
     expect(r.vehicles[0].source).toBe("MyPack");
     expect(r.vehicles[0].config.bogies[0]?.modelFile).toBe("MyPack/assets/minecraft/models/test_bogie.obj");
+  });
+
+  it("編成の長さは車両ごとの長さで計算する（短い貨車・長い車両）", () => {
+    const toki = { config: { ...parseTrainConfig({ trainName: "toki", trainModel: "a.mqo", bogiePos: [[0, 0, 5], [0, 0, -5]], trainDistance: 7 })! } };
+    const size = consistSizeOf(toki);
+    // 連結面の間 14m → 93.3mm から連結のすきまを引く
+    expect(size.end.length).toBeCloseTo(14 * MM_PER_M - N_CAR.gap, 0);
+    expect(size.end.bogieCenters).toBeCloseTo(10 * MM_PER_M, 0);
+    expect(size.middle).toBeUndefined();
+    // 5両: 両端と中間が同じ長さ
+    expect(trainLength(5, size)).toBeCloseTo(5 * size.end.length + 4 * N_CAR.gap);
+    expect(trainLength(5)).toBe(5 * N_CAR.length + 4 * N_CAR.gap);
+    // 600mm のホームに、20m級は4両、トキは6両入る
+    expect(carsFitting(600)).toBe(4);
+    expect(carsFitting(600, size)).toBe(6);
+    // 中間車が違う長さの編成
+    const long = { config: { ...toki.config, trainDistance: 12.5, bogiePos: [[0, 0, 8.75], [0, 0, -8.75]] as [number, number, number][] } };
+    const mixed = consistSizeOf(toki, long);
+    expect(mixed.middle!.length).toBeCloseTo(25 * MM_PER_M - N_CAR.gap, 0);
+    expect(trainLength(3, mixed)).toBeCloseTo(2 * mixed.end.length + mixed.middle!.length + 2 * N_CAR.gap);
+  });
+
+  it("車両の置き方は車両ごとの長さで並ぶ", () => {
+    const straight = { poseAt: (o = 0) => ({ x: o, y: 0, z: 0 }) as never };
+    const size = { end: { length: 90, bogieCenters: 60 }, middle: { length: 160, bogieCenters: 110 } };
+    const [a, b, c] = carPlacements(straight, 3, size);
+    expect(a.x).toBeCloseTo(-45);
+    expect(b.x).toBeCloseTo(-(90 + 3 + 80));
+    expect(c.x).toBeCloseTo(-(90 + 3 + 160 + 3 + 45));
+  });
+
+  it("運行計画に車両の長さを保存できる（おかしな値は捨てる）", () => {
+    const base = { id: "a", name: "A", kind: "local", color: "#2f6fb5", cars: 4, speedKmh: 80, departSec: 0, laps: 1, stops: [] };
+    const plan = normalizeOperation({
+      stationNames: {},
+      trains: [
+        { ...base, carSize: { end: { length: 90.3, bogieCenters: 66.7 } } },
+        { ...base, id: "b", carSize: { end: { length: 5, bogieCenters: 1 } } },
+        { ...base, id: "c", carSize: { end: { length: 133, bogieCenters: 92 }, middle: { length: 160, bogieCenters: 999 } } },
+      ],
+    })!;
+    expect(plan.trains[0].carSize).toEqual({ end: { length: 90.3, bogieCenters: 66.7 } });
+    expect(plan.trains[1].carSize).toBeUndefined();
+    expect(plan.trains[2].carSize).toEqual({ end: { length: 133, bogieCenters: 92 } });
   });
 });

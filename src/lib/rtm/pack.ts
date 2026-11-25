@@ -4,7 +4,11 @@
 // 利用者が自分の持っている車両パックを選び、ブラウザの中だけで読む（サーバーには送らない）。
 
 import { decodeText, parseModelFile, SUPPORTED_MODEL } from "./model";
+import { N_CAR, type CarSize, type ConsistSize } from "../drive";
 import { readZip, type ZipEntry } from "./zip";
+
+/** 実物 1m → 模型の mm（1/150） */
+export const MM_PER_M = 1000 / 150;
 
 export type RtmTexture = {
   /** マテリアル名（"default" は、ほかに当てはまらないマテリアル全部） */
@@ -226,6 +230,24 @@ export function lightTextureNames(path: string): string[] {
   const m = /^(.*?)(\.[^./]+)$/.exec(path);
   const [stem, ext] = m ? [m[1], m[2]] : [path, ".png"];
   return [0, 1, 2].map((n) => `${stem}_light${n}${ext}`);
+}
+
+/**
+ * 車両の模型での長さ（mm、1/150）。RTM の trainDistance（車体長の半分）の2倍を連結面の間とし、
+ * そこから連結のすきまを引いたものを車体の長さにする（SenroLab の編成の長さの計算と同じ考え方）
+ */
+export function carSizeOf(v: Pick<RtmVehicle, "config">): CarSize {
+  const length = Math.max(20, v.config.trainDistance * 2 * MM_PER_M - N_CAR.gap);
+  const zs = v.config.bogiePos.map((p) => p[2]);
+  const bogie = zs.length >= 2 ? (Math.max(...zs) - Math.min(...zs)) * MM_PER_M : length * 0.7;
+  return { length: Math.round(length * 10) / 10, bogieCenters: Math.round(Math.min(length, bogie) * 10) / 10 };
+}
+
+/** 先頭・最後尾がこの車両、中間車が middle（なければ同じ車両）の編成の長さ */
+export function consistSizeOf(v: Pick<RtmVehicle, "config">, middle?: Pick<RtmVehicle, "config">): ConsistSize {
+  const end = carSizeOf(v);
+  const mid = middle ? carSizeOf(middle) : null;
+  return mid && (mid.length !== end.length || mid.bogieCenters !== end.bogieCenters) ? { end, middle: mid } : { end };
 }
 
 export type PackResult = { vehicles: RtmVehicle[]; problems: string[] };

@@ -1,14 +1,14 @@
 // 読み込んだ RealTrainMod の車両を、走行の映像（three.js）の車両にする。
 //
-// 縮尺: 幅と高さは実物の 1/150。長さは、連結面の間（RTM の trainDistance の2倍）が
-// SenroLab の1両分（N_CAR の全長 + 連結のすきま）になるように合わせる。
-// こうすると、運行計画の「編成の長さ」やホームに収まる両数の計算と映像の車両がずれない。
+// 縮尺は実物の 1/150。車両の長さは車両ごとに違うので、運行計画の「編成の長さ」やホームに収まる両数も
+// その車両の長さ（pack.ts の carSizeOf）で計算し、映像の車両の置き方（carPlacements）と合わせる。
 
 import * as THREE from "three";
 import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { N_CAR } from "../drive";
 import { modelBounds, parseModelFile, type ParsedModel } from "./model";
-import type { RtmModelSource, RtmTexture, RtmVehicle } from "./pack";
+import { MM_PER_M, type RtmModelSource, type RtmTexture, type RtmVehicle } from "./pack";
+
+export { MM_PER_M };
 
 export type CarRole = "front" | "middle" | "rear" | "single";
 
@@ -22,8 +22,6 @@ export type VehicleKit = {
 /** RTM の車両の、台車の上面（y=0）からレール面までの深さ(m) */
 const RTM_RAIL_DEPTH_M = 1.04;
 
-/** 実物 1m → 模型の mm（1/150） */
-export const MM_PER_M = 1000 / 150;
 
 export type KitTransform = {
   /** 幅・高さの倍率（モデルの単位 → mm） */
@@ -48,7 +46,8 @@ export function kitTransform(vehicle: Pick<RtmVehicle, "config">, body: ParsedMo
     if (len > 0 && (len / pitchM > 3 || len / pitchM < 1 / 3)) unit = (pitchM * 0.97) / len;
   }
   const scale = MM_PER_M * unit;
-  const lengthScale = ((N_CAR.length + N_CAR.gap) / pitchM) * unit;
+  // 長さも実物の 1/150（編成の長さは carSizeOf で車両ごとに計算する）
+  const lengthScale = scale;
   let offsetY = 0;
   const bb = bogie ? modelBounds(bogie) : null;
   if (bb) {

@@ -428,15 +428,54 @@ export type CarPlacement = {
   pitch: number;
 };
 
+/** 1両の長さ（mm）。length は車体の全長、bogieCenters は前後の台車の中心の間隔 */
+export type CarSize = { length: number; bogieCenters: number };
+
+/**
+ * 編成の車両の長さ。end は先頭と最後尾、middle は中間車（なければ end と同じ）。
+ * ない編成は N_CAR（20m級）の車両。RealTrainMod の車両は、その車両の長さ（実物の 1/150）になる
+ */
+export type ConsistSize = { end: CarSize; middle?: CarSize };
+
+const N_CAR_SIZE: CarSize = { length: N_CAR.length, bogieCenters: N_CAR.bogieCenters };
+
+/** 編成の i 両目の長さ */
+export function carSizeAt(i: number, cars: number, size?: ConsistSize): CarSize {
+  if (!size) return N_CAR_SIZE;
+  return i === 0 || i === cars - 1 ? size.end : size.middle ?? size.end;
+}
+
+/** 保存データの編成の長さをそろえる（おかしな値は捨てる） */
+export function normalizeConsistSize(v: unknown): ConsistSize | undefined {
+  const car = (x: unknown): CarSize | undefined => {
+    if (!x || typeof x !== "object") return undefined;
+    const { length, bogieCenters } = x as Partial<CarSize>;
+    if (typeof length !== "number" || !(length >= 20 && length <= 400)) return undefined;
+    if (typeof bogieCenters !== "number" || !(bogieCenters >= 0 && bogieCenters <= length)) return undefined;
+    return { length: Math.round(length * 10) / 10, bogieCenters: Math.round(bogieCenters * 10) / 10 };
+  };
+  if (!v || typeof v !== "object") return undefined;
+  const end = car((v as ConsistSize).end);
+  if (!end) return undefined;
+  const middle = car((v as ConsistSize).middle);
+  return middle ? { end, middle } : { end };
+}
+
+export function sameConsistSize(a: ConsistSize | undefined, b: ConsistSize | undefined): boolean {
+  const eq = (x?: CarSize, y?: CarSize) => x?.length === y?.length && x?.bogieCenters === y?.bogieCenters;
+  return eq(a?.end, b?.end) && eq(a?.middle, b?.middle);
+}
+
 /**
  * 先頭の車両の前端を現在位置にして、cars 両の車体の置き方を求める。
  * 実物と同じく、車体は前後の台車の位置（線路の上）を結んだ向きに置く（曲線では車体の端が少し外へ出る）
  */
-export function carPlacements(drive: { poseAt(offset?: number): DrivePose }, cars: number): CarPlacement[] {
-  const { length, bogieCenters, gap } = N_CAR;
+export function carPlacements(drive: { poseAt(offset?: number): DrivePose }, cars: number, size?: ConsistSize): CarPlacement[] {
+  const { gap } = N_CAR;
   const out: CarPlacement[] = [];
+  let front = 0;
   for (let i = 0; i < cars; i++) {
-    const front = -i * (length + gap);
+    const { length, bogieCenters } = carSizeAt(i, cars, size);
     const a = drive.poseAt(front - (length - bogieCenters) / 2);
     const b = drive.poseAt(front - (length + bogieCenters) / 2);
     const dx = a.x - b.x;
@@ -449,11 +488,14 @@ export function carPlacements(drive: { poseAt(offset?: number): DrivePose }, car
       heading: (Math.atan2(dy, dx) * 180) / Math.PI,
       pitch: Math.atan2(a.z - b.z, flat),
     });
+    front -= length + gap;
   }
   return out;
 }
 
 /** 列車の長さ(mm) */
-export function trainLength(cars: number): number {
-  return cars * N_CAR.length + (cars - 1) * N_CAR.gap;
+export function trainLength(cars: number, size?: ConsistSize): number {
+  let len = (cars - 1) * N_CAR.gap;
+  for (let i = 0; i < cars; i++) len += carSizeAt(i, cars, size).length;
+  return len;
 }

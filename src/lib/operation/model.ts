@@ -2,7 +2,7 @@
 //
 // 時刻は「運転開始からの秒」で持つ。Nゲージの縮尺速度（1/150）で走らせたときの、模型の実際の時間。
 
-import { isVehicleType, type VehicleType } from "../drive";
+import { isVehicleType, normalizeConsistSize, type ConsistSize, type VehicleType } from "../drive";
 
 /** 列車の種別 */
 export type TrainKind = "local" | "rapid" | "express" | "freight" | "deadhead";
@@ -43,6 +43,11 @@ export type Train = {
   /** ダイヤグラムの線の色 */
   color: string;
   cars: number;
+  /**
+   * 車両の長さ（映像の車両に RealTrainMod の車両を選んだとき、その車両の長さ）。なければ20m級。
+   * 車両のデータは利用者のブラウザにしかないので、選んだときの長さをここに残し、ほかの端末でも同じ長さで計算する
+   */
+  carSize?: ConsistSize;
   /** 縮尺の最高速度(km/h)。駅間はこの速度で走るとして時間を計算する */
   speedKmh: number;
   /** 始発駅を出る時刻（運転開始からの秒） */
@@ -111,6 +116,7 @@ export function normalizeOperation(v: unknown): OperationPlan | undefined {
       ...(isVehicleType(t.vehicleType) ? { vehicleType: t.vehicleType } : {}),
       color: typeof t.color === "string" && /^#[0-9a-fA-F]{6}$/.test(t.color) ? t.color : "#2f6fb5",
       cars: Math.round(clamp(num(t.cars, 4), LIMITS.cars)),
+      ...(normalizeConsistSize(t.carSize) ? { carSize: normalizeConsistSize(t.carSize) } : {}),
       speedKmh: clamp(num(t.speedKmh, 80), LIMITS.speedKmh),
       departSec: Math.round(clamp(num(t.departSec, 0), LIMITS.departSec)),
       laps: Math.round(clamp(num(t.laps, 1), LIMITS.laps)),
