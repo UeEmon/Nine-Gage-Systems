@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-25-official-sns",
+    date: "2026-11-25T20:30:00+09:00",
+    title: "SenroLab の公式 SNS を始めました",
+    body: "X（@senrolab）・YouTube（@senrolab）・Instagram（@senrolab_jp）で、新しい機能や運転席ビューの動画、レイアウトの作り方をお知らせしていきます。トップページのいちばん下から各 SNS に移動できます。",
+  },
+  {
     id: "2026-11-25-admin-access-analytics",
     date: "2026-11-25T10:00:00+09:00",
     title: "管理画面でアクセス解析を見られるようにしました",
