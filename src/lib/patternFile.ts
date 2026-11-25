@@ -4,6 +4,7 @@ import type { Layout } from "./geometry";
 import { hasPart } from "./parts";
 import { hasAccessory } from "./accessories";
 import { isSimObject } from "./replica";
+import { isPlacedModel } from "./models3d/placed";
 
 export type SavedPattern = {
   id: string;
@@ -63,7 +64,8 @@ export function validLayout(l: unknown): l is Layout {
             typeof a.y === "number" &&
             typeof a.rot === "number",
         ))) &&
-    (x.sims === undefined || (Array.isArray(x.sims) && x.sims.every(isSimObject)))
+    (x.sims === undefined || (Array.isArray(x.sims) && x.sims.every(isSimObject))) &&
+    (x.models === undefined || (Array.isArray(x.models) && x.models.every(isPlacedModel)))
   );
 }
 

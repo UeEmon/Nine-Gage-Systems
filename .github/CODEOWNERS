@@ -39,6 +39,9 @@
 /src/lib/accessories.ts @UeEmon
 /src/components/AccessoryShape.tsx @UeEmon
 /tests/accessories.test.ts @UeEmon
+/src/lib/models3d/ @UeEmon
+/src/components/models3d/ @UeEmon
+/tests/models3d.test.ts @UeEmon
 
 # ── 部品リスト・所有パーツ（feature:bom）
 /src/lib/bom.ts @UeEmon

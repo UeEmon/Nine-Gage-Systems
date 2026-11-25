@@ -359,6 +359,44 @@ describe("アップロードしたSTLモデル", () => {
     restored.dispose();
     expect(isSimObject({ ...obj, model: { format: "obj", data: "bad" } })).toBe(false);
   });
+  it("glTF（.glb）と OBJ（.mtl の色つき）も読み、底の中心を原点にする", async () => {
+    const { loadModelObject, initialSizeMm, isUploadedModel, mtlColors } = await import("../src/lib/object3d");
+    // 三角形1枚の .glb（x 0〜2, y 0〜1, z 0〜3）
+    const pos = new Float32Array([0, 0, 0, 2, 0, 0, 0, 1, 3]);
+    const json = new TextEncoder().encode(JSON.stringify({
+      asset: { version: "2.0" }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      buffers: [{ byteLength: 36 }], bufferViews: [{ buffer: 0, byteLength: 36 }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: "VEC3", min: [0, 0, 0], max: [2, 1, 3] }],
+    }));
+    const jsonPad = new Uint8Array(Math.ceil(json.length / 4) * 4).fill(0x20);
+    jsonPad.set(json);
+    const glb = new Uint8Array(12 + 8 + jsonPad.length + 8 + 36);
+    const v = new DataView(glb.buffer);
+    v.setUint32(0, 0x46546c67, true); v.setUint32(4, 2, true); v.setUint32(8, glb.length, true);
+    v.setUint32(12, jsonPad.length, true); v.setUint32(16, 0x4e4f534a, true); glb.set(jsonPad, 20);
+    v.setUint32(20 + jsonPad.length, 36, true); v.setUint32(24 + jsonPad.length, 0x004e4942, true);
+    glb.set(new Uint8Array(pos.buffer), 28 + jsonPad.length);
+    const g = await loadModelObject({ format: "glb", data: Buffer.from(glb).toString("base64") });
+    expect(g.size.map((x) => Math.round(x))).toEqual([2, 1, 3]);
+    g.dispose();
+
+    const obj = "v 0 0 0\nv 15 0 0\nv 15 6 30\nusemtl roof\nf 1 2 3\n";
+    const mtl = "newmtl roof\nKd 0.5 0.1 0.1\n";
+    expect(mtlColors(mtl)).toEqual({ roof: [0.5, 0.1, 0.1] });
+    const model = { format: "obj" as const, data: Buffer.from(obj).toString("base64"), mtl };
+    expect(isUploadedModel(model)).toBe(true);
+    const o = await loadModelObject(model);
+    expect(o.size).toEqual([15, 6, 30]);
+    let color = "";
+    o.object.traverse((x) => { const m = (x as import("three").Mesh).material as import("three").MeshStandardMaterial | undefined; if (m?.color) color = m.color.getHexString(); });
+    expect(color).not.toBe("9ea8b5");
+    o.dispose();
+    // 実物の m は 1/150、STL は最長辺 100mm
+    expect(initialSizeMm("obj", [15, 6, 30])).toEqual({ length: 100, height: 40, width: 200 });
+    expect(initialSizeMm("stl", [10, 20, 50])).toEqual({ length: 20, height: 40, width: 100 });
+    expect(isUploadedModel({ format: "stl", data: model.data, mtl })).toBe(false);
+  });
   it("壊れたヘッダー、巨大な面数、空のモデルを拒否する", async () => {
     const { parseStl, MODEL_MAX_BYTES } = await import("../src/lib/object3d");
     expect(() => parseStl(new ArrayBuffer(0))).toThrow();

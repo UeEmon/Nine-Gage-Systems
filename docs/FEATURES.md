@@ -20,7 +20,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 | 線路エディタ | `feature:editor` | @UeEmon | キャンバス・線路のつなぎ方と吸着・ボード設定・パレット・パターンの保存と読み込み |
 | 線路カタログ・品番DB | `feature:catalog` | @UeEmon | KATO・TOMIX の線路の品番・寸法・道床・価格のデータと、品番データベース（/api/products） |
 | 高架・立体交差 | `feature:elevation` | @UeEmon | 線路の高さ・勾配・橋脚の選定と検査、断面図 |
-| 線路以外のパーツ | `feature:accessories` | @UeEmon | 踏切・信号機・ホーム・駅舎・建物などのストラクチャーのデータと置き方 |
+| 線路以外のパーツ | `feature:accessories` | @UeEmon | 踏切・信号機・ホーム・駅舎・建物などのストラクチャーのデータと置き方、読み込んだ RealTrainMod の設置物の配置 |
 | 部品リスト・所有パーツ | `feature:bom` | @UeEmon | 必要な品番・本数・箱数・費用の集計と、手持ちの所有パーツの登録 |
 | 運転席視点（3D） | `feature:drive` | @UeEmon | レイアウトの上を走る3Dの運転席視点・後ろからの視点・録画 |
 | 運行計画 | `feature:operation` | @UeEmon | 作ったレイアウトで列車の運行計画（ダイヤ・運用）を立てる機能 |
@@ -76,6 +76,9 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/lib/accessories.ts`
 - `/src/components/AccessoryShape.tsx`
 - `/tests/accessories.test.ts`
+- `/src/lib/models3d/`
+- `/src/components/models3d/`
+- `/tests/models3d.test.ts`
 
 ### 部品リスト・所有パーツ（`feature:bom`）
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { SIM_KINDS, SIM_KIND_LABELS, type SimObject } from "@/lib/replica";
-import { MODEL_MAX_BYTES, parseStl } from "@/lib/object3d";
+import { initialSizeMm, loadModelObject, MODEL_MAX_BYTES, modelFormatOf, MTL_MAX_BYTES } from "@/lib/object3d";
 
 export function SimObjectEditor({ sims, center, onChange }: {
   sims: SimObject[]; center: { x: number; y: number }; onChange: (sims: SimObject[]) => void;
@@ -12,31 +12,35 @@ export function SimObjectEditor({ sims, center, onChange }: {
   const update = (uid: string, patch: Partial<SimObject>) => onChange(sims.map((s) => s.uid === uid ? { ...s, ...patch } : s));
   return <section className="sim-editor">
     <h3>仮オブジェクト・3Dモデル</h3>
-    <label>3Dモデルを追加（STL・256KB以下）
-      <input type="file" accept=".stl" disabled={busy} onChange={async (e) => {
-        const file = e.target.files?.[0];
+    <label>3Dモデルを追加（STL・glTF の .glb・OBJ、512KB以下）
+      <input type="file" multiple accept=".stl,.glb,.obj,.mtl" disabled={busy} onChange={async (e) => {
+        const files = [...(e.target.files ?? [])];
         e.target.value = "";
-        if (!file) return;
+        const file = files.find((f) => modelFormatOf(f.name));
+        if (!file) {
+          if (files.length) setError("STL・.glb・OBJ のファイルを選んでください（.gltf は .glb にまとめて書き出してください）。");
+          return;
+        }
         setError(""); setBusy(true);
         try {
-          if (!/\.stl$/i.test(file.name) || file.size > MODEL_MAX_BYTES) throw new Error("256KB以下のSTLを選んでください。");
-          if (sims.reduce((n, s) => n + (s.model?.data.length ?? 0), 0) + file.size * 4 / 3 > 1400000) throw new Error("レイアウト内の3Dモデルは合計約1MBまでです。");
-          const buffer = await file.arrayBuffer();
-          const geometry = parseStl(buffer);
-          const b = geometry.boundingBox!;
-          const size = { length: b.max.x - b.min.x, height: b.max.y - b.min.y, width: b.max.z - b.min.z };
-          geometry.dispose();
+          const format = modelFormatOf(file.name)!;
+          if (file.size > MODEL_MAX_BYTES) throw new Error("3Dモデルは512KB以下にしてください。");
+          const mtlFile = format === "obj" ? files.find((f) => /\.mtl$/i.test(f.name)) : undefined;
+          const mtl = mtlFile && mtlFile.size <= MTL_MAX_BYTES ? await mtlFile.text() : undefined;
+          if (sims.reduce((n, s) => n + (s.model?.data.length ?? 0) + (s.model?.mtl?.length ?? 0), 0) + file.size * 4 / 3 > 1400000) throw new Error("レイアウト内の3Dモデルは合計約1MBまでです。");
           let raw = "";
-          for (const byte of new Uint8Array(buffer)) raw += String.fromCharCode(byte);
-          const factor = 100 / Math.max(size.length, size.width, size.height);
-          onChange([...sims, { uid: crypto.randomUUID(), name: file.name.replace(/\.stl$/i, "").slice(0, 80), kind: "other",
-            ...center, z: 0, rot: 0, length: size.length * factor, width: size.width * factor, height: size.height * factor,
-            note: "アップロードした3Dモデル", model: { format: "stl", data: btoa(raw) } }]);
+          for (const byte of new Uint8Array(await file.arrayBuffer())) raw += String.fromCharCode(byte);
+          const model = { format, data: btoa(raw), ...(mtl ? { mtl } : {}) };
+          const loaded = await loadModelObject(model);
+          const size = initialSizeMm(format, loaded.size);
+          loaded.dispose();
+          onChange([...sims, { uid: crypto.randomUUID(), name: file.name.replace(/\.[^.]+$/, "").slice(0, 80), kind: "other",
+            ...center, z: 0, rot: 0, ...size, note: "アップロードした3Dモデル", model }]);
         } catch (err) { setError(err instanceof Error ? err.message : "読み込めませんでした。"); }
         finally { setBusy(false); }
       }} />
     </label>
-    <p className="hint">STLのZ軸を高さとして、中央に最長辺100mmで配置します。寸法は下で変更できます。モデルは保存・書き出しに含まれます。大きなデータはJSONにも書き出してください。</p>
+    <p className="hint">STLはZ軸を高さとして最長辺100mmで、glTF・OBJは実物の大きさ（m）として1/150で、ボードの中央に置きます（極端な大きさなら最長辺100mm）。OBJは.mtlもいっしょに選ぶと色が付きます。寸法は下で変更できます。モデルは保存・書き出しに含まれます。大きなデータはJSONにも書き出してください。</p>
     {error && <p role="alert" className="error">{error}</p>}
     {sims.map((s) => <details key={s.uid}>
       <summary>{s.name}（{s.model ? "3Dモデル" : SIM_KIND_LABELS[s.kind]}）</summary>
