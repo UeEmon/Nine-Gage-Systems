@@ -733,3 +733,21 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .rtm-help { font-size: 12px; }
 .rtm-files { display: flex; flex-wrap: wrap; gap: 8px; }
 .op-form .op-rtm-button { align-self: end; justify-self: start; }
+
+/* 読み込んだ 3D モデルを置いたもの */
+.placed-model .placed-model-body { fill: #d38b3c; fill-opacity: 0.22; stroke: #b0651c; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.placed-model .placed-model-front { stroke: #b0651c; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.placed-model.is-missing .placed-model-body { fill-opacity: 0.08; stroke-dasharray: 4 4; }
+.placed-model.is-selected .placed-model-body { stroke: var(--accent); stroke-width: 2.5; fill-opacity: 0.32; }
+.placed-model-label { fill: #8a4a10; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.model-placed { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+.model-placed .link-button.on { font-weight: 700; text-decoration: underline; }
+.model-edit { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
+.rtm-name input.model-name { font-weight: 600; min-width: 0; flex: 1 1 180px; }
+.drive-model-note { position: absolute; left: 12px; bottom: 12px; margin: 0; max-width: min(520px, calc(100% - 24px)); padding: 6px 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; cursor: pointer; }
+.model-edit { font-size: 12px; }
+.model-edit label { display: grid; gap: 4px; margin: 6px 0; min-width: 0; }
+.model-edit input { width: 100%; min-width: 0; }
+@media (prefers-color-scheme: dark) {
+  .placed-model-label { fill: #f0c08a; }
+}

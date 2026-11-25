@@ -27,6 +27,9 @@ import type { Layout } from "@/lib/geometry";
 import { consistSizeOf, leadVehicles, type RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, type VehicleKit } from "@/lib/rtm/three";
 import { RtmVehiclesDialog, useRtmVehicles } from "./rtm/RtmVehicles";
+import { listModels } from "@/lib/models3d/store";
+import { buildPlacedModels } from "@/lib/models3d/three";
+import { placedCorners } from "@/lib/models3d/placed";
 import { getPart } from "@/lib/parts";
 import {
   computeSchedule,
@@ -50,6 +53,8 @@ type Props = {
   planTrainId?: string | null;
   /** RealTrainMod の車両を使える（プレミアムユーザー・プレミアムプラス・管理者） */
   rtmAllowed?: boolean;
+  /** 読み込んだ RealTrainMod の設置物をレイアウトに置いたものを表示する（プレミアムユーザー・プレミアムプラス・管理者） */
+  modelsAllowed?: boolean;
   onClose: () => void;
 };
 
@@ -104,7 +109,7 @@ const CHASE_BACK_MM = 160;
 const CHASE_UP_MM = 110;
 
 /** 作ったレイアウトの線路の上を、運転席の視点で走る3Dの映像 */
-export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, onClose }: Props) {
+export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, modelsAllowed = false, onClose }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const mapPositionRef = useRef<((fx: number, fy: number) => { x: number; y: number }) | null>(null);
@@ -149,6 +154,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
   const rtmRef = useRef<RtmVehicle[]>([]);
   rtmRef.current = rtmVehicles ?? [];
   const [rtmOpen, setRtmOpen] = useState(false);
+  const [modelNote, setModelNote] = useState("");
   const rtmOpenRef = useRef(rtmOpen);
   rtmOpenRef.current = rtmOpen;
   // 読み込んだ車両のモデルとテクスチャ（車両ごとに1つ作って使い回す）
@@ -310,8 +316,25 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
     scene.add(sun);
 
     const piers = placePiers(layout.pieces, graph.elevation);
-    const world = buildScene(graph, layout.pieces, piers, layout.board, layout.accessories ?? [], layout.sims ?? [], (normalizeOperation(layout.operation) ?? EMPTY_OPERATION).stationNames);
+    const world = buildScene(graph, layout.pieces, piers, layout.board, layout.accessories ?? [], layout.sims ?? [], (normalizeOperation(layout.operation) ?? EMPTY_OPERATION).stationNames,
+      modelsAllowed ? (layout.models ?? []).map(placedCorners) : [],
+    );
     scene.add(world.group);
+    // 読み込んだ RealTrainMod の設置物（この端末の IndexedDB にあるもの）を、読めたものから置く
+    let placedModels: { group: THREE.Group; dispose(): void } | null = null;
+    let sceneAlive = true;
+    if (modelsAllowed && layout.models?.length) {
+      const placed = layout.models;
+      void listModels()
+        .then((all) => buildPlacedModels(placed, all))
+        .then((built) => {
+          if (!sceneAlive) return built.dispose();
+          placedModels = built;
+          scene.add(built.group);
+          if (built.missing.length) setModelNote(`この端末に読み込んでいない RTM の設置物は表示していません：${built.missing.join("、")}`);
+        })
+        .catch(() => setModelNote("RTM の設置物を表示できませんでした"));
+    }
     let currentVehicleType = vehicleTypeRef.current;
     let currentRtm = rtmKitsForRef.current(currentVehicleType);
     let currentSize = currentRtm ? rtmSizeForRef.current(currentVehicleType) : undefined;
@@ -561,6 +584,8 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
       canvas.removeEventListener("dblclick", onDbl);
       if (recorderRef.current?.state === "recording") recorderRef.current.stop();
       world.dispose();
+      sceneAlive = false;
+      placedModels?.dispose();
       train.dispose();
       for (const m of planMeshes) m.dispose();
       renderer.dispose();
@@ -649,6 +674,11 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
     <div className="drive" role="dialog" aria-label="運転席の視点で走る">
       <div className="drive-stage" ref={mountRef}>
         {error && <p className="drive-error">{error}</p>}
+        {modelNote && (
+          <p className="drive-model-note" onClick={() => setModelNote("")} title="クリックで閉じる">
+            {modelNote}
+          </p>
+        )}
         {planMode && planHud && (
           <div className="drive-hud drive-plan-hud">
             <div className="speed">
