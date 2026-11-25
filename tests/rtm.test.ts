@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { isVehicleType, N_CAR, rtmVehicleId, rtmVehicleType } from "../src/lib/drive";
 import { buildTrain } from "../src/lib/driveScene";
 import { normalizeOperation } from "../src/lib/operation";
+import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
 import { findFile, parseLenientJson, parseTrainConfig, readVehicleFiles, vehicleId } from "../src/lib/rtm/pack";
 import { buildVehicleKit, lightTexturePath, MM_PER_M } from "../src/lib/rtm/three";
@@ -257,5 +258,13 @@ describe("RealTrainMod の車両パック", () => {
     })!;
     expect(plan.trains[0].vehicleType).toBe("rtm:v1abc");
     expect(plan.trains[1].vehicleType).toBeUndefined();
+  });
+
+  it("使えるのはプレミアムユーザー・プレミアムプラス・管理者だけ", () => {
+    expect(canUseRtm("admin")).toBe(true);
+    expect(canUseRtm("plus")).toBe(true);
+    expect(canUseRtm("ai")).toBe(true);
+    expect(canUseRtm("user")).toBe(false);
+    expect(canUseRtm(null)).toBe(false);
   });
 });

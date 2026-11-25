@@ -22,7 +22,7 @@ import { heightText, PIER_SYSTEMS } from "@/data/piers";
 import { isRamp, levelOf as pieceLevel, PIER_MIN_MM, standardDepth, zRange } from "@/lib/elevation";
 import { BED_INFO, bedVariantsOf, CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import type { BedType, PartCategory } from "@/data/trackCatalog";
-import type { SessionUser } from "@/lib/roles";
+import { canUseRtm, type SessionUser } from "@/lib/roles";
 import { AiStatus } from "./AiStatus";
 import { UserMenu } from "./UserMenu";
 import { TrackPiece, type Level } from "./TrackPiece";
@@ -1270,12 +1270,13 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <button onClick={() => fitView(b)}>全体表示</button>
         </div>
       </main>
-      {showDrive && <DriveView layout={layout} startUid={selectedUid} planTrainId={driveTrainId} onClose={() => setShowDrive(false)} />}
+      {showDrive && <DriveView layout={layout} startUid={selectedUid} planTrainId={driveTrainId} rtmAllowed={canUseRtm(user?.role)} onClose={() => setShowDrive(false)} />}
       {showOperation && (
         <OperationView
           layout={layout}
           elevation={analysis.elevation}
           canUseAi={!!user}
+          rtmAllowed={canUseRtm(user?.role)}
           onChange={(operation) => setLayout((l) => ({ ...l, operation }))}
           onRide={(trainId) => {
             setShowOperation(false);

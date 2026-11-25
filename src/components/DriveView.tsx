@@ -47,6 +47,8 @@ type Props = {
   startUid: string | null;
   /** 運行計画どおりに走らせて、この列車に乗る（運行計画の画面から開いたとき） */
   planTrainId?: string | null;
+  /** RealTrainMod の車両を使える（プレミアムユーザー・プレミアムプラス・管理者） */
+  rtmAllowed?: boolean;
   onClose: () => void;
 };
 
@@ -54,6 +56,7 @@ type ViewMode = "cab" | "chase" | "fixed";
 
 /** 映像の車両に使う、読み込んだ RealTrainMod の車両の型 */
 type RtmKits = { front: VehicleKit; middle?: VehicleKit };
+const NO_RTM_VEHICLES: RtmVehicle[] = [];
 const sameKits = (a: RtmKits | undefined, b: RtmKits | undefined) => a?.front === b?.front && a?.middle === b?.middle;
 /** free: 自分で運転する / plan: 運行計画どおりに全部の列車を走らせる */
 type RunMode = "free" | "plan";
@@ -100,7 +103,7 @@ const CHASE_BACK_MM = 160;
 const CHASE_UP_MM = 110;
 
 /** 作ったレイアウトの線路の上を、運転席の視点で走る3Dの映像 */
-export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
+export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, onClose }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const mapPositionRef = useRef<((fx: number, fy: number) => { x: number; y: number }) | null>(null);
@@ -139,7 +142,9 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
   const [vehicleType, setVehicleType] = useState<VehicleType>("commuter");
   const vehicleTypeRef = useRef(vehicleType);
   vehicleTypeRef.current = vehicleType;
-  const rtmVehicles = useRtmVehicles();
+  const loadedRtmVehicles = useRtmVehicles();
+  // 使えないロールでは、ブラウザに残っている車両も使わない（組み込みの車両で表示する）
+  const rtmVehicles = rtmAllowed ? loadedRtmVehicles : NO_RTM_VEHICLES;
   const rtmRef = useRef<RtmVehicle[]>([]);
   rtmRef.current = rtmVehicles ?? [];
   const [rtmOpen, setRtmOpen] = useState(false);
@@ -799,7 +804,11 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
             )}
           </select>
         </label>}
-        <button onClick={() => setRtmOpen(true)} title="RealTrainMod の車両パックを読み込む">RTMの車両…</button>
+        {rtmAllowed ? (
+          <button onClick={() => setRtmOpen(true)} title="RealTrainMod の車両パックを読み込む">RTMの車両…</button>
+        ) : (
+          <button disabled title="RealTrainMod の車両は、プレミアムユーザー・プレミアムプラス・管理者が使えます">RTMの車両…</button>
+        )}
         {!planMode && <button onClick={turnBack}>⇄ 逆向き</button>}
         <button
           onClick={() => {
@@ -817,7 +826,7 @@ export function DriveView({ layout, startUid, planTrainId, onClose }: Props) {
           閉じる
         </button>
       </div>
-      {rtmOpen && (
+      {rtmOpen && rtmAllowed && (
         <RtmVehiclesDialog
           onClose={() => setRtmOpen(false)}
           onPick={planMode ? undefined : (id) => {
