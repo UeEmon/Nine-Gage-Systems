@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-26-realtrainmod-freight",
+    date: "2026-11-26T07:30:00+09:00",
+    title: "RealTrainMod の貨車は、そのまま列車として選べます",
+    body: "貨車（トキ・コキ・タキ・ワムなど）は先頭車・中間車に分けず、走らせる車両の一覧から選べます。機関車の「中間車」に貨車を選ぶこともできます。",
+  },
+  {
     id: "2026-11-26-realtrainmod-cab-ends",
     date: "2026-11-26T06:10:00+09:00",
     title: "RealTrainMod の中間車は、先頭車の編成の中でだけ使うようにしました",
