@@ -5,6 +5,7 @@ import { AdminAnalyticsPanel } from "@/components/AdminAnalyticsPanel";
 import { AdminAiUsagePanel } from "@/components/AdminAiUsagePanel";
 import { AdminFeedbackPanel } from "@/components/AdminFeedbackPanel";
 import { AdminNoticesPanel } from "@/components/AdminNoticesPanel";
+import { AdminSponsorsPanel } from "@/components/AdminSponsorsPanel";
 import { AdminUsersPanel } from "@/components/AdminUsersPanel";
 import { UserMenu } from "@/components/UserMenu";
 import { currentUser } from "@/lib/server/auth";
@@ -32,6 +33,7 @@ export default async function AdminPage() {
         <AdminAiPanel />
         <AdminAiUsagePanel />
         <AdminUsersPanel currentUserId={user.id} />
+        <AdminSponsorsPanel />
         <AdminNoticesPanel />
         <AdminFeedbackPanel />
       </main>

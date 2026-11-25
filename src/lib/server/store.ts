@@ -10,8 +10,11 @@ import { openSecret, sealSecret } from "./secretBox";
  * 件数が少ないので、全体を JSON にして SQLite の1行に保存する（db.ts）。保存先は NINEGAGE_DATA_DIR（既定 ./data）の store.sqlite。
  */
 
-/** admin=管理者、ai=プレミアムユーザー（サーバーのキー）、user=一般（自分のキー）。ログインなしは保存しない */
-export const ROLES = ["admin", "ai", "user"] as const;
+/**
+ * 保存するロール。admin=管理者、plus=プレミアムプラス（管理者が指定。上限は aiLimitJpy）、user=一般。
+ * プレミアムユーザーは保存せず、一般のうち GitHub Sponsors で支援中の人をそう扱う（premium.ts）。ログインなしは保存しない
+ */
+export const ROLES = ["admin", "plus", "user"] as const;
 export type Role = (typeof ROLES)[number];
 
 /** 一般ユーザーが自分で設定するAI（接続先URLは指定できない） */
@@ -45,7 +48,36 @@ export type StoredUser = {
   pendingVerify?: { tokenHash: string; expiresAt: string };
   /** パスワード再設定のメールのリンク（使うか期限が切れると無効。新しく頼むと置き換わる） */
   passwordReset?: { tokenHash: string; expiresAt: string };
+  /** プレミアムプラスの、サーバーのAIの月の上限（円）。なければ上限なし */
+  aiLimitJpy?: number;
+  /** 結び付けた GitHub アカウント（支援は StoreData.sponsors をこのIDで引く） */
+  github?: StoredGithub;
 };
+
+export type StoredGithub = { id: number; login: string; linkedAt: string };
+
+/**
+ * GitHub Sponsors の支援（GitHub のアカウントごと。SenroLab に連携する前の支援も残す）。
+ * monthlyUsd: 毎月の支援の額（米ドル。支援していなければ 0）。
+ * oneTime: 1回きりの支援。それぞれ at から sponsorPlan.oneTimeDays 日のあいだ有効
+ */
+export type StoredSponsor = {
+  login: string;
+  monthlyUsd: number;
+  oneTime: { at: string; usd: number }[];
+  /** 最後に更新した日時 */
+  updatedAt: string;
+};
+
+/** プレミアムユーザー（支援した人）の上限の決め方（管理者が変えられる） */
+export type StoredSponsorPlan = {
+  /** 月の上限（円）＝ 支援額（米ドル）× 円換算のレート × multiplier */
+  multiplier: number;
+  /** 1回きりの支援でプレミアムユーザーになる日数 */
+  oneTimeDays: number;
+};
+
+export const DEFAULT_SPONSOR_PLAN: StoredSponsorPlan = { multiplier: 0.75, oneTimeDays: 30 };
 
 export const AUDIENCES = ["all", "admin"] as const;
 export type Audience = (typeof AUDIENCES)[number];
@@ -121,8 +153,9 @@ export const DEFAULT_USD_JPY = 150;
  * 保存形式の版。
  * 1: ロールは admin/user（user はサーバーのAIを使えた）
  * 2: ロールは admin/ai/user。版1の user は ai（プレミアムユーザー）に読み替える
+ * 3: ロールは admin/plus/user（プレミアムユーザーは支援から決める）。版1の user・版2の ai は plus（上限なし）に読み替える
  */
-export const STORE_VERSION = 2;
+export const STORE_VERSION = 3;
 
 export type StoreData = {
   version: typeof STORE_VERSION;
@@ -131,6 +164,9 @@ export type StoreData = {
   ai: StoredAi;
   notices: StoredNotice[];
   aiCost: StoredAiCost;
+  sponsorPlan: StoredSponsorPlan;
+  /** GitHub Sponsors の支援。キーは GitHub のユーザーID（数字の文字列） */
+  sponsors: Record<string, StoredSponsor>;
   feedback: StoredFeedback[];
 };
 
@@ -150,14 +186,61 @@ function ownAiOf(v: unknown): StoredOwnAi | undefined {
   return { provider: o.provider as OwnAiProvider, model: str(o.model, 200), apiKeyEnc: str(o.apiKeyEnc, 2000) };
 }
 
+function githubOf(v: unknown): StoredGithub | undefined {
+  const g = v as Partial<StoredGithub> | undefined;
+  if (!g || typeof g.id !== "number" || !Number.isInteger(g.id) || typeof g.login !== "string" || typeof g.linkedAt !== "string") return undefined;
+  return { id: g.id, login: g.login.slice(0, 100), linkedAt: g.linkedAt };
+}
+
+const usdOf = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 1_000_000 ? v : 0);
+
+function sponsorOf(v: unknown): StoredSponsor | undefined {
+  const s = v as Partial<StoredSponsor> | undefined;
+  if (!s || typeof s !== "object" || typeof s.updatedAt !== "string" || typeof s.login !== "string") return undefined;
+  const oneTime = Array.isArray(s.oneTime)
+    ? s.oneTime
+        .filter((o) => !!o && typeof o.at === "string" && !Number.isNaN(Date.parse(o.at)))
+        .map((o) => ({ at: o.at, usd: usdOf(o.usd) }))
+        .slice(-100)
+    : [];
+  return { login: s.login.slice(0, 100), monthlyUsd: usdOf(s.monthlyUsd), oneTime, updatedAt: s.updatedAt };
+}
+
+function sponsorsOf(v: unknown): Record<string, StoredSponsor> {
+  const out: Record<string, StoredSponsor> = {};
+  if (!v || typeof v !== "object") return out;
+  for (const [id, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!/^\d{1,15}$/.test(id)) continue;
+    const s = sponsorOf(raw);
+    if (s) out[id] = s;
+  }
+  return out;
+}
+
+function sponsorPlanOf(v: unknown): StoredSponsorPlan {
+  const p = (v ?? {}) as Partial<StoredSponsorPlan>;
+  const multiplier = typeof p.multiplier === "number" && p.multiplier >= 0 && p.multiplier <= 100 ? p.multiplier : DEFAULT_SPONSOR_PLAN.multiplier;
+  const oneTimeDays =
+    typeof p.oneTimeDays === "number" && Number.isInteger(p.oneTimeDays) && p.oneTimeDays >= 1 && p.oneTimeDays <= 366
+      ? p.oneTimeDays
+      : DEFAULT_SPONSOR_PLAN.oneTimeDays;
+  return { multiplier, oneTimeDays };
+}
+
+/** 以前の版のロールを今のロールに読み替える */
+function migrateRole(role: unknown, version: unknown): unknown {
+  if (version === STORE_VERSION) return role;
+  // 版1の「一般」はサーバーのAIを使えていたので、そのまま使えるよう上限なしの「プレミアムプラス」にする
+  if (version === 2 ? role === "ai" : role === "user") return "plus";
+  return role;
+}
+
 function normalizeUsers(raw: unknown, version: unknown): StoredUser[] {
   if (!Array.isArray(raw)) return [];
-  const old = version !== STORE_VERSION;
   const out: StoredUser[] = [];
   for (const u of raw as Partial<StoredUser>[]) {
     if (!u || typeof u.id !== "string" || typeof u.username !== "string" || typeof u.passwordHash !== "string") continue;
-    // 版1の「一般」はサーバーのAIを使えていたので、そのまま使えるよう「プレミアムユーザー」にする
-    const role = old && (u.role as string) === "user" ? "ai" : u.role;
+    const role = migrateRole(u.role, version);
     if (!ROLES.includes(role as Role)) continue;
     const user = { ...u, role } as StoredUser;
     if (typeof user.email !== "string" || user.email.length > 254) delete user.email;
@@ -168,6 +251,10 @@ function normalizeUsers(raw: unknown, version: unknown): StoredUser[] {
     const ownAi = ownAiOf(u.ownAi);
     if (ownAi) user.ownAi = ownAi;
     else delete user.ownAi;
+    if (!(typeof u.aiLimitJpy === "number" && u.aiLimitJpy >= 0 && u.aiLimitJpy <= 10_000_000) || user.role !== "plus") delete user.aiLimitJpy;
+    const github = githubOf(u.github);
+    if (github) user.github = github;
+    else delete user.github;
     out.push(user);
   }
   return out;
@@ -223,6 +310,8 @@ function normalize(raw: unknown, env: Env = process.env): StoreData {
         )
       : [],
     aiCost: { usdJpy: typeof usdJpy === "number" && usdJpy > 0 && usdJpy < 10000 ? usdJpy : DEFAULT_USD_JPY },
+    sponsorPlan: sponsorPlanOf(d.sponsorPlan),
+    sponsors: sponsorsOf(d.sponsors),
     feedback: feedbackOf(d.feedback),
   };
 }

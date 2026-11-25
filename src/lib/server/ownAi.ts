@@ -3,12 +3,14 @@ import { resolveSettings, type ResolvedAiSettings } from "@/lib/llm";
 import { DEFAULT_MODELS, LlmError } from "@/lib/llm/types";
 import { aiAccessOf, canSetOwnKey } from "@/lib/roles";
 import { publicAiView, settingsForRole } from "./aiSettings";
+import { usageLog } from "./aiUsage";
+import { aiAllowance, effectiveRole, limitReachedMessage, type AiAllowance } from "./premium";
 import { openSecret, sealSecret } from "./secretBox";
 import { OWN_AI_PROVIDERS, type Env, type OwnAiProvider, type StoreData, type StoredUser } from "./store";
 
 /**
- * 一般ユーザー・プレミアムユーザーが自分で設定するAI（自分のAPIキー）。
- * 一般は必ず自分のキー、プレミアムユーザーはキーを登録したときだけ自分のキー（なければサーバーのキー）を使う。
+ * 一般ユーザー・プレミアムユーザー・プレミアムプラスが自分で設定するAI（自分のAPIキー）。
+ * 一般は必ず自分のキー。プレミアムユーザー・プレミアムプラスはサーバーのキーを月の上限まで使い、上限に達したら自分のキー（登録していれば）を使う。
  * - キーは暗号化して保存し、画面には末尾4文字しか返さない
  * - 接続先URLは指定できない（サーバーから任意の宛先へ通信させない）。環境変数のキーやURLも使わない
  */
@@ -98,25 +100,61 @@ export function previewOwnSettings(user: StoredUser, provider: OwnAiProvider, ap
 
 export type KeySource = "server" | "own";
 
-/** どちらのキーを使うか。一般は自分のキー、プレミアムユーザーは自分のキーを登録していればそれ、管理者はサーバーのキー */
-export function keySourceOf(user: StoredUser): KeySource | null {
-  const access = aiAccessOf(user.role);
+/**
+ * どちらのキーを使うか。null ならAIを使えない（ログインなし）。
+ * 一般は自分のキー、管理者はサーバーのキー。プレミアムユーザー・プレミアムプラスはサーバーのキーで、上限に達したら自分のキー
+ */
+export function keySourceOf(data: StoreData, user: StoredUser, allowance: AiAllowance | null = null): KeySource | null {
+  const role = effectiveRole(user, data);
+  const access = aiAccessOf(role);
   if (access === "own") return "own";
-  if (access === "server") return user.role === "ai" && user.ownAi?.apiKeyEnc ? "own" : "server";
+  if (access === "server") return role !== "admin" && allowance?.overLimit && user.ownAi?.apiKeyEnc ? "own" : "server";
   return null;
 }
 
-/** ロールに合わせて、AIの設定と、どちらのキーを使うかを決める */
-export function settingsForUser(data: StoreData, user: StoredUser, env: Env = process.env): { settings: ResolvedAiSettings; keySource: KeySource } {
-  const source = keySourceOf(user);
+/**
+ * ロールに合わせて、AIの設定と、どちらのキーを使うかを決める。
+ * allowance は上限と使った分（aiAllowance）。上限に達して自分のキーもなければ止める
+ */
+export function settingsForUser(
+  data: StoreData,
+  user: StoredUser,
+  env: Env = process.env,
+  allowance: AiAllowance | null = null,
+): { settings: ResolvedAiSettings; keySource: KeySource } {
+  const source = keySourceOf(data, user, allowance);
   if (source === "own") return { settings: ownSettings(user, env), keySource: "own" };
-  if (source === "server") return { settings: settingsForRole(data.ai, user.role === "admin" ? "admin" : "ai", env), keySource: "server" };
+  if (source === "server") {
+    if (allowance?.overLimit) throw new LlmError(limitReachedMessage(allowance), 429);
+    return { settings: settingsForRole(data.ai, user.role === "admin" ? "admin" : "ai", env), keySource: "server" };
+  }
   throw new LlmError("AIを使うにはログインしてください。", 401);
 }
 
+/** 今の上限と使った分（AIの使用記録から数える）。上限を数えないロールは null */
+export async function currentAllowance(data: StoreData, user: StoredUser, now: Date = new Date()): Promise<AiAllowance | null> {
+  return aiAllowance(data, user, await usageLog.all(), now);
+}
+
+/** AIを呼ぶ前に使う。上限を確かめてから、AIの設定とキーを決める */
+export async function settingsForUserNow(data: StoreData, user: StoredUser, env: Env = process.env) {
+  return settingsForUser(data, user, env, await currentAllowance(data, user));
+}
+
+export type AiStatus = {
+  provider: string;
+  model: string;
+  ready: boolean;
+  source: KeySource;
+  /** 月の上限と使った分（プレミアムユーザー・プレミアムプラスだけ） */
+  allowance: AiAllowance | null;
+  /** 使えないときの理由（上限に達したなど） */
+  message?: string;
+};
+
 /** 画面のAI欄の表示（使うAIの名前と、使える状態か） */
-export function aiStatusFor(data: StoreData, user: StoredUser, env: Env = process.env) {
-  if (keySourceOf(user) === "own") {
+export function aiStatusFor(data: StoreData, user: StoredUser, env: Env = process.env, allowance: AiAllowance | null = null): AiStatus {
+  if (keySourceOf(data, user, allowance) === "own") {
     const v = ownAiView(user, env);
     let ready = true;
     try {
@@ -124,7 +162,9 @@ export function aiStatusFor(data: StoreData, user: StoredUser, env: Env = proces
     } catch {
       ready = false;
     }
-    return { provider: v.provider, model: v.model || v.defaultModels[v.provider], ready, source: "own" as const };
+    return { provider: v.provider, model: v.model || v.defaultModels[v.provider], ready, source: "own", allowance };
   }
-  return { ...publicAiView(data.ai, env, user.role === "admin" ? "admin" : "ai"), source: "server" as const };
+  const view = publicAiView(data.ai, env, user.role === "admin" ? "admin" : "ai");
+  if (allowance?.overLimit) return { ...view, ready: false, source: "server", allowance, message: limitReachedMessage(allowance) };
+  return { ...view, source: "server", allowance };
 }

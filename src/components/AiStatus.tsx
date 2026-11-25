@@ -5,12 +5,23 @@ import { useEffect, useState } from "react";
 import { PROVIDER_LABELS, type ProviderId } from "@/lib/llm/types";
 import { api, API_KEY_GUIDE_PATH, type SessionUser } from "@/lib/roles";
 
-type Info = { provider: ProviderId; model: string; ready: boolean; source: "server" | "own" };
+export type Allowance = { limitJpy: number | null; usedJpy: number; resetsAt: string | null; expiresAt: string | null; overLimit: boolean };
+type Info = { provider: ProviderId; model: string; ready: boolean; source: "server" | "own"; allowance: Allowance | null; message?: string };
+
+const yen = (n: number) => `¥${Math.floor(n).toLocaleString("ja-JP")}`;
+const day = (iso: string) => new Date(iso).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric" });
+
+/** 月の上限と使った分（プレミアムユーザー・プレミアムプラス） */
+export function allowanceText(a: Allowance): string {
+  if (a.limitJpy === null) return `今月の利用 ${yen(a.usedJpy)}（上限なし）`;
+  const tail = a.resetsAt ? `・${day(a.resetsAt)}に戻ります` : a.expiresAt ? `・${day(a.expiresAt)}まで` : "";
+  return `利用 ${yen(a.usedJpy)} / 上限 ${yen(a.limitJpy)}${tail}`;
+}
 
 /**
  * 使うAIの表示。
- * 管理者・プレミアムユーザーは管理者が設定したAI（それぞれ別のモデルにできる）、一般ユーザーは自分で設定したAPIキー（「アカウント」画面）。
- * プレミアムユーザーも自分のAPIキーを登録すれば、そちらを使う
+ * 管理者・プレミアムユーザー・プレミアムプラスは管理者が設定したAI（管理者用と別のモデルにできる）、一般ユーザーは自分で設定したAPIキー（「アカウント」画面）。
+ * プレミアムユーザー・プレミアムプラスは月の上限まで。上限に達したら、登録した自分のAPIキーを使う
  */
 export function AiStatus({ user }: { user: SessionUser }) {
   const [info, setInfo] = useState<Info | null>(null);
@@ -26,7 +37,8 @@ export function AiStatus({ user }: { user: SessionUser }) {
       AI: <strong>{PROVIDER_LABELS[info.provider]}</strong>
       <span className="muted"> / {info.model}</span>
       {own && <span className="muted">（自分のAPIキー）</span>}
-      {(user.role === "admin" || user.role === "ai" || own) && (
+      {info.allowance && <span className="muted">（{allowanceText(info.allowance)}）</span>}
+      {(user.role === "admin" || user.role === "ai" || user.role === "plus" || own) && (
         <>
           {" "}
           <Link href={user.role === "admin" ? "/admin" : "/account"}>設定</Link>
@@ -43,9 +55,10 @@ export function AiStatus({ user }: { user: SessionUser }) {
       )}
       {!info.ready && !own && (
         <p className="warn-text">
-          {user.role === "admin"
+          {info.message ??
+            (user.role === "admin"
               ? "APIキーが未設定です。「設定」から入力してください。"
-              : "AIがまだ設定されていません。管理者に連絡してください。"}
+              : "AIがまだ設定されていません。管理者に連絡してください。")}
         </p>
       )}
     </div>

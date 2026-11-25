@@ -6,7 +6,7 @@ import { OperationProposeError, operationSessionOptions, proposeOperation } from
 import { hasPart, MAKERS } from "@/lib/parts";
 import { logUsage, priced, usageLog, type NewUsage } from "@/lib/server/aiUsage";
 import { requireUser } from "@/lib/server/auth";
-import { settingsForUser, type KeySource } from "@/lib/server/ownAi";
+import { settingsForUserNow, type KeySource } from "@/lib/server/ownAi";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
   let settings: ResolvedAiSettings;
   let keySource: KeySource;
   try {
-    ({ settings, keySource } = settingsForUser(g.data, g.user));
+    ({ settings, keySource } = await settingsForUserNow(g.data, g.user));
   } catch (err) {
     const e = toLlmError(err, undefined);
     return Response.json({ error: e.message }, { status: e.status });

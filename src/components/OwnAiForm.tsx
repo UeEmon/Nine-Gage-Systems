@@ -32,7 +32,7 @@ const KEY_HINT: Record<Provider, string> = {
 
 /**
  * 自分のAPIキーを設定する（一般・プレミアムユーザー）。キーは暗号化して保存し、末尾4文字だけ表示する。
- * premium: プレミアムユーザー向けの表示（キーは任意。登録したときだけ自分のキーを使う）
+ * premium: プレミアムユーザー・プレミアムプラス向けの表示（キーは任意。月の上限に達したあとに使う）
  */
 export function OwnAiForm({ premium = false }: { premium?: boolean }) {
   const [view, setView] = useState<View | null>(null);
@@ -85,7 +85,7 @@ export function OwnAiForm({ premium = false }: { premium?: boolean }) {
     if (!view) return;
     save(
       { provider: view.provider, apiKey: "" },
-      premium ? "キーを削除しました。AI提案は管理者が設定したAIに戻ります。" : "キーを削除しました。",
+      premium ? "キーを削除しました。上限に達したあとはAI提案を使えなくなります。" : "キーを削除しました。",
     );
   };
 
@@ -97,7 +97,7 @@ export function OwnAiForm({ premium = false }: { premium?: boolean }) {
       <h2>AIの設定（自分のAPIキー{premium ? "・任意" : ""}）</h2>
       {premium ? (
         <p className="hint">
-          {ROLE_LABELS.ai}は、ふだんは管理者が設定したAIを使います。自分で用意したAPIキーを登録すると、AI提案にそのキーとモデルを使います（料金はキーの持ち主＝あなたのアカウントに請求されます）。キーを削除すると、管理者が設定したAIに戻ります。
+          {ROLE_LABELS.ai}・{ROLE_LABELS.plus}は、月の上限までは管理者が設定したAIを使います。自分で用意したAPIキーを登録しておくと、上限に達したあとはそのキーとモデルで続けられます（料金はキーの持ち主＝あなたのアカウントに請求されます）。
         </p>
       ) : (
         <p className="hint">
@@ -107,11 +107,6 @@ export function OwnAiForm({ premium = false }: { premium?: boolean }) {
       <p className="hint">
         はじめての方は <Link href={API_KEY_GUIDE_PATH}>APIキー登録のチュートリアル</Link> を見ながら進めてください。
       </p>
-      {premium && (
-        <p className="hint">
-          いまAI提案に使っているキー: <strong>{view.savedKey && !view.unreadable ? `自分のキー（${view.savedKey}）` : "管理者が設定したキー"}</strong>
-        </p>
-      )}
       {!view.savedKey && (
         <ol className="hint steps">
           <li>使うAIを選びます（迷ったら Claude）。</li>

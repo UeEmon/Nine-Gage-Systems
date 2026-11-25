@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { GithubSponsorCard } from "@/components/GithubSponsorCard";
 import { OwnAiForm } from "@/components/OwnAiForm";
 import { PasswordForm } from "@/components/PasswordForm";
 import { UserMenu } from "@/components/UserMenu";
@@ -9,7 +10,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountPage({ searchParams }: { searchParams: Promise<{ welcome?: string; reset?: string }> }) {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ welcome?: string; reset?: string; github?: string; message?: string }> }) {
   const user = await currentUser();
   const params = await searchParams;
   const welcome = params.welcome === "1";
@@ -48,7 +49,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             </p>
           </section>
         )}
-        {canSetOwnKey(user.role) && <OwnAiForm premium={user.role === "ai"} />}
+        {user.role !== "admin" && <GithubSponsorCard result={params.github} message={params.message?.slice(0, 200)} />}
+        {canSetOwnKey(user.role) && <OwnAiForm premium={user.role === "ai" || user.role === "plus"} />}
         <section className="card">
           <h2>ロール</h2>
           <p>

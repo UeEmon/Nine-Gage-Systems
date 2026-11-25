@@ -79,6 +79,11 @@
 /src/app/api/models/ @UeEmon
 /src/app/api/ai-config/ @UeEmon
 /src/app/api/account/ai/ @UeEmon
+/src/lib/server/premium.ts @UeEmon
+/src/lib/server/sponsors.ts @UeEmon
+/src/app/api/account/github/ @UeEmon
+/src/app/api/sponsors/ @UeEmon
+/src/components/GithubSponsorCard.tsx @UeEmon
 /src/app/api/admin/ai/ @UeEmon
 /src/app/api/admin/ai-usage/ @UeEmon
 /src/components/AiStatus.tsx @UeEmon
@@ -122,12 +127,15 @@
 /src/components/UserMenu.tsx @UeEmon
 /tests/auth.test.ts @UeEmon
 /tests/roles.test.ts @UeEmon
+/tests/premium.test.ts @UeEmon
 /tests/sites.test.ts @UeEmon
 
 # ── 管理画面（feature:admin）
 /src/app/admin/ @UeEmon
 /src/app/api/admin/users/ @UeEmon
 /src/components/AdminUsersPanel.tsx @UeEmon
+/src/app/api/admin/sponsors/ @UeEmon
+/src/components/AdminSponsorsPanel.tsx @UeEmon
 /src/app/api/admin/analytics/ @UeEmon
 /src/app/api/events/ @UeEmon
 /src/components/AdminAnalyticsPanel.tsx @UeEmon

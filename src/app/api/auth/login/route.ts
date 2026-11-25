@@ -44,5 +44,5 @@ export async function POST(req: Request) {
   }
   (await cookies()).set(sessionCookie(createSessionToken(user, data.sessionSecret), secureCookies(req)));
   recordServerEvent(req, "login", user.id);
-  return Response.json({ user: publicUser(user) });
+  return Response.json({ user: publicUser(user, data) });
 }

@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { api, ROLE_LABELS } from "@/lib/roles";
+
+/** サーバーのAIを月の上限まで使うロール（同じ設定・同じキーを使う） */
+const PREMIUM = `${ROLE_LABELS.ai}・${ROLE_LABELS.plus}`;
 import { ModelSelect } from "./ModelSelect";
 import { DEFAULT_LOCAL_BASE_URL, PROVIDER_LABELS, PROVIDERS, type ProviderId } from "@/lib/llm/types";
 
@@ -99,9 +102,9 @@ export function AdminAiPanel() {
 
   return (
     <section className="card form">
-      <h2>AI設定（管理者用・{ROLE_LABELS.ai}用）</h2>
+      <h2>AI設定（管理者用・{PREMIUM}用）</h2>
       <p className="hint">
-        管理者用のAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。ここで選んだプロバイダとモデルを管理者のAI提案に使います。ここのAPIキーは管理者だけが使い、{ROLE_LABELS.ai}には下の「{ROLE_LABELS.ai}用のAI」で別のキーを設定します（接続先URLだけは共通。「一般」のユーザーと、自分のキーを登録した{ROLE_LABELS.ai}は自分のAPIキー）。ほかのユーザーにはキーやURLは見えません。
+        管理者用のAI: <strong>{PROVIDER_LABELS[view.provider]}</strong>。ここで選んだプロバイダとモデルを管理者のAI提案に使います。ここのAPIキーは管理者だけが使い、{PREMIUM}には下の「{PREMIUM}用のAI」で別のキーを設定します（接続先URLだけは共通。「一般」のユーザーと、月の上限に達した{PREMIUM}は自分のAPIキー）。ほかのユーザーにはキーやURLは見えません。
       </p>
       <label>
         プロバイダ
@@ -173,7 +176,7 @@ export function AdminAiPanel() {
 }
 
 /**
- * プレミアムユーザーが使うプロバイダ・モデル・APIキー。管理者用とは別に設定し、管理者用のキーは使わない。
+ * プレミアムユーザー・プレミアムプラスが使うプロバイダ・モデル・APIキー。管理者用とは別に設定し、管理者用のキーは使わない。
  * 接続先URLだけは上の設定（プロバイダごと）を使う
  */
 function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) => void }) {
@@ -225,20 +228,20 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
   };
 
   const keyNote = savedKey && !clearKey
-    ? `${ROLE_LABELS.ai}用のキー ${savedKey} を使用中`
+    ? `${PREMIUM}用のキー ${savedKey} を使用中`
     : !needsKey
       ? "キーは不要なことが多いです"
-      : `キーが未設定です（${ROLE_LABELS.ai}はAI提案を使えません）。管理者用のキーは使いません`;
+      : `キーが未設定です（${PREMIUM}はAI提案を使えません）。管理者用のキーは使いません`;
   const current = view.premium.provider
     ? `${PROVIDER_LABELS[view.premium.provider]} / ${view.premium.model || view.providers[view.premium.provider].defaultModel}（${view.premium.savedKey ? `キー ${view.premium.savedKey}` : "キー未設定"}）`
     : "未設定";
 
   return (
     <div className="form sub-section">
-      <h3>{ROLE_LABELS.ai}用のAI</h3>
+      <h3>{PREMIUM}用のAI</h3>
       <p className="hint">
-        {ROLE_LABELS.ai}のAI提案に使うプロバイダ・モデル・APIキーを、管理者用とは別に設定します。管理者用のキーは使わないので、{ROLE_LABELS.ai}用のキーを必ず入れてください。いまの設定:{" "}
-        <strong>{current}</strong>。自分のAPIキーを登録した{ROLE_LABELS.ai}は、自分のキーとモデルを使います。
+        {PREMIUM}のAI提案に使うプロバイダ・モデル・APIキーを、管理者用とは別に設定します。管理者用のキーは使わないので、{PREMIUM}用のキーを必ず入れてください。いまの設定:{" "}
+        <strong>{current}</strong>。月の上限に達した{PREMIUM}は、登録した自分のキーとモデルを使います。
       </p>
       <label>
         プロバイダ
@@ -286,7 +289,7 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
         />
       </label>
       <label>
-        APIキー（{ROLE_LABELS.ai}用）
+        APIキー（{PREMIUM}用）
         <input
           type="password"
           autoComplete="off"
@@ -314,9 +317,9 @@ function PremiumAiSection({ view, onSaved }: { view: View; onSaved: (v: View) =>
         )}
       </label>
       {state.error && <p className="error">{state.error}</p>}
-      {state.saved && <p className="ok-text">保存しました。{ROLE_LABELS.ai}のAI提案にこの設定を使います。</p>}
+      {state.saved && <p className="ok-text">保存しました。{PREMIUM}のAI提案にこの設定を使います。</p>}
       <button className="primary" type="button" onClick={save} disabled={!!state.busy}>
-        {state.busy === "save" ? "保存中…" : `${ROLE_LABELS.ai}用として保存`}
+        {state.busy === "save" ? "保存中…" : `${PREMIUM}用として保存`}
       </button>
     </div>
   );

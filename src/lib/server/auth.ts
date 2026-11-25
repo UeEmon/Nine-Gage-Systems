@@ -57,8 +57,9 @@ export async function requireUser(req: Request, role?: Role): Promise<Guard> {
 export async function currentUser(): Promise<PublicUser | null> {
   // cookies() は同じ名前の Cookie を1つにまとめてしまうので、ヘッダーをそのまま読む
   const tokens = sessionTokensIn((await headers()).get("cookie") ?? "");
-  const user = userFromTokens(tokens, await loadStore());
-  return user ? publicUser(user) : null;
+  const data = await loadStore();
+  const user = userFromTokens(tokens, data);
+  return user ? publicUser(user, data) : null;
 }
 
 /** 本番（HTTPS の後ろ）では Secure 付きの Cookie にする */

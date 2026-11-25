@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { hashPassword, passwordProblem, usernameProblem, verifyPassword } from "./password";
-import { ROLE_LABELS, ROLE_ORDER } from "@/lib/roles";
+import { ROLE_LABELS, ROLE_ORDER, type AssignableRole } from "@/lib/roles";
 import { publicUser, type PublicUser } from "./session";
 import { newUser, ROLES, type Env, type StoreData, type StoredUser } from "./store";
 
@@ -24,22 +24,31 @@ export type UserRow = PublicUser & {
   email: string | null;
   /** メールの確認待ち */
   pending: boolean;
+  /** 保存しているロール（管理者が選ぶもの。プレミアムユーザーは一般として保存） */
+  storedRole: AssignableRole;
+  /** プレミアムプラスの月の上限（円）。null なら上限なし */
+  aiLimitJpy: number | null;
+  /** 結び付けた GitHub アカウント */
+  github: string | null;
 };
 
-function row(u: StoredUser): UserRow {
+function row(u: StoredUser, data: Pick<StoreData, "sponsorPlan" | "sponsors">): UserRow {
   return {
-    ...publicUser(u),
+    ...publicUser(u, data),
     createdAt: u.createdAt,
     selfRegistered: !!u.selfRegistered,
     ownKey: !!u.ownAi?.apiKeyEnc,
     email: u.email ?? null,
     pending: !!u.pendingVerify,
+    storedRole: u.role,
+    aiLimitJpy: u.aiLimitJpy ?? null,
+    github: u.github?.login ?? null,
   };
 }
 
 export function listUsers(data: StoreData): UserRow[] {
   return data.users
-    .map(row)
+    .map((u) => row(u, data))
     .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.username.localeCompare(b.username));
 }
 
@@ -49,17 +58,17 @@ export const CreateUserSchema = z.object({
   role: z.enum(ROLES),
 });
 
-export const AI_FROM_GENERAL = `${ROLE_LABELS.ai}は一般ユーザーの中から選びます。一般で追加してから、ロールを「${ROLE_LABELS.ai}」に変えてください。`;
+export const PLUS_FROM_GENERAL = `${ROLE_LABELS.plus}は一般ユーザーの中から選びます。一般で追加してから、ロールを「${ROLE_LABELS.plus}」に変えてください。`;
 
 export async function createUser(data: StoreData, input: z.infer<typeof CreateUserSchema>): Promise<UserRow> {
-  if (input.role === "ai") throw new UserError(AI_FROM_GENERAL);
+  if (input.role === "plus") throw new UserError(PLUS_FROM_GENERAL);
   const problem = usernameProblem(input.username) ?? passwordProblem(input.password);
   if (problem) throw new UserError(problem);
   const lower = input.username.toLowerCase();
   if (data.users.some((u) => u.username.toLowerCase() === lower)) throw new UserError("そのユーザー名はすでに使われています。", 409);
   const user = newUser(input.username, input.role, await hashPassword(input.password));
   data.users.push(user);
-  return row(user);
+  return row(user, data);
 }
 
 /** 自分でのユーザー登録を受け付けるか（NINEGAGE_SIGNUP=closed で止める。既定は受け付ける） */
@@ -204,6 +213,8 @@ export function resetMail(base: string, username: string, token: string) {
 export const UpdateUserSchema = z.object({
   role: z.enum(ROLES).optional(),
   password: z.string().optional(),
+  /** プレミアムプラスの月の上限（円）。null で上限なし */
+  aiLimitJpy: z.number().int().min(0).max(10_000_000).nullable().optional(),
 });
 
 function adminCount(data: StoreData) {
@@ -219,13 +230,19 @@ function find(data: StoreData, id: string) {
 /** ロールの変更とパスワードの再設定（管理者だけ）。変えるとそのユーザーのログインは切れる */
 export async function updateUser(data: StoreData, id: string, input: z.infer<typeof UpdateUserSchema>): Promise<UserRow> {
   const user = find(data, id);
-  if (input.role === "ai" && input.role !== user.role && user.pendingVerify) {
-    throw new UserError(`メールの確認が済んでいないユーザーは、${ROLE_LABELS.ai}にできません。`);
+  if (input.role === "plus" && input.role !== user.role && user.pendingVerify) {
+    throw new UserError(`メールの確認が済んでいないユーザーは、${ROLE_LABELS.plus}にできません。`);
   }
   if (input.role && input.role !== user.role) {
     if (user.role === "admin" && adminCount(data) <= 1) throw new UserError("管理者が1人もいなくなるため、変更できません。");
     user.role = input.role;
     user.sessionVersion += 1;
+    if (user.role !== "plus") delete user.aiLimitJpy;
+  }
+  if (input.aiLimitJpy !== undefined) {
+    if (user.role !== "plus") throw new UserError(`月の上限を設定できるのは${ROLE_LABELS.plus}だけです。`);
+    if (input.aiLimitJpy === null) delete user.aiLimitJpy;
+    else user.aiLimitJpy = input.aiLimitJpy;
   }
   if (input.password !== undefined) {
     const problem = passwordProblem(input.password);
@@ -234,7 +251,7 @@ export async function updateUser(data: StoreData, id: string, input: z.infer<typ
     user.sessionVersion += 1;
     delete user.passwordReset;
   }
-  return row(user);
+  return row(user, data);
 }
 
 export function deleteUser(data: StoreData, id: string, actingUserId: string) {

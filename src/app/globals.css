@@ -229,6 +229,7 @@ button.danger { color: var(--danger); }
 .role-badge { margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.18); }
 .role-badge.admin { background: #b45309; color: #fff; }
 .role-badge.ai { background: #1d4ed8; color: #fff; }
+.role-badge.plus { background: #7c3aed; color: #fff; }
 .role-badge.guest { background: rgba(255, 255, 255, 0.1); }
 .guest-ai { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
 .guest-ai p { margin: 0 0 6px; }

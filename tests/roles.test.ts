@@ -49,15 +49,15 @@ describe("ロール", () => {
     };
     writeFileSync(path.join(e.NINEGAGE_DATA_DIR, "store.json"), JSON.stringify(old));
     const data = await loadStore(e);
-    expect(data.users.map((u) => u.role)).toEqual(["admin", "ai"]);
-    // 保存し直した後は版2として読み、一般はそのまま一般
+    expect(data.users.map((u) => u.role)).toEqual(["admin", "plus"]);
+    // 保存し直した後は今の版として読み、一般はそのまま一般
     await updateStore((d) => signupVerified(d, "newbie", e), e);
     const raw = JSON.parse(storedText(e.NINEGAGE_DATA_DIR)!);
-    expect(raw.version).toBe(2);
+    expect(raw.version).toBe(3);
     const again = await loadStore(e);
     expect(again.users.map((u) => [u.username, u.role])).toEqual([
       ["owner", "admin"],
-      ["member", "ai"],
+      ["member", "plus"],
       ["newbie", "user"],
     ]);
   });
@@ -65,21 +65,21 @@ describe("ロール", () => {
   it("AI利用可能は追加では作れず、一般ユーザーから変える。確認待ちの人は変えられない", async () => {
     const e = env(ADMIN);
     const data = await loadStore(e);
-    await expect(createUser(data, { username: "zed", password: "password-12345", role: "ai" })).rejects.toThrow(/一般ユーザーの中から/);
+    await expect(createUser(data, { username: "zed", password: "password-12345", role: "plus" })).rejects.toThrow(/一般ユーザーの中から/);
     const amy = await createUser(data, { username: "amy", password: "password-12345", role: "user" });
-    await updateUser(data, amy.id, { role: "ai" });
+    await updateUser(data, amy.id, { role: "plus" });
     const r = await signupUser(data, { username: "rider", email: "r@example.com", password: "rider-pass-12" }, e);
     if (r.kind !== "created") throw new Error();
-    await expect(updateUser(data, r.user.id, { role: "ai" })).rejects.toThrow(/確認/);
+    await expect(updateUser(data, r.user.id, { role: "plus" })).rejects.toThrow(/確認/);
     expect(listUsers(data).find((u) => u.username === "rider")).toMatchObject({ pending: true, email: "r@example.com" });
   });
 
   it("一覧は管理者・AI利用可能・一般の順", async () => {
     const data = await loadStore(env(ADMIN));
     const zed = await createUser(data, { username: "zed", password: "password-12345", role: "user" });
-    await updateUser(data, zed.id, { role: "ai" });
+    await updateUser(data, zed.id, { role: "plus" });
     await createUser(data, { username: "amy", password: "password-12345", role: "user" });
-    expect(listUsers(data).map((u) => u.role)).toEqual(["admin", "ai", "user"]);
+    expect(listUsers(data).map((u) => u.role)).toEqual(["admin", "plus", "user"]);
   });
 });
 
@@ -185,7 +185,7 @@ describe("自分のAPIキー", () => {
     const data = await loadStore(e);
     const general = await signupVerified(data, "rider", e);
     const t = await createUser(data, { username: "trusted", password: "trusted-pass-1", role: "user" });
-    await updateUser(data, t.id, { role: "ai" });
+    await updateUser(data, t.id, { role: "plus" });
     const trusted = data.users.find((u) => u.username === "trusted")!;
     applyAiPatch(data.ai, {
       provider: "anthropic",
@@ -235,21 +235,26 @@ describe("自分のAPIキー", () => {
     expect(OwnAiPatchSchema.safeParse({ provider: "openai", baseUrl: "http://x" }).data).not.toHaveProperty("baseUrl");
   });
 
-  it("プレミアムユーザーも自分のキーを登録でき、登録したときだけそれを使う", async () => {
+  it("プレミアムプラスも自分のキーを登録でき、月の上限に達したときだけそれを使う", async () => {
     const { e, data, trusted } = await setup();
     expect(canSetOwnKey("ai")).toBe(true);
+    expect(canSetOwnKey("plus")).toBe(true);
     expect(canSetOwnKey("user")).toBe(true);
     expect(canSetOwnKey("admin")).toBe(false);
     expect(canSetOwnKey(null)).toBe(false);
     applyOwnAi(trusted, OwnAiPatchSchema.parse({ provider: "openai", apiKey: "sk-premium-own-4321", model: "gpt-x" }), e);
-    expect(settingsForUser(data, trusted, e)).toMatchObject({
+    // 上限までは管理者が設定したAI
+    expect(settingsForUser(data, trusted, e)).toMatchObject({ keySource: "server", settings: { apiKey: "premium-key-0000" } });
+    const over = { limitJpy: 100, usedJpy: 120, overLimit: true, since: "", resetsAt: "2026-12-01T00:00:00+09:00", expiresAt: null, basis: "" };
+    expect(settingsForUser(data, trusted, e, over)).toMatchObject({
       keySource: "own",
       settings: { provider: "openai", apiKey: "sk-premium-own-4321", model: "gpt-x" },
     });
-    expect(aiStatusFor(data, trusted, e)).toMatchObject({ source: "own", ready: true, provider: "openai", model: "gpt-x" });
-    // 削除するとサーバーのAIに戻る
+    expect(aiStatusFor(data, trusted, e, over)).toMatchObject({ source: "own", ready: true, provider: "openai", model: "gpt-x" });
+    // キーがなければ止める
     applyOwnAi(trusted, { provider: "openai", apiKey: "" }, e);
-    expect(settingsForUser(data, trusted, e)).toMatchObject({ keySource: "server", settings: { apiKey: "premium-key-0000" } });
+    expect(() => settingsForUser(data, trusted, e, over)).toThrow(/上限（¥100）に達しました（2026年12月1日に戻ります）/);
+    expect(aiStatusFor(data, trusted, e, over)).toMatchObject({ source: "server", ready: false });
     expect(aiStatusFor(data, trusted, e)).toMatchObject({ source: "server", ready: true });
   });
 
@@ -283,7 +288,7 @@ describe("自分のAPIキー", () => {
 
   it("管理者がロールを変えると、使うキーも変わる", async () => {
     const { e, data, general } = await setup();
-    await updateUser(data, general.id, { role: "ai" });
+    await updateUser(data, general.id, { role: "plus" });
     expect(settingsForUser(data, general, e).keySource).toBe("server");
   });
 });
@@ -293,7 +298,7 @@ describe("管理者用とプレミアムユーザー用のAI", () => {
     const e = env({ ...ADMIN, ...extraEnv });
     const data = await loadStore(e);
     const t = await createUser(data, { username: "premium", password: "premium-pass-1", role: "user" });
-    await updateUser(data, t.id, { role: "ai" });
+    await updateUser(data, t.id, { role: "plus" });
     const premium = data.users.find((u) => u.username === "premium")!;
     const owner = data.users.find((u) => u.role === "admin")!;
     applyAiPatch(
@@ -308,7 +313,7 @@ describe("管理者用とプレミアムユーザー用のAI", () => {
 
   it("プレミアムユーザー用のキーがなければ、管理者用のキーは使わず、使えない状態になる", async () => {
     const { e, data, premium, owner } = await setup();
-    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムユーザー用のAPIキー/);
+    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムプラス用のAPIキー/);
     expect(aiStatusFor(data, premium, e)).toMatchObject({ provider: "anthropic", ready: false, source: "server" });
     expect(settingsForUser(data, owner, e).settings).toMatchObject({ provider: "anthropic", model: "claude-admin", apiKey: "ant-server-0000" });
     expect(adminAiView(data.ai, e).premium).toEqual({ provider: null, model: "", savedKey: null });
@@ -318,7 +323,7 @@ describe("管理者用とプレミアムユーザー用のAI", () => {
     const { e, data, premium, owner } = await setup({ GEMINI_API_KEY: "env-gem-0000" });
     applyAiPatch(data.ai, AiPatchSchema.parse({ provider: "gemini", premium: { provider: "gemini" } }));
     expect(settingsForUser(data, owner, e).settings.apiKey).toBe("env-gem-0000");
-    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムユーザー用のAPIキー/);
+    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムプラス用のAPIキー/);
   });
 
   it("プロバイダ・モデル・キーを管理者用とは別に設定できる", async () => {
@@ -345,12 +350,12 @@ describe("管理者用とプレミアムユーザー用のAI", () => {
 
     // 別のプロバイダにするとキーもモデルも引き継がない（別の会社にキーを送らない）
     applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "openai" } }));
-    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムユーザー用のAPIキー/);
+    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムプラス用のAPIキー/);
 
     // 空文字で削除
     applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "openai", apiKey: "sk-x-1234" } }));
     applyAiPatch(data.ai, AiPatchSchema.parse({ premium: { provider: "openai", apiKey: "" } }));
-    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムユーザー用のAPIキー/);
+    expect(() => settingsForUser(data, premium, e)).toThrow(/プレミアムプラス用のAPIキー/);
   });
 
   it("接続先URLはプロバイダごとの設定を使う。ローカルLLMはキーなしで使える", async () => {

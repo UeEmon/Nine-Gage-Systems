@@ -19,6 +19,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-25-github-sponsors-premium",
+    date: "2026-11-25T21:30:00+09:00",
+    title: "GitHub Sponsors で支援するとプレミアムユーザーになれるようになりました",
+    body: "GitHub Sponsors で SenroLab を支援し、「アカウント」画面で GitHub と連携すると、プレミアムユーザーとして管理者が用意したAIを支援額に応じた月の上限まで使えます（1回きりの支援は30日間）。上限に達したあとは、登録した自分のAPIキーで続けられます。今月の利用額と上限は、エディタのAI欄とアカウント画面で確かめられます。",
+  },
+  {
+    id: "2026-11-25-premium-plus-admin",
+    date: "2026-11-25T21:30:00+09:00",
+    title: "プレミアムプラスと、AIの月の上限を設定できるようになりました",
+    body: "ユーザー管理で、一般ユーザーを「プレミアムプラス」にして、サーバーのAIの月の上限（円）を1人ずつ決められます（空欄なら上限なし）。これまでのプレミアムユーザーは、上限なしのプレミアムプラスになっています。GitHub Sponsors で支援した人の一覧と、上限の倍率・1回きりの支援の日数は「GitHub Sponsors とプレミアムユーザー」で変えられます。",
+    audience: "admin",
+  },
+  {
     id: "2026-11-25-official-sns",
     date: "2026-11-25T20:30:00+09:00",
     title: "SenroLab の公式 SNS を始めました",
