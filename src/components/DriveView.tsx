@@ -24,7 +24,7 @@ import {
 } from "@/lib/drive";
 import { bedStyle, buildScene, buildTrain } from "@/lib/driveScene";
 import type { Layout } from "@/lib/geometry";
-import { consistSizeOf, type RtmVehicle } from "@/lib/rtm/pack";
+import { consistSizeOf, leadVehicles, type RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, type VehicleKit } from "@/lib/rtm/three";
 import { RtmVehiclesDialog, useRtmVehicles } from "./rtm/RtmVehicles";
 import { getPart } from "@/lib/parts";
@@ -812,7 +812,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, o
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
             {rtmVehicles && rtmVehicles.length > 0 && (
               <optgroup label="読み込んだ車両（RealTrainMod）">
-                {rtmVehicles.map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
+                {leadVehicles(rtmVehicles, rtmVehicleId(vehicleType)).map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
               </optgroup>
             )}
           </select>

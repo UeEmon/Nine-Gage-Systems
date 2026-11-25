@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-26-realtrainmod-cab-ends",
+    date: "2026-11-26T06:10:00+09:00",
+    title: "RealTrainMod の中間車は、先頭車の編成の中でだけ使うようにしました",
+    body: "先頭車と見分けられた中間車は、走らせる車両の一覧に出なくなりました。列車には先頭車を選ぶと、両端が先頭車、そのあいだが「中間車」で選んだ車両の編成になります。「中間車」の選択肢には中間車が出ます（先頭車は出ません）。",
+  },
+  {
     id: "2026-11-26-realtrainmod-cab-middle",
     date: "2026-11-26T05:40:00+09:00",
     title: "RealTrainMod の車両パックの先頭車と中間車を自動で振り分けます",

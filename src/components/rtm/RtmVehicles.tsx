@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { readVehicleFiles, type RtmVehicle } from "@/lib/rtm/pack";
+import { middleCandidates, readVehicleFiles, type RtmVehicle } from "@/lib/rtm/pack";
 import { deleteRtmVehicle, listRtmVehicles, RTM_CHANGED_EVENT, saveRtmVehicles, updateRtmVehicle } from "@/lib/rtm/store";
 
 /** このブラウザに読み込んだ RealTrainMod の車両（読み込み中は null） */
@@ -147,18 +147,22 @@ export function RtmVehiclesDialog({
                     <input type="checkbox" checked={!!v.flip} onChange={(e) => void updateRtmVehicle(v.id, { flip: e.target.checked })} />
                     前後を入れ替える
                   </label>
-                  <label>
-                    中間車
-                    <select value={v.middleId ?? ""} onChange={(e) => void updateRtmVehicle(v.id, { middleId: e.target.value || undefined })}>
-                      <option value="">この車両と同じ</option>
-                      {vehicles
-                        .filter((x) => x.id !== v.id)
-                        // 中間車として見分けた車両を先に並べる
-                        .sort((a, b) => Number(b.role === "middle") - Number(a.role === "middle"))
-                        .map((x) => <option key={x.id} value={x.id}>{x.name}{x.role ? `（${ROLE_LABEL[x.role]}）` : ""}</option>)}
-                    </select>
-                  </label>
-                  {onPick && <button onClick={() => onPick(v.id)}>{pickLabel}</button>}
+                  {v.role === "middle" ? (
+                    <span className="muted">中間車だけでは走らせません。先頭車の「中間車」で選んでください</span>
+                  ) : (
+                    <>
+                      <label>
+                        中間車
+                        <select value={v.middleId ?? ""} onChange={(e) => void updateRtmVehicle(v.id, { middleId: e.target.value || undefined })}>
+                          <option value="">この車両と同じ</option>
+                          {middleCandidates(vehicles, v).map((x) => (
+                            <option key={x.id} value={x.id}>{x.name}{x.role ? `（${ROLE_LABEL[x.role]}）` : ""}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {onPick && <button onClick={() => onPick(v.id)}>{pickLabel}</button>}
+                    </>
+                  )}
                   <button className="danger" onClick={() => void deleteRtmVehicle(v.id)}>削除</button>
                 </div>
               </li>
@@ -168,7 +172,7 @@ export function RtmVehiclesDialog({
         {vehicles && vehicles.length === 0 && !message && <p className="muted">まだ車両を読み込んでいません。</p>}
         <p className="muted rtm-help">
           先頭車と最後尾はこの車両（最後尾は向きを逆に）、中間車は「中間車」で選んだ車両になります。
-          車両パックの中で先頭車と中間車を見分けられたとき（形式名の Tc・Mc と T・M など）は、読み込んだときに先頭車に合う中間車を自動で選びます（あとから変えられます）。車両は実物の 1/150 の長さで表示し、運行計画の編成の長さやホームに収まる両数も、その車両の長さで計算します。
+          車両パックの中で先頭車と中間車を見分けられたとき（形式名の Tc・Mc と T・M など）は、読み込んだときに先頭車に合う中間車を自動で選びます（あとから変えられます）。中間車は単独では選べず、両端が先頭車、そのあいだが選んだ中間車の編成になります。車両は実物の 1/150 の長さで表示し、運行計画の編成の長さやホームに収まる両数も、その車両の長さで計算します。
           ドアやパンタグラフの動き（スクリプト）と、暗号化されたモデル（.npm）には対応していません。
         </p>
       </div>

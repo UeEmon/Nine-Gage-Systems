@@ -437,7 +437,8 @@ function guessRoles(group: RtmVehicle[]): Map<string, RtmCarRole> {
     const r = v.config.notDisplayCab ? "middle" : roleFromName(baseName(v.config.body.modelFile)) ?? roleFromName(v.name);
     if (r) roles.set(v.id, r);
   }
-  if ([...roles.values()].includes("cab") && [...roles.values()].includes("middle")) return roles;
+  // 名前で見分けられた車両があればそれを使う（グリーン車だけのパックのように中間車しかないものも、中間車として扱う）
+  if (roles.size > 0) return roles;
   // 名前で見分けられないとき：運転席の位置が2通りに分かれていれば、少ないほう（同じ数なら前寄りのほう）を先頭車とする
   const withPos = group.filter((v) => v.config.playerPos);
   if (withPos.length < 3 || withPos.length !== group.length) return new Map();
@@ -489,7 +490,7 @@ function pickMiddle(cab: RtmVehicle, middles: RtmVehicle[]): RtmVehicle | undefi
 
 /**
  * 読み込んだ車両を、パックごとに先頭車と中間車に振り分ける。
- * パックの中に先頭車と中間車の両方が見分けられたときだけ role を付け、先頭車には合う中間車（middleId）を選んでおく
+ * 見分けられた車両に role を付け、先頭車には同じパックの合う中間車（middleId）を選んでおく
  */
 export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
   const groups = new Map<string, RtmVehicle[]>();
@@ -506,4 +507,19 @@ export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
     }
   }
   return vehicles.map((v) => out.get(v) ?? v);
+}
+
+/**
+ * 列車として選べる車両（中間車は単独では走らないので外す。いま選んでいる車両は残す）。
+ * 中間車は先頭車の「中間車」で選ぶ
+ */
+export function leadVehicles(vehicles: RtmVehicle[], selectedId?: string | null): RtmVehicle[] {
+  return vehicles.filter((v) => v.role !== "middle" || v.id === selectedId);
+}
+
+/** 先頭車の「中間車」に選べる車両（先頭車として見分けた車両は外す） */
+export function middleCandidates(vehicles: RtmVehicle[], lead: RtmVehicle): RtmVehicle[] {
+  return vehicles
+    .filter((x) => x.id !== lead.id && (x.role !== "cab" || x.id === lead.middleId))
+    .sort((a, b) => Number(b.role === "middle") - Number(a.role === "middle"));
 }
