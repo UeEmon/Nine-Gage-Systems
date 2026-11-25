@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type ConsistSize, type VehicleType } from "@/lib/drive";
-import { consistSizeOf } from "@/lib/rtm/pack";
+import { consistSizeOf, leadVehicles } from "@/lib/rtm/pack";
 import { RtmVehiclesDialog, useRtmVehicles } from "../rtm/RtmVehicles";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
@@ -457,7 +457,7 @@ function TrainEditor({
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
             {((rtmAllowed && rtmVehicles && rtmVehicles.length > 0) || rtmVehicleId(train.vehicleType)) && (
               <optgroup label="読み込んだ車両（RealTrainMod）">
-                {rtmAllowed && rtmVehicles?.map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
+                {rtmAllowed && rtmVehicles && leadVehicles(rtmVehicles, rtmVehicleId(train.vehicleType)).map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
                 {rtmVehicleId(train.vehicleType) && !(rtmAllowed && rtmVehicles?.some((v) => rtmVehicleType(v.id) === train.vehicleType)) && (
                   <option value={train.vehicleType}>
                     {rtmAllowed ? "この端末に読み込まれていない車両（列車種別に合わせて表示）" : "RealTrainMod の車両（プレミアムユーザー以上で表示。いまは列車種別に合わせて表示）"}
