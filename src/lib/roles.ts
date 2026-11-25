@@ -47,6 +47,11 @@ export function canSetOwnKey(role: RoleId | null | undefined): boolean {
   return role === "plus" || role === "ai" || role === "user";
 }
 
+/** 走行の映像で RealTrainMod の車両を読み込んで使えるロール（プレミアムユーザー・プレミアムプラス・管理者） */
+export function canUseRtm(role: RoleId | null | undefined): boolean {
+  return role === "admin" || role === "plus" || role === "ai";
+}
+
 /** 月の上限があるロール（サーバーのAIを上限まで使う） */
 export function hasAiLimit(role: RoleId | null | undefined): boolean {
   return role === "plus" || role === "ai";

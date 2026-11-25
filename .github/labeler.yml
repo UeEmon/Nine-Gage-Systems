@@ -53,6 +53,9 @@
           - "src/lib/driveScene.ts"
           - "src/components/DriveView.tsx"
           - "tests/drive.test.ts"
+          - "src/lib/rtm/**"
+          - "src/components/rtm/**"
+          - "tests/rtm.test.ts"
 "feature:operation":
   - changed-files:
       - any-glob-to-any-file:

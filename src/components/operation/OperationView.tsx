@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
+import { rtmVehicleId, rtmVehicleType, trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
+import { useRtmVehicles } from "../rtm/RtmVehicles";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
 import {
@@ -34,6 +35,8 @@ type Props = {
   elevation?: Elevation;
   /** ログインしていて、AI提案を使える */
   canUseAi: boolean;
+  /** RealTrainMod の車両を使える（プレミアムユーザー・プレミアムプラス・管理者） */
+  rtmAllowed?: boolean;
   onChange: (plan: OperationPlan) => void;
   /** この列車の運転席で、運行計画どおりの走りを見る */
   onRide?: (trainId: string) => void;
@@ -41,7 +44,7 @@ type Props = {
 };
 
 /** 運行計画（ダイヤ）を立てる画面。駅はホームの配置から自動で見つける */
-export function OperationView({ layout, elevation, canUseAi, onChange, onRide, onClose }: Props) {
+export function OperationView({ layout, elevation, canUseAi, rtmAllowed = false, onChange, onRide, onClose }: Props) {
   const plan = useMemo(() => normalizeOperation(layout.operation) ?? EMPTY_OPERATION, [layout.operation]);
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
   const stations = useMemo(() => detectStations(layout.pieces, accessories, elevation), [layout.pieces, accessories, elevation]);
@@ -250,6 +253,7 @@ export function OperationView({ layout, elevation, canUseAi, onChange, onRide, o
               onStop={(i, patch) => updateStop(selected, i, patch)}
               onCopy={() => copyTrain(selected)}
               onRemove={() => removeTrain(selected.id)}
+              rtmAllowed={rtmAllowed}
             />
           )}
         </aside>
@@ -356,6 +360,7 @@ function TrainEditor({
   onStop,
   onCopy,
   onRemove,
+  rtmAllowed,
 }: {
   train: Train;
   /** レイアウトの路線（「再現してみた」で作ったとき） */
@@ -370,6 +375,7 @@ function TrainEditor({
   onStop: (i: number, patch: Partial<TrainStop>) => void;
   onCopy: () => void;
   onRemove: () => void;
+  rtmAllowed: boolean;
 }) {
   const num = (v: string, r: { min: number; max: number }, int = true) => {
     const n = Number(v);
@@ -383,6 +389,7 @@ function TrainEditor({
     [s[i], s[j]] = [s[j], s[i]];
     onChange({ stops: s });
   };
+  const rtmVehicles = useRtmVehicles();
   const setKind = (kind: TrainKind) => {
     const oldDefault = TRAIN_KINDS.find((k) => k.value === train.kind)?.color;
     const color = train.color === oldDefault ? TRAIN_KINDS.find((k) => k.value === kind)!.color : train.color;
@@ -426,6 +433,16 @@ function TrainEditor({
           <select value={train.vehicleType ?? ""} onChange={(e) => onChange({ vehicleType: (e.target.value || undefined) as VehicleType | undefined })}>
             <option value="">自動（列車種別に合わせる）</option>
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            {((rtmAllowed && rtmVehicles && rtmVehicles.length > 0) || rtmVehicleId(train.vehicleType)) && (
+              <optgroup label="読み込んだ車両（RealTrainMod）">
+                {rtmAllowed && rtmVehicles?.map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
+                {rtmVehicleId(train.vehicleType) && !(rtmAllowed && rtmVehicles?.some((v) => rtmVehicleType(v.id) === train.vehicleType)) && (
+                  <option value={train.vehicleType}>
+                    {rtmAllowed ? "この端末に読み込まれていない車両（列車種別に合わせて表示）" : "RealTrainMod の車両（プレミアムユーザー以上で表示。いまは列車種別に合わせて表示）"}
+                  </option>
+                )}
+              </optgroup>
+            )}
           </select>
         </label>
         <label>

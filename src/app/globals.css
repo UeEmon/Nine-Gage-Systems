@@ -706,3 +706,28 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
   .top-lead { font-size: 18px; }
   .top-news li { flex-direction: column; gap: 2px; }
 }
+
+/* RealTrainMod の車両を読み込む */
+.rtm-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex;
+  align-items: center; justify-content: center; z-index: 60; padding: 16px;
+}
+.rtm-dialog {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 14px 16px; font-size: 13px;
+}
+.rtm-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rtm-dialog h3 { margin: 0; font-size: 16px; }
+.rtm-dialog .muted { color: var(--muted); }
+.rtm-note { background: var(--accent-weak); border-radius: 6px; padding: 8px 10px; }
+.rtm-file { display: inline-block; padding: 6px 12px; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; }
+.rtm-file input { display: none; }
+.rtm-result ul { margin: 6px 0; padding-left: 18px; }
+.rtm-list { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 8px; }
+.rtm-list li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.rtm-name { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; min-width: 0; }
+.rtm-name b { overflow-wrap: anywhere; }
+.rtm-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.rtm-actions label { display: flex; gap: 4px; align-items: center; }
+.rtm-actions select { max-width: 200px; }
+.rtm-help { font-size: 12px; }

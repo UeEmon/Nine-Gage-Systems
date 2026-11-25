@@ -114,7 +114,10 @@
         "/src/lib/drive.ts",
         "/src/lib/driveScene.ts",
         "/src/components/DriveView.tsx",
-        "/tests/drive.test.ts"
+        "/tests/drive.test.ts",
+        "/src/lib/rtm/",
+        "/src/components/rtm/",
+        "/tests/rtm.test.ts"
       ]
     },
     {

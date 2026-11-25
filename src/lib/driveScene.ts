@@ -9,6 +9,7 @@ import type { BedType } from "../data/trackCatalog";
 import { PIER_MIN_MM, type Pier } from "./elevation";
 import type { Board, Piece } from "./geometry";
 import { makeSegment, N_CAR, type DriveGraph, type DrivePoint, type VehicleType } from "./drive";
+import type { CarRole, VehicleKit } from "./rtm/three";
 import { getPart, normDeg } from "./parts";
 import { PLATFORM_EDGE_MM } from "../data/accessories";
 import { accessoryCorners, getAccessory, hasAccessory, trackPoints, type Accessory } from "./accessories";
@@ -1062,9 +1063,27 @@ export function buildScene(
  * 後ろから見るときの列車（N_CAR の寸法の車両を cars 両）。
  * 各車両のグループは車体の中心が原点で +X が前。位置と向きは carPlacements で合わせる
  */
-export function buildTrain(cars: number, color = 0x2f6fb5, vehicleType: VehicleType = "commuter"): { cars: THREE.Group[]; group: THREE.Group; dispose: () => void } {
+export function buildTrain(
+  cars: number,
+  color = 0x2f6fb5,
+  vehicleType: VehicleType = "commuter",
+  /** 読み込んだ RealTrainMod の車両（先頭・最後尾と中間車）。あれば vehicleType より優先する */
+  rtm?: { front: VehicleKit; middle?: VehicleKit },
+): { cars: THREE.Group[]; group: THREE.Group; dispose: () => void } {
   const { length, width, bogieCenters } = N_CAR;
   const group = new THREE.Group();
+  if (rtm) {
+    // 型（モデルとテクスチャ）は呼び出し側が持つので、ここでは解放しない
+    const list: THREE.Group[] = [];
+    for (let i = 0; i < cars; i++) {
+      const role: CarRole = cars === 1 ? "single" : i === 0 ? "front" : i === cars - 1 ? "rear" : "middle";
+      const car = (role === "middle" ? rtm.middle ?? rtm.front : rtm.front).makeCar(role);
+      car.userData.vehicleType = vehicleType;
+      list.push(car);
+      group.add(car);
+    }
+    return { cars: list, group, dispose: () => {} };
+  }
   const geos: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
   const material = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => {

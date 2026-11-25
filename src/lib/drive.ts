@@ -17,8 +17,23 @@ export const VEHICLE_TYPES = [
   { value: "shinkansen", label: "新幹線（0系）" },
   { value: "freight", label: "貨物列車" },
 ] as const;
-export type VehicleType = (typeof VEHICLE_TYPES)[number]["value"];
-export function defaultVehicleType(kind?: string): VehicleType {
+export type BuiltinVehicleType = (typeof VEHICLE_TYPES)[number]["value"];
+/** 映像の車両。"rtm:ID" は利用者がブラウザに読み込んだ RealTrainMod の車両 */
+export type VehicleType = BuiltinVehicleType | `rtm:${string}`;
+
+const RTM_PREFIX = "rtm:";
+/** 読み込んだ RealTrainMod の車両の ID（組み込みの車両なら null） */
+export function rtmVehicleId(v: string | undefined): string | null {
+  return v && v.startsWith(RTM_PREFIX) ? v.slice(RTM_PREFIX.length) : null;
+}
+export function rtmVehicleType(id: string): VehicleType {
+  return `${RTM_PREFIX}${id}`;
+}
+/** 保存できる映像の車両か（組み込みの車両、または RealTrainMod の車両の ID） */
+export function isVehicleType(v: unknown): v is VehicleType {
+  return typeof v === "string" && (VEHICLE_TYPES.some((x) => x.value === v) || /^rtm:[a-z0-9]{1,40}$/.test(v));
+}
+export function defaultVehicleType(kind?: string): BuiltinVehicleType {
   return kind === "freight" ? "freight" : kind === "express" ? "express" : "commuter";
 }
 
