@@ -23,6 +23,8 @@ export function useRtmVehicles(): RtmVehicle[] | null {
   return vehicles;
 }
 
+const ROLE_LABEL = { cab: "先頭車", middle: "中間車" } as const;
+
 const TRAIN_TYPES: Record<string, string> = {
   EC: "電車", DC: "気動車", EL: "電気機関車", DL: "ディーゼル機関車", SL: "蒸気機関車", CC: "コンテナ車", TC: "タンク車",
 };
@@ -136,7 +138,9 @@ export function RtmVehiclesDialog({
               <li key={v.id}>
                 <div className="rtm-name">
                   <b>{v.name}</b>
-                  <span className="muted">{TRAIN_TYPES[v.config.trainType] ?? v.config.trainType}・{v.source}</span>
+                  <span className="muted">
+                    {v.role ? `${ROLE_LABEL[v.role]}・` : ""}{TRAIN_TYPES[v.config.trainType] ?? v.config.trainType}・{v.source}
+                  </span>
                 </div>
                 <div className="rtm-actions">
                   <label title="先頭が後ろ向きに表示されるときに使います">
@@ -147,7 +151,11 @@ export function RtmVehiclesDialog({
                     中間車
                     <select value={v.middleId ?? ""} onChange={(e) => void updateRtmVehicle(v.id, { middleId: e.target.value || undefined })}>
                       <option value="">この車両と同じ</option>
-                      {vehicles.filter((x) => x.id !== v.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      {vehicles
+                        .filter((x) => x.id !== v.id)
+                        // 中間車として見分けた車両を先に並べる
+                        .sort((a, b) => Number(b.role === "middle") - Number(a.role === "middle"))
+                        .map((x) => <option key={x.id} value={x.id}>{x.name}{x.role ? `（${ROLE_LABEL[x.role]}）` : ""}</option>)}
                     </select>
                   </label>
                   {onPick && <button onClick={() => onPick(v.id)}>{pickLabel}</button>}
@@ -159,7 +167,8 @@ export function RtmVehiclesDialog({
         )}
         {vehicles && vehicles.length === 0 && !message && <p className="muted">まだ車両を読み込んでいません。</p>}
         <p className="muted rtm-help">
-          先頭車と最後尾はこの車両（最後尾は向きを逆に）、中間車は「中間車」で選んだ車両になります。車両は実物の 1/150 の長さで表示し、運行計画の編成の長さやホームに収まる両数も、その車両の長さで計算します。
+          先頭車と最後尾はこの車両（最後尾は向きを逆に）、中間車は「中間車」で選んだ車両になります。
+          車両パックの中で先頭車と中間車を見分けられたとき（形式名の Tc・Mc と T・M など）は、読み込んだときに先頭車に合う中間車を自動で選びます（あとから変えられます）。車両は実物の 1/150 の長さで表示し、運行計画の編成の長さやホームに収まる両数も、その車両の長さで計算します。
           ドアやパンタグラフの動き（スクリプト）と、暗号化されたモデル（.npm）には対応していません。
         </p>
       </div>

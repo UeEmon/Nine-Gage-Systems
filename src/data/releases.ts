@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-26-realtrainmod-cab-middle",
+    date: "2026-11-26T05:40:00+09:00",
+    title: "RealTrainMod の車両パックの先頭車と中間車を自動で振り分けます",
+    body: "車両パックの中で先頭車と中間車を見分けられるとき（形式名の Tc・Mc と T・M など）は、読み込んだときに先頭車に合う中間車を自動で選びます。車両の一覧には「先頭車」「中間車」と表示されます。選んだ中間車は「中間車」からあとで変えられます。",
+  },
+  {
     id: "2026-11-26-realtrainmod-operation-plan",
     date: "2026-11-26T05:30:00+09:00",
     title: "運行計画の画面でも RealTrainMod の車両を読み込めるようになりました",
