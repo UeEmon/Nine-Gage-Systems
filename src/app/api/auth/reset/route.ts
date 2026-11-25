@@ -12,12 +12,13 @@ export async function POST(req: Request) {
   const parsed = ResetSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "リンクが正しくないか、パスワードが入っていません。" }, { status: 400 });
   try {
-    const { user, secret } = await updateStore(async (d) => ({
+    const { user, secret, plan } = await updateStore(async (d) => ({
       user: structuredClone(await resetPassword(d, parsed.data)),
       secret: d.sessionSecret,
+      plan: { sponsorPlan: d.sponsorPlan, sponsors: d.sponsors },
     }));
     (await cookies()).set(sessionCookie(createSessionToken(user, secret), secureCookies(req)));
-    return Response.json({ user: publicUser(user) });
+    return Response.json({ user: publicUser(user, plan) });
   } catch (err) {
     if (err instanceof UserError) return Response.json({ error: err.message }, { status: err.status });
     throw err;

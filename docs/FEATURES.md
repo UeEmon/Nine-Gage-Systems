@@ -121,6 +121,11 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/app/api/models/`
 - `/src/app/api/ai-config/`
 - `/src/app/api/account/ai/`
+- `/src/lib/server/premium.ts`
+- `/src/lib/server/sponsors.ts`
+- `/src/app/api/account/github/`
+- `/src/app/api/sponsors/`
+- `/src/components/GithubSponsorCard.tsx`
 - `/src/app/api/admin/ai/`
 - `/src/app/api/admin/ai-usage/`
 - `/src/components/AiStatus.tsx`
@@ -165,6 +170,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/components/UserMenu.tsx`
 - `/tests/auth.test.ts`
 - `/tests/roles.test.ts`
+- `/tests/premium.test.ts`
 - `/tests/sites.test.ts`
 
 ### 管理画面（`feature:admin`）
@@ -172,6 +178,8 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/app/admin/`
 - `/src/app/api/admin/users/`
 - `/src/components/AdminUsersPanel.tsx`
+- `/src/app/api/admin/sponsors/`
+- `/src/components/AdminSponsorsPanel.tsx`
 - `/src/app/api/admin/analytics/`
 - `/src/app/api/events/`
 - `/src/components/AdminAnalyticsPanel.tsx`

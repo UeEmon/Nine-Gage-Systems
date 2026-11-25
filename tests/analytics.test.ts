@@ -83,7 +83,7 @@ describe("アクセス解析: 集計", () => {
     { id: "admin", role: "admin" as const, createdAt: "2026-01-01T00:00:00Z" },
     { id: "u1", role: "user" as const, createdAt: "2026-11-20T01:00:00Z" },
     { id: "u2", role: "user" as const, createdAt: "2026-11-22T01:00:00Z", pendingVerify: { tokenHash: "x", expiresAt: "2026-11-23T00:00:00Z" } },
-    { id: "old", role: "ai" as const, createdAt: "2026-05-01T00:00:00Z" },
+    { id: "old", role: "plus" as const, createdAt: "2026-05-01T00:00:00Z" },
   ];
   const events: StoredEvent[] = [
     // u1: ログイン前にトップページとエディタを見て保存し、そのあと登録・ログインして運転・投稿

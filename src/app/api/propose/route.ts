@@ -8,7 +8,7 @@ import { aiLayouts } from "@/lib/server/aiLayouts";
 import { cacheKey } from "@/lib/server/proposeCache";
 import { startProposeJob } from "@/lib/server/proposeJobs";
 import { requireUser } from "@/lib/server/auth";
-import { settingsForUser, type KeySource } from "@/lib/server/ownAi";
+import { settingsForUserNow, type KeySource } from "@/lib/server/ownAi";
 import { MAKERS } from "@/lib/parts";
 import { REPLICA_LEVELS, type ReplicaLevel } from "@/lib/replica";
 import { shortfall, stockFromInventory } from "@/lib/productDb";
@@ -154,7 +154,7 @@ async function propose(g: Guarded, body: z.infer<typeof BodySchema>, deadline: n
   let settings: ResolvedAiSettings;
   let keySource: KeySource;
   try {
-    ({ settings, keySource } = settingsForUser(g.data, g.user));
+    ({ settings, keySource } = await settingsForUserNow(g.data, g.user));
   } catch (err) {
     const e = toLlmError(err, undefined);
     return Response.json({ error: e.message }, { status: e.status });

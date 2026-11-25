@@ -16,10 +16,14 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "リンクが正しくありません。メールのリンクをそのまま開いてください。" }, { status: 400 });
   try {
-    const { user, secret } = await updateStore((d) => ({ user: structuredClone(verifyEmail(d, parsed.data.token)), secret: d.sessionSecret }));
+    const { user, secret, plan } = await updateStore((d) => ({
+      user: structuredClone(verifyEmail(d, parsed.data.token)),
+      secret: d.sessionSecret,
+      plan: { sponsorPlan: d.sponsorPlan, sponsors: d.sponsors },
+    }));
     (await cookies()).set(sessionCookie(createSessionToken(user, secret), secureCookies(req)));
     recordServerEvent(req, "login", user.id);
-    return Response.json({ user: publicUser(user) });
+    return Response.json({ user: publicUser(user, plan) });
   } catch (err) {
     if (err instanceof UserError) return Response.json({ error: err.message }, { status: err.status });
     throw err;

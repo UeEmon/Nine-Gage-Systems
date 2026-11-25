@@ -27,8 +27,8 @@ const T0 = Date.parse("2026-11-18T00:00:00Z");
 
 function store(): StoreData {
   const alice = newUser("alice", "user", "x");
-  const bob = newUser("bob", "ai", "x");
-  return { version: 2, sessionSecret: "s".repeat(64), users: [alice, bob], ai: { byProvider: {} }, notices: [], aiCost: { usdJpy: 150 }, feedback: [] };
+  const bob = newUser("bob", "plus", "x");
+  return { version: 3, sessionSecret: "s".repeat(64), users: [alice, bob], ai: { byProvider: {} }, notices: [], aiCost: { usdJpy: 150 }, sponsorPlan: { multiplier: 0.75, oneTimeDays: 30 }, sponsors: {}, feedback: [] };
 }
 
 const input = { category: "feature" as const, feature: "editor", title: "曲線ポイントを反転したい", body: "左右を切り替えたい" };

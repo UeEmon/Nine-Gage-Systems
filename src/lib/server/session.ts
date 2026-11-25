@@ -1,14 +1,17 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { Role, StoreData, StoredUser } from "./store";
+import type { RoleId } from "@/lib/roles";
+import { effectiveRole } from "./premium";
+import type { StoreData, StoredUser } from "./store";
 
 /** ログイン状態を持つ Cookie。中身は「ユーザーID.版.期限.署名」 */
 export const SESSION_COOKIE = "ng_session";
 export const SESSION_DAYS = 14;
 
-export type PublicUser = { id: string; username: string; role: Role };
+export type PublicUser = { id: string; username: string; role: RoleId };
 
-export function publicUser(u: StoredUser): PublicUser {
-  return { id: u.id, username: u.username, role: u.role };
+/** 画面に返すユーザー。ロールは支援の状態を反映したもの（一般で支援中ならプレミアムユーザー） */
+export function publicUser(u: StoredUser, data: Pick<StoreData, "sponsorPlan" | "sponsors">): PublicUser {
+  return { id: u.id, username: u.username, role: effectiveRole(u, data) };
 }
 
 function sign(body: string, secret: string) {
