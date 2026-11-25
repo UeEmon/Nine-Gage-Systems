@@ -137,6 +137,14 @@
           - "src/app/admin/**"
           - "src/app/api/admin/users/**"
           - "src/components/AdminUsersPanel.tsx"
+          - "src/app/api/admin/analytics/**"
+          - "src/app/api/events/**"
+          - "src/components/AdminAnalyticsPanel.tsx"
+          - "src/components/LineChart.tsx"
+          - "src/components/PageView.tsx"
+          - "src/lib/analytics.ts"
+          - "src/lib/server/analytics.ts"
+          - "tests/analytics.test.ts"
 "feature:notices":
   - changed-files:
       - any-glob-to-any-file:

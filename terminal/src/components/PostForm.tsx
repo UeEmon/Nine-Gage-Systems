@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { track } from "../../../src/lib/analytics";
 import { findConnectors } from "../../../src/lib/modules";
 import { parsePatternFile, type SavedPattern } from "../../../src/lib/patternFile";
 import { EDGE_LABELS } from "../../../src/lib/modules";
@@ -58,6 +59,7 @@ export function PostForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `エラー（${res.status}）`);
+      track("terminal_post");
       window.location.href = `/l/${data.id}`;
     } catch (err) {
       setState({ busy: false, error: err instanceof Error ? err.message : String(err) });

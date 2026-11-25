@@ -223,12 +223,20 @@
       "id": "admin",
       "name": "管理画面",
       "color": "bfd4f2",
-      "description": "管理画面の枠とユーザー管理（AI設定・お知らせの管理画面はそれぞれの機能の担当）",
+      "description": "管理画面の枠とユーザー管理、アクセス解析（AI設定・お知らせの管理画面はそれぞれの機能の担当）",
       "owners": ["@UeEmon"],
       "paths": [
         "/src/app/admin/",
         "/src/app/api/admin/users/",
-        "/src/components/AdminUsersPanel.tsx"
+        "/src/components/AdminUsersPanel.tsx",
+        "/src/app/api/admin/analytics/",
+        "/src/app/api/events/",
+        "/src/components/AdminAnalyticsPanel.tsx",
+        "/src/components/LineChart.tsx",
+        "/src/components/PageView.tsx",
+        "/src/lib/analytics.ts",
+        "/src/lib/server/analytics.ts",
+        "/tests/analytics.test.ts"
       ]
     },
     {

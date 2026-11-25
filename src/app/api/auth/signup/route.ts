@@ -1,3 +1,4 @@
+import { recordServerEvent } from "@/lib/server/analytics";
 import { clientKey, recordSignup, sameOrigin, signupBlocked } from "@/lib/server/auth";
 import { canSendMail, mailSender, publicBaseUrl } from "@/lib/server/mailer";
 import { updateStore } from "@/lib/server/store";
@@ -23,6 +24,7 @@ export async function POST(req: Request) {
   try {
     const result = await updateStore((d) => signupUser(d, parsed.data));
     for (const k of keys) recordSignup(k);
+    if (result.kind === "created") recordServerEvent(req, "signup", result.user.id);
     const to = parsed.data.email.trim().toLowerCase();
     const mail =
       result.kind === "created" ? signupMail(base, result.user.username, result.token) : alreadyMail(base, result.username);

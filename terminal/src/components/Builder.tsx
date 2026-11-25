@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Candidate } from "../../../src/lib/modules";
 import { EDGE_LABELS } from "../../../src/lib/modules";
+import { track } from "../../../src/lib/analytics";
 import { assemble, fileName, patternFileOf, type ModulePost, type ModuleRef } from "../lib/assembly";
 import { AssemblySvg, type AssemblyModule } from "./LayoutSvg";
 
@@ -145,6 +146,7 @@ export function Builder(props: Props) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `エラー（${res.status}）`);
+      if (!props.setId) track("terminal_set");
       window.location.href = `/s/${data.id}`;
     } catch (e) {
       setSave({ busy: false, error: e instanceof Error ? e.message : String(e) });
