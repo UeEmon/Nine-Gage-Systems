@@ -52,7 +52,7 @@ export function canUseRtm(role: RoleId | null | undefined): boolean {
   return role === "admin" || role === "plus" || role === "ai";
 }
 
-/** 3D モデル（RealTrainMod の設置物・glTF・OBJ など）を読み込んでレイアウトに置けるロール（RealTrainMod の車両と同じ） */
+/** RealTrainMod の設置物を読み込んでレイアウトに置けるロール（RealTrainMod の車両と同じ。仮オブジェクト・3Dモデルは誰でも使える） */
 export function canUseModels(role: RoleId | null | undefined): boolean {
   return canUseRtm(role);
 }

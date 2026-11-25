@@ -1,11 +1,8 @@
-// 読み込んだ 3D モデルを three.js の物体にする（走行の映像に置く・読み込んだときに寸法を測る）。
+// 読み込んだ RealTrainMod の設置物を three.js の物体にする（走行の映像に置く・読み込んだときに寸法を測る）。
 
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { parseModelFile, type ParsedModel } from "../rtm/model";
-import { findFile } from "../rtm/pack";
 import type { Model3d } from "./pack";
 import type { PlacedModel } from "./placed";
 
@@ -21,12 +18,10 @@ export type ModelKit = {
   dispose(): void;
 };
 
-const dirOf = (p: string) => p.split("/").slice(0, -1).join("/");
-
-async function loadTexture(data: Uint8Array, flipY: boolean): Promise<THREE.Texture | null> {
+async function loadTexture(data: Uint8Array): Promise<THREE.Texture | null> {
   if (typeof createImageBitmap === "undefined") return null;
   try {
-    const bitmap = await createImageBitmap(new Blob([data as BlobPart]), flipY ? { imageOrientation: "flipY" } : undefined);
+    const bitmap = await createImageBitmap(new Blob([data as BlobPart]));
     const tex = new THREE.Texture(bitmap as unknown as HTMLImageElement);
     tex.flipY = false;
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -49,48 +44,7 @@ function triangles(obj: THREE.Object3D): number {
   return n;
 }
 
-/** glTF を読む。外部のファイル（.bin・テクスチャ）は、いっしょに読み込んだファイルから渡す */
-async function loadGltf(model: Model3d, disposables: { dispose(): void }[]): Promise<THREE.Object3D> {
-  const paths = Object.keys(model.files);
-  const urls: string[] = [];
-  const manager = new THREE.LoadingManager();
-  manager.setURLModifier((url) => {
-    if (/^(blob:|data:|https?:)/i.test(url)) return url;
-    let u = url;
-    try {
-      u = decodeURIComponent(url);
-    } catch {
-      /* そのまま */
-    }
-    u = u.replace(/^\.\//, "");
-    const dir = dirOf(model.main);
-    const hit = findFile(paths, dir ? `${dir}/${u}` : u) ?? findFile(paths, u);
-    if (!hit) return "data:,";
-    const blob = URL.createObjectURL(new Blob([model.files[hit] as BlobPart]));
-    urls.push(blob);
-    return blob;
-  });
-  disposables.push({ dispose: () => urls.forEach((u) => URL.revokeObjectURL(u)) });
-  const data = model.files[model.main];
-  const input: ArrayBuffer | string = /\.glb$/i.test(model.main)
-    ? (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer)
-    : new TextDecoder().decode(data);
-  const gltf = await new Promise<{ scene: THREE.Object3D }>((resolve, reject) =>
-    new GLTFLoader(manager).parse(input, "", resolve, (e) => reject(e instanceof Error ? e : new Error(String(e)))),
-  );
-  gltf.scene.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    disposables.push(mesh.geometry);
-    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-      disposables.push(m);
-      for (const v of Object.values(m)) if ((v as THREE.Texture)?.isTexture) disposables.push(v as THREE.Texture);
-    }
-  });
-  return gltf.scene;
-}
-
-/** RTM の設置物・OBJ・Metasequoia を読む（RTM の車両と同じ読み方） */
+/** RTM の設置物（.mqo / .mqoz / .obj）を読む（RTM の車両と同じ読み方） */
 async function loadMesh(model: Model3d, disposables: { dispose(): void }[]): Promise<THREE.Object3D> {
   const parsed: ParsedModel | null = await parseModelFile(model.main, model.files[model.main]);
   if (!parsed || parsed.parts.length === 0) throw new Error(`${model.name} のモデルに読める面がありません`);
@@ -100,13 +54,13 @@ async function loadMesh(model: Model3d, disposables: { dispose(): void }[]): Pro
   const materialFor = (name: string) => {
     const tx =
       model.textures?.find((t) => t.material === name) ??
-      (model.format === "obj" ? undefined : model.textures?.find((t) => t.material.toLowerCase() === "default") ?? model.textures?.[0]);
+      model.textures?.find((t) => t.material.toLowerCase() === "default") ??
+      model.textures?.[0];
     const key = tx?.path ?? `color|${name}`;
     let mat = materials.get(key);
     if (mat) return mat;
-    const kd = model.colors?.[name];
     mat = new THREE.MeshStandardMaterial({
-      color: kd ? new THREE.Color(kd[0], kd[1], kd[2]) : 0xc8ccd2,
+      color: 0xc8ccd2,
       roughness: 0.75,
       metalness: 0.02,
       side: THREE.DoubleSide,
@@ -117,7 +71,7 @@ async function loadMesh(model: Model3d, disposables: { dispose(): void }[]): Pro
     const data = tx ? model.files[tx.path] : undefined;
     if (tx && data) {
       let p = textures.get(tx.path);
-      if (!p) textures.set(tx.path, (p = loadTexture(data, false)));
+      if (!p) textures.set(tx.path, (p = loadTexture(data)));
       const m = mat;
       p.then((tex) => {
         if (!tex) return;
@@ -143,23 +97,12 @@ async function loadMesh(model: Model3d, disposables: { dispose(): void }[]): Pro
   return group;
 }
 
-function loadStl(model: Model3d, disposables: { dispose(): void }[]): THREE.Object3D {
-  const data = model.files[model.main];
-  const geometry = new STLLoader().parse(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
-  geometry.rotateX(-Math.PI / 2); // STL の Z を高さにする
-  geometry.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ color: 0xb9c0c8, roughness: 0.7, metalness: 0.05, side: THREE.DoubleSide });
-  disposables.push(geometry, mat);
-  return new THREE.Mesh(geometry, mat);
-}
-
 /** 読み込んだモデルから、映像に置く物体の型を作る（寸法も測る） */
 export async function buildModelKit(model: Model3d): Promise<ModelKit> {
   const disposables: { dispose(): void }[] = [];
   const dispose = () => disposables.forEach((d) => d.dispose());
   try {
-    const raw =
-      model.format === "gltf" ? await loadGltf(model, disposables) : model.format === "stl" ? loadStl(model, disposables) : await loadMesh(model, disposables);
+    const raw = await loadMesh(model, disposables);
     if (triangles(raw) > MAX_TRIANGLES) throw new Error(`${model.name} は面が多すぎます（上限 ${MAX_TRIANGLES.toLocaleString()} 面）`);
     raw.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(raw);

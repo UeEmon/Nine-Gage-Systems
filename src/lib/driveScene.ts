@@ -4,7 +4,7 @@
 
 import * as THREE from "three";
 import type { SimObject } from "./replica";
-import { modelGeometry } from "./object3d";
+import { loadModelObject, modelGeometry } from "./object3d";
 import type { BedType } from "../data/trackCatalog";
 import { PIER_MIN_MM, type Pier } from "./elevation";
 import type { Board, Piece } from "./geometry";
@@ -728,11 +728,13 @@ export function buildScene(
   accessories: Accessory[] = [],
   sims: SimObject[] = [],
   stationNames: Record<string, string> = {},
-  /** 木と建物を置かない所（読み込んだ 3D モデルを置いた所など。ボードの座標の四隅） */
+  /** 木と建物を置かない所（読み込んだ RTM の設置物を置いた所など。ボードの座標の四隅） */
   keepClear: { x: number; y: number }[][] = [],
 ): Built {
   const group = new THREE.Group();
   const disposables: { dispose: () => void }[] = [];
+  /** dispose したあとに読み終わったモデルは、すぐ捨てる */
+  let sceneDisposed = false;
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => {
     const m = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0, side: THREE.DoubleSide, ...extra });
     disposables.push(m);
@@ -990,6 +992,30 @@ export function buildScene(
   for (const s of sims) {
     let geometry: THREE.BufferGeometry;
     const length = Math.max(0.1, s.length), width = Math.max(0.1, s.width), height = Math.max(0.1, s.height);
+    if (s.model && s.model.format !== "stl") {
+      // glTF・OBJ は読み込んでから置く（読めなければ半透明の箱）
+      const holder = new THREE.Group();
+      holder.position.set(s.x, s.z ?? 0, s.y);
+      holder.rotation.y = -s.rot * Math.PI / 180;
+      group.add(holder);
+      const box = () => {
+        const g = new THREE.BoxGeometry(length, height, width);
+        g.translate(0, height / 2, 0);
+        disposables.push(g);
+        holder.add(new THREE.Mesh(g, mat(0x9b7eb5, { transparent: true, opacity: 0.25 })));
+      };
+      loadModelObject(s.model)
+        .then((m) => {
+          if (sceneDisposed) return m.dispose();
+          disposables.push(m);
+          m.object.scale.set(length / m.size[0], height / m.size[1], width / m.size[2]);
+          holder.add(m.object);
+        })
+        .catch(() => {
+          if (!sceneDisposed) box();
+        });
+      continue;
+    }
     try {
       if (s.model) {
         geometry = modelGeometry(s.model);
@@ -1015,6 +1041,11 @@ export function buildScene(
     const cs = accessoryCorners(a, getAccessory(a.itemId));
     return { x0: Math.min(...cs.map((c) => c.x)), x1: Math.max(...cs.map((c) => c.x)), y0: Math.min(...cs.map((c) => c.y)), y1: Math.max(...cs.map((c) => c.y)) };
   });
+  // 仮オブジェクト（アップロードした3Dモデルなど）の所にも置かない
+  for (const sim of sims) {
+    const r = Math.hypot(sim.length, sim.width) / 2;
+    accBoxes.push({ x0: sim.x - r, x1: sim.x + r, y0: sim.y - r, y1: sim.y + r });
+  }
   for (const cs of keepClear) {
     if (cs.length) accBoxes.push({ x0: Math.min(...cs.map((c) => c.x)), x1: Math.max(...cs.map((c) => c.x)), y0: Math.min(...cs.map((c) => c.y)), y1: Math.max(...cs.map((c) => c.y)) });
   }
@@ -1059,6 +1090,7 @@ export function buildScene(
   return {
     group,
     dispose: () => {
+      sceneDisposed = true;
       for (const d of disposables) d.dispose();
     },
   };

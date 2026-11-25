@@ -1,4 +1,4 @@
-// 読み込んだ 3D モデルを、このブラウザ（IndexedDB）に保存する。サーバーには送らない。
+// 読み込んだ 設置物を、このブラウザ（IndexedDB）に保存する。サーバーには送らない。
 
 import type { Model3d } from "./pack";
 
@@ -8,11 +8,11 @@ export const MODELS_CHANGED_EVENT = "senrolab-models-changed";
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") return reject(new Error("このブラウザでは 3D モデルを保存できません"));
+    if (typeof indexedDB === "undefined") return reject(new Error("このブラウザでは 設置物を保存できません"));
     const req = indexedDB.open(DB, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: "id" });
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error("3D モデルの保存先を開けませんでした"));
+    req.onerror = () => reject(req.error ?? new Error("設置物の保存先を開けませんでした"));
   });
 }
 
@@ -23,8 +23,8 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
       const tx = db.transaction(STORE, mode);
       const req = fn(tx.objectStore(STORE));
       tx.oncomplete = () => resolve(req ? req.result : undefined);
-      tx.onerror = () => reject(tx.error ?? new Error("3D モデルの保存に失敗しました"));
-      tx.onabort = () => reject(tx.error ?? new Error("3D モデルの保存に失敗しました（ブラウザの保存領域が足りない可能性があります）"));
+      tx.onerror = () => reject(tx.error ?? new Error("設置物の保存に失敗しました"));
+      tx.onabort = () => reject(tx.error ?? new Error("設置物の保存に失敗しました（ブラウザの保存領域が足りない可能性があります）"));
     });
   } finally {
     db.close();

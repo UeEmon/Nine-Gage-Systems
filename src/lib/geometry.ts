@@ -41,7 +41,7 @@ export type Layout = {
   sims?: SimObject[];
   /** 「再現してみた」で再現した路線・駅と特徴 */
   replica?: ReplicaInfo;
-  /** 読み込んだ 3D モデルを置いたもの（モデルの中身は読み込んだブラウザにだけある）。古い保存データにはない */
+  /** 読み込んだ RealTrainMod の設置物を置いたもの（モデルの中身は読み込んだブラウザにだけある）。古い保存データにはない */
   models?: PlacedModel[];
 };
 

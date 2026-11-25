@@ -53,7 +53,7 @@ type Props = {
   planTrainId?: string | null;
   /** RealTrainMod の車両を使える（プレミアムユーザー・プレミアムプラス・管理者） */
   rtmAllowed?: boolean;
-  /** 読み込んだ 3D モデルをレイアウトに置いたものを表示する（プレミアムユーザー・プレミアムプラス・管理者） */
+  /** 読み込んだ RealTrainMod の設置物をレイアウトに置いたものを表示する（プレミアムユーザー・プレミアムプラス・管理者） */
   modelsAllowed?: boolean;
   onClose: () => void;
 };
@@ -320,7 +320,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
       modelsAllowed ? (layout.models ?? []).map(placedCorners) : [],
     );
     scene.add(world.group);
-    // 読み込んだ 3D モデル（この端末の IndexedDB にあるもの）を、読めたものから置く
+    // 読み込んだ RealTrainMod の設置物（この端末の IndexedDB にあるもの）を、読めたものから置く
     let placedModels: { group: THREE.Group; dispose(): void } | null = null;
     let sceneAlive = true;
     if (modelsAllowed && layout.models?.length) {
@@ -331,9 +331,9 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
           if (!sceneAlive) return built.dispose();
           placedModels = built;
           scene.add(built.group);
-          if (built.missing.length) setModelNote(`この端末に読み込んでいない 3D モデルは表示していません：${built.missing.join("、")}`);
+          if (built.missing.length) setModelNote(`この端末に読み込んでいない RTM の設置物は表示していません：${built.missing.join("、")}`);
         })
-        .catch(() => setModelNote("3D モデルを表示できませんでした"));
+        .catch(() => setModelNote("RTM の設置物を表示できませんでした"));
     }
     let currentVehicleType = vehicleTypeRef.current;
     let currentRtm = rtmKitsForRef.current(currentVehicleType);

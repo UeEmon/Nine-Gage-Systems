@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { defaultSizeMm, FORMAT_LABELS, readModelFiles, type Model3d } from "@/lib/models3d/pack";
+import { defaultSizeMm, readModelFiles, type Model3d } from "@/lib/models3d/pack";
 import { isPlacedModel, MAX_PLACED_MODELS, newPlacedUid, scalePlaced, type PlacedModel } from "@/lib/models3d/placed";
 import { deleteModel, listModels, MODELS_CHANGED_EVENT, renameModel, saveModels } from "@/lib/models3d/store";
 import { normDeg } from "@/lib/parts";
 import { ROLE_LABELS, SPONSORS_URL } from "@/lib/roles";
 
-/** このブラウザに読み込んだ 3D モデル（読み込み中は null） */
+/** このブラウザに読み込んだ RealTrainMod の設置物（読み込み中は null） */
 export function useModels3d(enabled = true): Model3d[] | null {
   const [models, setModels] = useState<Model3d[] | null>(null);
   useEffect(() => {
@@ -27,15 +27,15 @@ export function useModels3d(enabled = true): Model3d[] | null {
   return enabled ? models : [];
 }
 
-const ACCEPT = ".zip,.jar,.glb,.gltf,.bin,.obj,.mtl,.mqo,.mqoz,.stl,.json,.png,.jpg,.jpeg,.webp";
-const PICK = /\.(zip|jar|glb|gltf|bin|obj|mtl|mqo|mqoz|stl|json|png|jpe?g|webp|npm|rar|7z|lzh|fbx|blend|dae|3ds|skp|schematic|schem|nbt)$/i;
+const ACCEPT = ".zip,.jar,.json,.mqo,.mqoz,.obj,.mtl,.png";
+const PICK = /\.(zip|jar|json|mqo|mqoz|obj|mtl|png|jpe?g|npm|ngto|rar|7z|lzh)$/i;
 
 const fmtSize = (m: Model3d) => {
   const s = defaultSizeMm(m);
   return `${Math.round(s.length)}×${Math.round(s.width)}×高さ${Math.round(s.height)}mm`;
 };
 
-/** 3D モデルを読み込む・管理するダイアログ */
+/** RealTrainMod の設置物を読み込む・管理するダイアログ */
 export function ModelsDialog({ onClose, onPlace }: { onClose: () => void; onPlace?: (m: Model3d) => void }) {
   const models = useModels3d();
   const [busy, setBusy] = useState(false);
@@ -100,25 +100,25 @@ export function ModelsDialog({ onClose, onPlace }: { onClose: () => void; onPlac
 
   return (
     <div className="rtm-backdrop" onClick={onClose}>
-      <div className="rtm-dialog" role="dialog" aria-label="3D モデル" onClick={(e) => e.stopPropagation()}>
+      <div className="rtm-dialog" role="dialog" aria-label="RealTrainMod の設置物" onClick={(e) => e.stopPropagation()}>
         <header>
-          <h3>3D モデル</h3>
+          <h3>RealTrainMod の設置物</h3>
           <button onClick={onClose}>閉じる</button>
         </header>
         <p className="muted">
-          建物・設備などの 3D モデルを読み込んで、レイアウトに置けます。置いたモデルは運転席の映像にも表示されます。
-          RealTrainMod の設置物パック（ModelOrnament・ModelMachine などの .zip）、glTF（.glb / .gltf）、OBJ（.obj と .mtl・テクスチャ）、Metasequoia（.mqo）、STL に対応しています。
+          お持ちの RealTrainMod の設置物パック（ModelOrnament・ModelMachine・ModelSignal などの .zip）を選ぶと、街灯・改札機・信号機などの設置物をレイアウトに置けます。置いた設置物は運転席の映像にも表示されます。
+          json・モデル（.mqo / .mqoz / .obj）・テクスチャ（.png）をまとめて選んでも読み込めます。
         </p>
         <p className="rtm-note">
-          モデルはそれぞれの作者の利用規約に従って使ってください。読み込んだモデルはこのブラウザの中だけに保存され、SenroLab のサーバーには送られません。
-          レイアウトに保存されるのは置いた位置と大きさだけなので、別の端末で見るときは、その端末でも同じモデルを読み込んでください。
+          設置物パックはそれぞれの作者の利用規約に従って使ってください。読み込んだ設置物はこのブラウザの中だけに保存され、SenroLab のサーバーには送られません。
+          レイアウトに保存されるのは置いた位置と大きさだけなので、別の端末で見るときは、その端末でも同じ設置物パックを読み込んでください。
         </p>
         <div className="rtm-files">
           <label className="rtm-file">
-            {busy ? "読み込み中…" : "ファイルを選ぶ"}
+            {busy ? "読み込み中…" : "設置物パックを選ぶ"}
             {input(false)}
           </label>
-          <label className="rtm-file" title="展開したパックのフォルダを選びます">
+          <label className="rtm-file" title="展開した設置物パックのフォルダを選びます">
             展開したフォルダを選ぶ
             {input(true)}
           </label>
@@ -143,7 +143,7 @@ export function ModelsDialog({ onClose, onPlace }: { onClose: () => void; onPlac
                     className="model-name"
                     defaultValue={m.name}
                     maxLength={80}
-                    aria-label="モデルの名前"
+                    aria-label="設置物の名前"
                     onBlur={(e) => {
                       const v = e.currentTarget.value.trim();
                       if (v && v !== m.name) void renameModel(m.id, v);
@@ -151,7 +151,7 @@ export function ModelsDialog({ onClose, onPlace }: { onClose: () => void; onPlac
                     }}
                   />
                   <span className="muted">
-                    {FORMAT_LABELS[m.format]}{m.kind ? `（${m.kind}）` : ""}・{fmtSize(m)}・{m.source}
+                    {m.kind ? `${m.kind}・` : ""}{fmtSize(m)}・{m.source}
                   </span>
                 </div>
                 <div className="rtm-actions">
@@ -162,11 +162,11 @@ export function ModelsDialog({ onClose, onPlace }: { onClose: () => void; onPlac
             ))}
           </ul>
         )}
-        {models && models.length === 0 && !message && <p className="muted">まだ 3D モデルを読み込んでいません。</p>}
+        {models && models.length === 0 && !message && <p className="muted">まだ設置物を読み込んでいません。</p>}
         <p className="muted rtm-help">
-          RealTrainMod・glTF・OBJ・Metasequoia のモデルは実物の大きさ（m）として 1/150 で置き、STL は模型の大きさ（mm）として置きます。
-          小さすぎる・大きすぎるときは、いちばん長い辺を 100mm にして置きます。大きさ・向き・高さは、置いたあとに変えられます。
-          RealTrainMod の車両は、運転席の映像の「RTMの車両…」から読み込んでください。暗号化されたモデル（.npm）、圧縮された glTF（Draco など）、FBX には対応していません。
+          設置物は実物の 1/150 の大きさで置きます。大きさ・向き・高さは、置いたあとに変えられます。
+          RealTrainMod の車両は、運転席の映像の「RTMの車両…」から読み込んでください。レール・架線、動き（スクリプト）、暗号化されたモデル（.npm）には対応していません。
+          glTF・OBJ・STL などのモデルは、右の「仮オブジェクト・3Dモデル」に置けます。
         </p>
       </div>
     </div>
@@ -180,7 +180,7 @@ export function placeNew(m: Model3d, at: { x: number; y: number }): PlacedModel 
 
 const num = (v: number) => Math.round(v * 10) / 10;
 
-/** 編集画面の左の「3D モデル」の欄 */
+/** 編集画面の左の「RTMの設置物」の欄 */
 export function ModelsSection({
   allowed,
   placed,
@@ -205,12 +205,12 @@ export function ModelsSection({
   if (!allowed) {
     return (
       <section>
-        <h2>3D モデル</h2>
+        <h2>RTMの設置物</h2>
         <p className="hint">
-          建物などの 3D モデル（RealTrainMod の設置物・glTF・OBJ など）を読み込んでレイアウトに置き、運転席の映像に表示できます。
+          RealTrainMod の設置物パック（街灯・改札機・信号機など）を読み込んでレイアウトに置き、運転席の映像に表示できます。
           {ROLE_LABELS.ai}・{ROLE_LABELS.plus}の特典です（<a href={SPONSORS_URL} target="_blank" rel="noreferrer">GitHub Sponsors で支援する</a>）。
         </p>
-        {placed.length > 0 && <p className="hint">このレイアウトには 3D モデルが {placed.length} 個置かれています（枠だけ表示しています）。</p>}
+        {placed.length > 0 && <p className="hint">このレイアウトには RTM の設置物が {placed.length} 個置かれています（枠だけ表示しています）。</p>}
       </section>
     );
   }
@@ -233,10 +233,10 @@ export function ModelsSection({
   );
   return (
     <section>
-      <h2>3D モデル</h2>
-      <p className="hint">読み込んだ建物などのモデルを置きます。ボードの上でドラッグすると動かせます。運転席の映像にも表示されます。</p>
+      <h2>RTMの設置物</h2>
+      <p className="hint">読み込んだ RealTrainMod の設置物を置きます。ボードの上でドラッグすると動かせます。運転席の映像にも表示されます。</p>
       <div className="row wrap">
-        <button onClick={() => setOpen(true)}>3D モデルを読み込む・置く…</button>
+        <button onClick={() => setOpen(true)}>設置物を読み込む・置く…</button>
       </div>
       {placed.length > 0 && (
         <ul className="model-placed">
@@ -254,7 +254,7 @@ export function ModelsSection({
         <div className="model-edit" key={selected.uid}>
           <p className="hint">
             <b>{selected.name}</b>：{num(selected.length)}×{num(selected.width)}×高さ{num(selected.height)}mm
-            {!model && models && "。このモデルはこの端末に読み込まれていないので、映像には表示されません"}
+            {!model && models && "。この設置物はこの端末に読み込まれていないので、映像には表示されません"}
           </p>
           <div className="sim-fields">
             {field("x", "X (mm)")}
@@ -323,7 +323,7 @@ export function ModelsSection({
   );
 }
 
-/** ボードの上の 3D モデルの枠（上から見た形） */
+/** ボードの上の RTM の設置物の枠（上から見た形） */
 export function PlacedModelShape({
   model,
   selected,
@@ -351,9 +351,9 @@ export function PlacedModelShape({
         <line x1={hl * 0.6} y1={0} x2={hl} y2={0} className="placed-model-front" />
       </g>
       <text x={model.x} y={model.y} className="placed-model-label" style={{ fontSize }}>
-        3D {model.name}
+        RTM {model.name}
       </text>
-      <title>{`${model.name}（3D モデル）${missing ? "。この端末に読み込まれていません" : ""}`}</title>
+      <title>{`${model.name}（RealTrainMod の設置物）${missing ? "。この端末に読み込まれていません" : ""}`}</title>
     </g>
   );
 }

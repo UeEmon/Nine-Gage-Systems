@@ -315,14 +315,14 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const analysis = useMemo(() => analyze(layout), [layout]);
   const accessories = useMemo(() => layout.accessories ?? [], [layout.accessories]);
   const sims = useMemo(() => layout.sims ?? [], [layout.sims]);
-  // 読み込んだ 3D モデルを置いたもの（プレミアムユーザー・プレミアムプラス・管理者の特典）
+  // 読み込んだ RealTrainMod の設置物を置いたもの（プレミアムユーザー・プレミアムプラス・管理者の特典）
   const modelsAllowed = canUseModels(user?.role);
   const placedModels = useMemo(() => layout.models ?? [], [layout.models]);
   const localModels = useModels3d(modelsAllowed);
   const localModelIds = useMemo(() => new Set((localModels ?? []).map((m) => m.id)), [localModels]);
   const [selectedModelUid, setSelectedModelUid] = useState<string | null>(null);
   const setPlacedModels = (fn: (ms: PlacedModel[]) => PlacedModel[]) => setLayout((l) => ({ ...l, models: fn(l.models ?? []) }));
-  // 線路やパーツを選んだら、3D モデルの選択は外す
+  // 線路やパーツを選んだら、設置物の選択は外す
   useEffect(() => {
     if (selection) setSelectedModelUid(null);
   }, [selection]);
@@ -1168,7 +1168,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           {sims.map((s) => (
             <SimObjectShape key={s.uid} sim={s} fontSize={Math.max(view.w / 110, 9)} layer="body" />
           ))}
-          {/* 3D モデルの枠も線路の下に描く（線路をクリックできるように）。選んだものだけ上に描く */}
+          {/* RTM の設置物の枠も線路の下に描く（線路をクリックできるように）。選んだものだけ上に描く */}
           {placedModels.filter((m) => m.uid !== selectedModelUid).map((m) => (
             <PlacedModelShape
               key={m.uid}
