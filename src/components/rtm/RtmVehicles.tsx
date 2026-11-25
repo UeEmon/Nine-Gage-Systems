@@ -28,10 +28,29 @@ const TRAIN_TYPES: Record<string, string> = {
 };
 
 /** RealTrainMod の車両パックを読み込む・管理するダイアログ */
-export function RtmVehiclesDialog({ onClose, onPick }: { onClose: () => void; onPick?: (id: string) => void }) {
+export function RtmVehiclesDialog({
+  onClose,
+  onPick,
+  pickLabel = "この車両で走る",
+}: {
+  onClose: () => void;
+  /** 車両を選んだとき（なければ選ぶボタンを出さない） */
+  onPick?: (id: string) => void;
+  pickLabel?: string;
+}) {
   const vehicles = useRtmVehicles();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ added: string[]; problems: string[] } | null>(null);
+  // Esc はこのダイアログだけを閉じる（後ろの運転や運行計画の画面は閉じない）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
 
   const onFiles = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -131,7 +150,7 @@ export function RtmVehiclesDialog({ onClose, onPick }: { onClose: () => void; on
                       {vehicles.filter((x) => x.id !== v.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                     </select>
                   </label>
-                  {onPick && <button onClick={() => onPick(v.id)}>この車両で走る</button>}
+                  {onPick && <button onClick={() => onPick(v.id)}>{pickLabel}</button>}
                   <button className="danger" onClick={() => void deleteRtmVehicle(v.id)}>削除</button>
                 </div>
               </li>
