@@ -15,7 +15,7 @@ import {
   type WorldJoint,
 } from "@/lib/geometry";
 import { billOfMaterials, usageOf } from "@/lib/bom";
-import { shortfall, stockFromInventory, type Inventory, type Shortfall } from "@/lib/productDb";
+import { shoppingListCsv, shortfall, stockFromInventory, type Inventory, type Shortfall } from "@/lib/productDb";
 import type { SavedPattern } from "@/lib/patternFile";
 import { CATALOG_SOURCES } from "@/data/trackCatalog";
 import { heightText, PIER_SYSTEMS } from "@/data/piers";
@@ -331,9 +331,18 @@ export function Editor({ user }: { user: SessionUser | null }) {
     setSelectedModelUid(uid);
   };
   const bom = useMemo(() => billOfMaterials(layout.pieces, accessories), [layout.pieces, accessories]);
-  const stock = useMemo(() => stockFromInventory(inventory, maker), [inventory, maker]);
-  const hasStock = stock.size > 0;
+  const stock = useMemo(() => stockFromInventory(inventory), [inventory]);
+  const hasStock = [...stock.keys()].some((key) => key.startsWith(`${maker}:`));
   const need = useMemo(() => shortfall(usageOf(layout.pieces, accessories), stock), [layout.pieces, accessories, stock]);
+  const hasShortage = need.rows.some((row) => row.missing > 0);
+  const downloadShoppingList = () => {
+    const csv = new Blob(["\uFEFF", shoppingListCsv(need)], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(csv);
+    link.download = `${(layout.title || "レイアウト").replace(/[\\/:*?"<>|]/g, "_")}-購入リスト.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
   const needByKey = useMemo(() => new Map(need.rows.map((r) => [r.stockKey, r])), [need]);
   // 橋脚は勾配橋脚セットなどまとめ買いになるので、何も持っていない前提の買い方で箱数と費用を出す
   const pierBuy = useMemo(() => {
@@ -1625,7 +1634,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
                     <th>品番</th>
                     <th>製品</th>
                     <th className="num">本</th>
-                    {hasStock && <th className="num">不足</th>}
+                    {stock.size > 0 && <th className="num">不足</th>}
                     <th className="num">箱</th>
                     <th className="num">価格</th>
                   </tr>
@@ -1646,7 +1655,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
                           {pier && pier.packs === 0 && <span className="muted">（セットに含む）</span>}
                         </td>
                         <td className="num">{r.count}</td>
-                        {hasStock && (
+                        {stock.size > 0 && (
                           <td className={`num${(needByKey.get(r.key)?.missing ?? 0) > 0 ? " warn-text" : ""}`}>
                             {needByKey.get(r.key)?.missing || "—"}
                           </td>
@@ -1672,7 +1681,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
                 すべて新しく買う場合: {yen(trackTotal + pierBuy.total)}
                 {(pierBuy.total > 0 || accTotal > 0) &&
                   `（うち${[pierBuy.total > 0 ? `橋脚 ${yen(pierBuy.total)}` : "", accTotal > 0 ? `線路以外のパーツ ${yen(accTotal)}` : ""].filter(Boolean).join("・")}）`}
-                {hasStock && (
+                {stock.size > 0 && (
                   <>
                     <br />
                     所有パーツとの差分: 追加 {need.rows.filter((r) => r.missing > 0).length}品番・{yen(need.totalCostJpy)}
@@ -1680,6 +1689,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
                   </>
                 )}
               </p>
+              {hasShortage ? (
+                <button type="button" onClick={downloadShoppingList}>不足部品の購入リストを保存（CSV）</button>
+              ) : (
+                <p className="hint">不足部品はありません。</p>
+              )}
               <p className="hint">
                 合計 {layout.pieces.length} 本 / 線路延長 約{(analysis.totalLengthMm / 1000).toFixed(2)}m。箱と価格は代表品番の入数・メーカー希望小売価格（税込）で計算。不足の追加費用は1本あたりが安い品番で計算。
                 高さのある線路は高架用の品番（高架線路・高架橋付レール）で数え、橋脚は高さごとに数えています。
