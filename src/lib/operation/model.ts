@@ -2,7 +2,7 @@
 //
 // 時刻は「運転開始からの秒」で持つ。Nゲージの縮尺速度（1/150）で走らせたときの、模型の実際の時間。
 
-import { isVehicleType, normalizeConsistSize, type ConsistSize, type VehicleType } from "../drive";
+import { isVehicleType, MAX_CONSIST_CARS, normalizeConsistSize, rtmVehicleId, type RtmSlot, type ConsistSize, type VehicleType } from "../drive";
 
 /** 列車の種別 */
 export type TrainKind = "local" | "rapid" | "express" | "freight" | "deadhead";
@@ -48,6 +48,7 @@ export type Train = {
    * 車両のデータは利用者のブラウザにしかないので、選んだときの長さをここに残し、ほかの端末でも同じ長さで計算する
    */
   carSize?: ConsistSize;
+  formation?: RtmSlot[];
   /** 縮尺の最高速度(km/h)。駅間はこの速度で走るとして時間を計算する */
   speedKmh: number;
   /** 始発駅を出る時刻（運転開始からの秒） */
@@ -66,7 +67,7 @@ export type OperationPlan = {
 export const EMPTY_OPERATION: OperationPlan = { stationNames: {}, trains: [] };
 
 export const LIMITS = {
-  cars: { min: 1, max: 16 },
+  cars: { min: 1, max: MAX_CONSIST_CARS },
   speedKmh: { min: 10, max: 320 },
   laps: { min: 1, max: 20 },
   dwellSec: { min: 0, max: 600 },
@@ -114,6 +115,9 @@ export function normalizeOperation(v: unknown): OperationPlan | undefined {
       ...(typeof t.line === "string" && t.line.trim() ? { line: t.line.trim().slice(0, 40) } : {}),
       kind: TRAIN_KINDS.some((k) => k.value === t.kind) ? t.kind : "local",
       ...(isVehicleType(t.vehicleType) ? { vehicleType: t.vehicleType } : {}),
+      ...(isVehicleType(t.vehicleType) && rtmVehicleId(t.vehicleType) && Array.isArray(t.formation) && t.formation.length > 0 &&
+        t.formation.length <= MAX_CONSIST_CARS && t.formation.every(s => s && typeof s.id === "string" && /^[a-z0-9]{1,40}$/.test(s.id)) ?
+        { formation: t.formation.map(s => ({ id: s.id, reversed: s.reversed === true })) } : {}),
       color: typeof t.color === "string" && /^#[0-9a-fA-F]{6}$/.test(t.color) ? t.color : "#2f6fb5",
       cars: Math.round(clamp(num(t.cars, 4), LIMITS.cars)),
       ...(normalizeConsistSize(t.carSize) ? { carSize: normalizeConsistSize(t.carSize) } : {}),

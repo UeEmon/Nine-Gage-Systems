@@ -15,7 +15,7 @@ export type CarRole = "front" | "middle" | "rear" | "single";
 export type VehicleKit = {
   id: string;
   /** 1両分。+X が前、原点は車体の中心のレール面の高さ（buildTrain の車両と同じ） */
-  makeCar(role: CarRole): THREE.Group;
+  makeCar(role: CarRole, reversed?: boolean): THREE.Group;
   dispose(): void;
 };
 
@@ -218,12 +218,12 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
 
   return {
     id: vehicle.id,
-    makeCar(role) {
+    makeCar(role, reversed = role === "rear") {
       const car = new THREE.Group();
       car.name = `rtm-${vehicle.id}`;
       // RTM のモデルは +Z が前・単位は m。+X が前・単位 mm の車両にする
       const turn = new THREE.Group();
-      turn.rotation.y = (vehicle.flip ? -Math.PI / 2 : Math.PI / 2) + (role === "rear" ? Math.PI : 0);
+      turn.rotation.y = (vehicle.flip ? -Math.PI / 2 : Math.PI / 2) + (reversed ? Math.PI : 0);
       const model = new THREE.Group();
       model.scale.set(t.scale, t.scale, t.lengthScale);
       model.position.y = t.offsetY * t.scale;
@@ -258,3 +258,5 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
     },
   };
 }
+
+export type RtmKits = { front: VehicleKit; middle?: VehicleKit; sequence?: { kit: VehicleKit; reversed: boolean }[] };

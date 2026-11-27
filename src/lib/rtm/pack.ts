@@ -4,7 +4,7 @@
 // 利用者が自分の持っている車両パックを選び、ブラウザの中だけで読む（サーバーには送らない）。
 
 import { decodeText, parseModelFile, SUPPORTED_MODEL } from "./model";
-import { N_CAR, type CarSize, type ConsistSize } from "../drive";
+import { N_CAR, type RtmSlot, type CarSize, type ConsistSize } from "../drive";
 import { readZip, type ZipEntry } from "./zip";
 
 /** 実物 1m → 模型の mm（1/150） */
@@ -56,6 +56,7 @@ export type RtmVehicle = {
   flip?: boolean;
   /** 中間車に使う車両の ID（なければこの車両を中間車にも使う） */
   middleId?: string;
+  formation?: RtmSlot[];
   /** 先頭車か中間車か（読み込んだときにパックの中で見分けられたら付ける） */
   role?: RtmCarRole;
   addedAt: number;
@@ -263,6 +264,12 @@ export function consistSizeOf(v: Pick<RtmVehicle, "config">, middle?: Pick<RtmVe
   const end = carSizeOf(v);
   const mid = middle ? carSizeOf(middle) : null;
   return mid && (mid.length !== end.length || mid.bogieCenters !== end.bogieCenters) ? { end, middle: mid } : { end };
+}
+
+/** この端末にない車両は先頭車のモデルで補う。 */
+export function rtmFormationSize(lead: RtmVehicle, vehicles: RtmVehicle[], formation?: RtmSlot[]): ConsistSize {
+  if (formation?.length) return { end: carSizeOf(lead), sequence: formation.map(slot => carSizeOf(vehicles.find(v => v.id === slot.id) ?? lead)) };
+  return consistSizeOf(lead, vehicles.find(v => v.id === lead.middleId));
 }
 
 export type PackResult = { vehicles: RtmVehicle[]; problems: string[] };
