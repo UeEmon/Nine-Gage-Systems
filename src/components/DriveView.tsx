@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { encodeVideo, recordCanvas, recordingFormats } from "@/lib/videoRecording";
+import { saveBlob } from "@/lib/download";
 import { placePiers } from "@/lib/elevation";
 import {
   buildDriveGraph,
@@ -94,7 +96,6 @@ type Hud = {
   odometer: number;
   stopped: boolean;
   next: { distance: number; options: string[] } | null;
-  recording: boolean;
 };
 
 /** 運転席の目の高さ（レール面から, mm。1/150 で 約2.7m） */
@@ -141,6 +142,15 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   const [rate, setRate] = useState(1);
   const [planHud, setPlanHud] = useState<PlanHud | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const [formats] = useState(recordingFormats);
+  const [mime, setMime] = useState(formats[0]?.mime ?? "");
+  const [bitrate, setBitrate] = useState(8_000_000);
+  const [videoStatus, setVideoStatus] = useState<"idle" | "recording" | "saving" | "encoding">("idle");
+  const recording = videoStatus === "recording";
+  const [lastRecording, setLastRecording] = useState<Blob | null>(null);
+  const [videoMessage, setVideoMessage] = useState("");
+  const encodingRef = useRef<AbortController | null>(null);
+  useEffect(() => () => encodingRef.current?.abort(), []);
   const [playing, setPlaying] = useState(true);
   const [targetKmh, setTargetKmh] = useState(80);
   const [policy, setPolicy] = useState<SwitchPolicy>("straight");
@@ -553,7 +563,6 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
           odometer: st.s,
           stopped: false,
           next: null,
-          recording: recorderRef.current?.state === "recording",
         });
       } else if (now - hudAt > 120) {
         hudAt = now;
@@ -567,7 +576,6 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
           odometer: drive.odometer,
           stopped: remaining <= 1,
           next: sw ? { distance: sw.distance, options: sw.options } : null,
-          recording: recorderRef.current?.state === "recording",
         });
         setOverride(drive.nextOverride);
       }
@@ -609,44 +617,56 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
     setPlaying(true);
   };
 
-  const toggleRecord = () => {
-    const rec = recorderRef.current;
-    if (rec && rec.state === "recording") {
-      rec.stop();
+  const saveVideo = (blob: Blob, name: string) =>
+    saveBlob(blob, `${layout.title || "レイアウト"}-${name}.${blob.type.startsWith("video/mp4") ? "mp4" : "webm"}`);
+
+  const toggleRecord = async () => {
+    const active = recorderRef.current;
+    if (active) {
+      if (active.state === "recording") {
+        setVideoStatus("saving");
+        active.stop();
+      }
       return;
     }
     const canvas = mountRef.current?.querySelector<HTMLCanvasElement>("canvas.drive-3d");
-    if (!canvas || typeof MediaRecorder === "undefined") {
-      setError("このブラウザでは録画できません。");
-      return;
+    if (!canvas || !mime || encodingRef.current) return;
+    setVideoMessage("");
+    try {
+      const { recorder, done } = recordCanvas(canvas, mime, bitrate);
+      recorderRef.current = recorder;
+      setVideoStatus("recording");
+      const blob = await done;
+      setLastRecording(blob);
+      saveVideo(blob, "走行映像");
+    } catch (err) {
+      setVideoMessage(err instanceof Error ? err.message : "録画に失敗しました。");
+    } finally {
+      recorderRef.current = null;
+      setVideoStatus("idle");
     }
-    const stream = canvas.captureStream(30);
-    const type = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"].find((t) =>
-      MediaRecorder.isTypeSupported(t),
-    );
-    const recorder = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8_000_000 } : undefined);
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
-      const ext = blob.type.includes("mp4") ? "mp4" : "webm";
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${layout.title || "レイアウト"}-運転席.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        a.remove();
-        URL.revokeObjectURL(a.href);
-      }, 10_000);
-    };
-    recorder.start(500);
-    recorderRef.current = recorder;
+  };
+
+  const reencode = async () => {
+    if (!lastRecording || !mime || encodingRef.current || recorderRef.current) return;
+    const controller = new AbortController();
+    encodingRef.current = controller;
+    setVideoStatus("encoding");
+    setVideoMessage("");
+    try {
+      const blob = await encodeVideo(lastRecording, mime, bitrate, controller.signal);
+      if (!controller.signal.aborted) saveVideo(blob, "走行映像-変換");
+    } catch (err) {
+      if (!controller.signal.aborted) setVideoMessage(err instanceof Error ? err.message : "エンコードに失敗しました。");
+    } finally {
+      encodingRef.current = null;
+      setVideoStatus("idle");
+    }
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if ((e.target as HTMLElement)?.matches("input, select") || (e.key === " " && (e.target as HTMLElement)?.closest("button"))) return;
       // RealTrainMod の車両のダイアログを開いている間は、そちらだけを閉じる
       if (rtmOpenRef.current) {
         if (e.key === "Escape") setRtmOpen(false);
@@ -687,7 +707,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
             <div>{planHud.train}</div>
             <div>{planHud.status}</div>
             <div className="muted">{Math.round(planHud.kmh)} km/h</div>
-            {hud?.recording && <div className="rec">● 録画中</div>}
+            {recording && <div className="rec">● 録画中</div>}
           </div>
         )}
         <canvas
@@ -708,7 +728,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
             </div>
             <div className="muted">{hud.part}</div>
             <div className="muted">走行 {(hud.odometer / 1000).toFixed(2)}m（実物換算 {((hud.odometer * 150) / 1_000_000).toFixed(2)}km）</div>
-            {hud.recording && <div className="rec">● 録画中</div>}
+            {recording && <div className="rec">● 録画中</div>}
           </div>
         )}
         {!planMode && hud?.stopped && (
@@ -861,9 +881,29 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
         >
           最初から
         </button>
-        <button onClick={toggleRecord} className={hud?.recording ? "danger" : ""}>
-          {hud?.recording ? "■ 録画を止めて保存" : "● 録画"}
-        </button>
+        {formats.length > 0 ? (
+          <>
+            <label>保存形式 <select value={mime} disabled={videoStatus !== "idle"} onChange={(e) => setMime(e.target.value)}>
+              {formats.map(f => <option key={f.mime} value={f.mime}>{f.name}</option>)}
+            </select></label>
+            <label>画質 <select value={bitrate} disabled={videoStatus !== "idle"} onChange={(e) => setBitrate(Number(e.target.value))}>
+              <option value={3_000_000}>軽量（3 Mbps）</option>
+              <option value={8_000_000}>標準（8 Mbps）</option>
+              <option value={16_000_000}>高画質（16 Mbps）</option>
+            </select></label>
+            <button onClick={toggleRecord} disabled={videoStatus === "saving" || videoStatus === "encoding"} className={recording ? "danger" : ""}>
+              {recording ? "■ 録画を止めて保存" : videoStatus === "saving" ? "保存中…" : "● 録画"}
+            </button>
+            {lastRecording && (videoStatus === "encoding" ? (
+              <button onClick={() => encodingRef.current?.abort()}>エンコード中… 中止</button>
+            ) : (
+              <button disabled={videoStatus !== "idle"} onClick={reencode} title="選択中の形式と画質で、録画の長さと同じ時間をかけて変換します">
+                直前の録画を再エンコードして保存
+              </button>
+            ))}
+          </>
+        ) : <span>このブラウザでは走行映像を録画できません。</span>}
+        {videoMessage && <span role="alert">{videoMessage}</span>}
         <span className="muted drive-help">ドラッグで見回し・ダブルクリックで正面</span>
         <button className="drive-close" onClick={onClose}>
           閉じる

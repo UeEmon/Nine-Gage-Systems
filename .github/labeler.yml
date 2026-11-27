@@ -14,6 +14,7 @@
           - "src/lib/geometry.ts"
           - "src/lib/shapes.ts"
           - "src/lib/patternFile.ts"
+          - "src/lib/download.ts"
           - "tests/geometry.test.ts"
 "feature:catalog":
   - changed-files:
@@ -54,6 +55,7 @@
       - any-glob-to-any-file:
           - "src/lib/drive.ts"
           - "src/lib/driveScene.ts"
+          - "src/lib/videoRecording.ts"
           - "src/components/DriveView.tsx"
           - "tests/drive.test.ts"
           - "src/lib/rtm/**"

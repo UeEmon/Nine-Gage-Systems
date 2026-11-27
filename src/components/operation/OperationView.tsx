@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type ConsistSize, type VehicleType } from "@/lib/drive";
 import { consistSizeOf, leadVehicles } from "@/lib/rtm/pack";
 import { RtmVehiclesDialog, useRtmVehicles } from "../rtm/RtmVehicles";
@@ -29,6 +29,8 @@ import {
   type TrainKind,
   type TrainStop,
 } from "@/lib/operation";
+import { operationFile, readOperationFile } from "@/lib/operation/file";
+import { saveBlob } from "@/lib/download";
 import { Diagram } from "./Diagram";
 
 type Props = {
@@ -60,6 +62,31 @@ export function OperationView({ layout, elevation, canUseAi, rtmAllowed = false,
 
   const [aiRequest, setAiRequest] = useState("");
   const [ai, setAi] = useState<AiState>({ status: "idle" });
+
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [readingFile, setReadingFile] = useState(false);
+  const [fileMessage, setFileMessage] = useState("");
+
+  const loadPlan = async (file: File) => {
+    setReadingFile(true);
+    setFileMessage("");
+    try {
+      const next = readOperationFile(await file.text());
+      const stationIds = new Set(stations.map(s => s.id));
+      const missing = new Set(next.trains.flatMap(t => t.stops.map(s => s.stationId)).filter(id => !stationIds.has(id)));
+      const warning = missing.size ? `現在のレイアウトにない停車駅が${missing.size}駅あります。読み込み後に停車駅を選び直してください。` : "";
+      if ((plan.trains.length || Object.keys(plan.stationNames).length || warning) &&
+          !window.confirm(`${warning}「${file.name}」の運行計画に切り替えますか？`)) return;
+      onChange(next);
+      setSelectedId(next.trains[0]?.id ?? null);
+      setAi({ status: "idle" });
+      setFileMessage(`${file.name} を読み込みました。${warning}`);
+    } catch (err) {
+      setFileMessage(err instanceof SyntaxError ? "JSONを読み込めませんでした。" : err instanceof Error ? err.message : "ファイルを読み込めませんでした。");
+    } finally {
+      setReadingFile(false);
+    }
+  };
 
   const proposeWithAi = async () => {
     const before = plan;
@@ -143,6 +170,19 @@ export function OperationView({ layout, elevation, canUseAi, rtmAllowed = false,
       <div className="op-body">
         <aside className="op-side">
           <section>
+            <h3>運行計画ファイル</h3>
+            <div className="row">
+              <button onClick={() => saveBlob(new Blob([operationFile(plan)], { type: "application/json" }), `${layout.title || "レイアウト"}-運行計画.json`)}>計画を保存</button>
+              <button disabled={readingFile || ai.status === "loading"} onClick={() => fileInput.current?.click()}>計画を読み込む</button>
+              <input ref={fileInput} type="file" hidden accept=".json,application/json" onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                e.currentTarget.value = "";
+                if (file) void loadPlan(file);
+              }} />
+            </div>
+            {fileMessage && <p className="hint" role="status">{fileMessage}</p>}
+          </section>
+          <section>
             <h3>駅</h3>
             {stations.length === 0 ? (
               <p className="muted">
@@ -185,7 +225,7 @@ export function OperationView({ layout, elevation, canUseAi, rtmAllowed = false,
                   placeholder="例: 普通2本と特急1本。B駅で特急が普通を追い越す"
                   onChange={(e) => setAiRequest(e.target.value)}
                 />
-                <button className="primary" onClick={proposeWithAi} disabled={stations.length === 0 || ai.status === "loading"}>
+                <button className="primary" onClick={proposeWithAi} disabled={stations.length === 0 || readingFile || ai.status === "loading"}>
                   {ai.status === "loading" ? "AIが考えています…" : plan.trains.length ? "AIに作り直してもらう（今の列車は置き換え）" : "AIに提案してもらう"}
                 </button>
                 {ai.status === "error" && <p className="error">{ai.message}</p>}
