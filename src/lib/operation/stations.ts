@@ -4,11 +4,16 @@
 // 島式ホームは両側が番線になる。近くのホームどうし・同じ線路を使うホームどうしは1つの駅にまとめる。
 
 import { getAccessory, hasAccessory, trackPoints, type Accessory } from "../accessories";
+import { routeKey, type TrackRoute } from "../drive";
+export { routeKey, type TrackRoute } from "../drive";
+import { addSidingTracks } from "./sidings";
 import type { Elevation } from "../elevation";
 import type { Piece } from "../geometry";
 import { hasPart } from "../parts";
 
 export type StationTrack = {
+  routes: TrackRoute[];
+  siding?: boolean;
   /** 1始まりの番線 */
   number: number;
   /** この番線の線路の部品 uid */
@@ -43,10 +48,10 @@ const isPlatform = (a: Accessory) => {
   return k === "platform" || k === "island";
 };
 
-type Edge = { platform: string; pieces: Set<string>; side: number };
+type Edge = { platform: string; routes: Set<string>; side: number };
 
 /** ホームの縁に沿う線路（側ごと） */
-function platformEdges(a: Accessory, pieces: Piece[], elevation?: Elevation): Edge[] {
+function platformEdges(a: Accessory, pieces: Piece[], routes: Map<string, TrackRoute>, elevation?: Elevation): Edge[] {
   const def = getAccessory(a.itemId);
   const offset = def.offset ?? def.width / 2;
   const r = (a.rot * Math.PI) / 180;
@@ -63,9 +68,14 @@ function platformEdges(a: Accessory, pieces: Piece[], elevation?: Elevation): Ed
       if (Math.abs(u) > def.length / 2) continue;
       if (Math.abs(Math.abs(v) - offset) > EDGE_TOLERANCE_MM) continue;
       if (Math.abs((p.z ?? 0) - (a.z ?? 0)) > 5) continue;
+      // ホームの端を横切るだけの線路は番線に含めない。
+      if (Math.abs(Math.sin((p.deg - a.rot) * Math.PI / 180)) > 0.35) continue;
+      const ref = { uid: piece.uid, routeIndex: p.route };
+      const key = routeKey(ref);
+      routes.set(key, ref);
       const side = Math.sign(v);
       const m = sides.get(side) ?? new Map<string, number>();
-      m.set(piece.uid, (m.get(piece.uid) ?? 0) + 1);
+      m.set(key, (m.get(key) ?? 0) + 1);
       sides.set(side, m);
     }
   }
@@ -73,12 +83,13 @@ function platformEdges(a: Accessory, pieces: Piece[], elevation?: Elevation): Ed
   for (const [side, counts] of sides) {
     // 端がかすっただけの部品（2点未満）は数えない
     const ps = [...counts].filter(([, n]) => n >= 2).map(([uid]) => uid);
-    if (ps.length) out.push({ platform: a.uid, pieces: new Set(ps), side });
+    if (ps.length) out.push({ platform: a.uid, routes: new Set(ps), side });
   }
   // 相対式ホームは片側だけが番線（吸着した線路の側。なければ線路の多い側）
   if (def.kind === "platform" && out.length > 1) {
-    const host = out.find((e) => a.host && e.pieces.has(a.host));
-    return [host ?? out.slice().sort((x, y) => y.pieces.size - x.pieces.size)[0]];
+    const matchesHost = (edge: Edge) => [...edge.routes].some(key => routes.get(key)?.uid === a.host);
+    const host = out.find(e => matchesHost(e) && e.side === (a.side === "L" ? 1 : -1)) ?? out.find(matchesHost);
+    return [host ?? out.slice().sort((x, y) => y.routes.size - x.routes.size)[0]];
   }
   return out;
 }
@@ -113,8 +124,8 @@ function letter(i: number): string {
 /** elevation を渡すと、高架・勾配の線路の高さも見てホームと合わせる */
 export function detectStations(pieces: Piece[], accessories: Accessory[], elevation?: Elevation): Station[] {
   const plats = accessories.filter(isPlatform);
-  if (plats.length === 0) return [];
-  const edges = plats.map((a) => platformEdges(a, pieces, elevation));
+  const routes = new Map<string, TrackRoute>();
+  const edges = plats.map((a) => platformEdges(a, pieces, routes, elevation));
 
   // ホームを駅にまとめる
   const uf = new UnionFind(plats.length);
@@ -125,7 +136,7 @@ export function detectStations(pieces: Piece[], accessories: Accessory[], elevat
       const la = getAccessory(a.itemId).length;
       const lb = getAccessory(b.itemId).length;
       const near = Math.hypot(a.x - b.x, a.y - b.y) < (la + lb) / 2 + SAME_STATION_GAP_MM && Math.abs((a.z ?? 0) - (b.z ?? 0)) < 5;
-      const share = edges[i].some((e) => edges[j].some((f) => intersects(e.pieces, f.pieces)));
+      const share = edges[i].some((e) => edges[j].some((f) => intersects(e.routes, f.routes)));
       if (near || share) uf.union(i, j);
     }
   }
@@ -143,13 +154,13 @@ export function detectStations(pieces: Piece[], accessories: Accessory[], elevat
     // 同じ線路を使う縁を1つの番線にまとめる
     const all = idx.flatMap((i) => edges[i]);
     const tuf = new UnionFind(all.length);
-    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (intersects(all[i].pieces, all[j].pieces)) tuf.union(i, j);
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (intersects(all[i].routes, all[j].routes)) tuf.union(i, j);
     const trackSets = new Map<number, Set<string>>();
     const trackPlatforms = new Map<number, Set<string>>();
     all.forEach((e, i) => {
       const g = tuf.find(i);
       const s = trackSets.get(g) ?? new Set<string>();
-      e.pieces.forEach((p) => s.add(p));
+      e.routes.forEach((p) => s.add(p));
       trackSets.set(g, s);
       trackPlatforms.set(g, (trackPlatforms.get(g) ?? new Set<string>()).add(e.platform));
     });
@@ -159,9 +170,10 @@ export function detectStations(pieces: Piece[], accessories: Accessory[], elevat
     const r = (ref.rot * Math.PI) / 180;
     const byUid = new Map(pieces.map((p) => [p.uid, p]));
     const lateral = (set: Set<string>) => {
-      const pts = [...set].flatMap((uid) => {
-        const p = byUid.get(uid);
-        return p ? trackPoints(p, undefined, 20) : [];
+      const pts = [...set].flatMap((key) => {
+        const route = routes.get(key)!;
+        const p = byUid.get(route.uid)!;
+        return trackPoints(p, undefined, 20).filter(point => point.route === route.routeIndex);
       });
       const v = pts.reduce((s, p) => s + (-(p.x - x) * Math.sin(r) + (p.y - y) * Math.cos(r)), 0) / (pts.length || 1);
       return v;
@@ -181,17 +193,22 @@ export function detectStations(pieces: Piece[], accessories: Accessory[], elevat
         platformLength: [...(trackPlatforms.get(g) ?? [])].reduce((sum, uid) => sum + (platLength.get(uid) ?? 0), 0),
       }))
       .sort((a, b) => a.v - b.v)
-      .map((t, i) => ({ number: i + 1, pieces: [...t.set].sort(), platformLength: t.platformLength, platformCenter: t.platformCenter }));
+      .map((t, i) => {
+        const members = [...t.set].sort().map(key => routes.get(key)!);
+        return { number: i + 1, routes: members, pieces: [...new Set(members.map(r => r.uid))], platformLength: t.platformLength, platformCenter: t.platformCenter };
+      });
     stations.push({ id: ref.uid, platforms: members.map((a) => a.uid).sort(), tracks, x, y });
   }
   // 駅の並びは左上から（x、同じくらいなら y）
   stations.sort((a, b) => a.x - b.x || a.y - b.y);
-  return stations.map((s, i) => ({ ...s, defaultName: `${letter(i)}駅` }));
+  const named = stations.map((s, i) => ({ ...s, defaultName: `${letter(i)}駅` }));
+  addSidingTracks(named, pieces.filter(p => hasPart(p.partId)), trackIndex(named));
+  return named;
 }
 
-/** 部品 uid → その部品を番線に含む駅と番線 */
+/** 部品の経路 → その部品を番線に含む駅と番線 */
 export function trackIndex(stations: Station[]): Map<string, { station: Station; track: number }> {
   const m = new Map<string, { station: Station; track: number }>();
-  for (const st of stations) for (const t of st.tracks) for (const uid of t.pieces) m.set(uid, { station: st, track: t.number });
+  for (const st of stations) for (const t of st.tracks) for (const r of t.routes) m.set(routeKey(r), { station: st, track: t.number });
   return m;
 }

@@ -3,7 +3,7 @@
 // 列車の位置は、駅の番線のセンサーが反応した時刻をダイヤと比べて遅れを求め、
 // 「いまの時刻 − 遅れ」のダイヤの上の位置にいると推定する。機関車が止まっている間は遅れが増えていく。
 
-import type { ScheduleResult } from "../operation";
+import { routeKey, type ScheduleResult } from "../operation";
 import type { TwinMap } from "./mapping";
 import { formatEvent, type TwinEvent } from "./protocol";
 
@@ -128,9 +128,9 @@ function matchArrival(
     const at = e.arr ?? e.dep;
     if (at === null) continue;
     // センサーが反応するのは、列車の先頭が番線の線路に入ったとき（停車位置に着くより少し前）
-    const sensorPieces = new Set(ctx.map.sensors.find((x) => x.stationId === stationId && x.track === track)?.pieces ?? []);
+    const sensorRoutes = new Set(ctx.map.sensors.find((x) => x.stationId === stationId && x.track === track)?.routes.map(routeKey));
     let enter = at;
-    for (const o of sch.occupancy) if (sensorPieces.has(o.uid) && o.from <= at && at < o.to && o.from < enter) enter = o.from;
+    for (const o of sch.occupancy) if (sensorRoutes.has(routeKey(o)) && o.from <= at && at < o.to && o.from < enter) enter = o.from;
     const delay = time - enter;
     const current = currentDelay(s, sch.trainId, time);
     // 前の駅を出る前には着けない（ほかの列車がその番線に入った・はじめから止まっていた、を取り違えない）

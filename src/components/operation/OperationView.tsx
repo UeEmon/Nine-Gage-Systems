@@ -203,7 +203,7 @@ export function OperationView({ layout, elevation, canUseAi, rtmAllowed = false,
                       />
                     </label>
                     <span className="muted op-station-details">
-                      {s.tracks.length}線
+                      {s.tracks.map(t => `${t.number}番線${t.siding ? "（引き込み線）" : ""}`).join("・") || "番線なし"}
                       {stationLines(s.id, lines).length > 0 && ` ${stationLines(s.id, lines).join("・")}`}
                     </span>
                   </li>
@@ -287,7 +287,7 @@ export function OperationView({ layout, elevation, canUseAi, rtmAllowed = false,
               train={selected}
               routeNames={routeNames}
               autoLine={selectedSchedule ? trainLine({}, selectedSchedule.events, lines) : undefined}
-              stations={stations.map((s) => ({ id: s.id, name: stationName(s.id), tracks: s.tracks.length }))}
+              stations={stations.map((s) => ({ id: s.id, name: stationName(s.id), tracks: s.tracks }))}
               platform={selectedSchedule && !selectedSchedule.errors.length ? platformLimit(selectedSchedule, stations, selected.carSize) : null}
               stationName={stationName}
               onChange={(patch) => updateTrain(selected.id, patch)}
@@ -388,7 +388,7 @@ type AiState =
   | { status: "error"; message: string }
   | { status: "done"; summary: string; remaining: string | null; before: OperationPlan };
 
-type StationOption = { id: string; name: string; tracks: number };
+type StationOption = { id: string; name: string; tracks: { number: number; siding?: boolean }[] };
 
 function TrainEditor({
   train,
@@ -602,9 +602,9 @@ function TrainEditor({
                 <td>
                   <select value={s.track ?? ""} onChange={(e) => onStop(i, { track: e.target.value ? Number(e.target.value) : null })}>
                     <option value="">自動</option>
-                    {Array.from({ length: st?.tracks ?? 0 }, (_, k) => (
-                      <option key={k} value={k + 1}>
-                        {k + 1}
+                    {st?.tracks.map(t => (
+                      <option key={t.number} value={t.number}>
+                        {t.number}番線{t.siding ? "（引き込み線）" : ""}
                       </option>
                     ))}
                   </select>

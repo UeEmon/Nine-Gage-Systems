@@ -159,7 +159,19 @@ export function placeOnPiece(
   uid: string,
 ): Accessory {
   const pts = trackPoints(piece, elevation);
-  const mid = pts[Math.floor(pts.length / 2)] ?? { x: piece.x, y: piece.y, deg: piece.rot };
+  // 複線の対向式ホームは、選んだ側の外側の線路の中央へ置く。
+  let centerline = pts;
+  if (def.kind === "platform" && getPart(piece.partId).category === "double") {
+    const routes = getPart(piece.partId).routes.map((_, i) => pts.filter(p => p.route === i));
+    const r = piece.rot * Math.PI / 180;
+    const lateral = (line: TrackPoint[]) => {
+      const p = line[Math.floor(line.length / 2)];
+      return -Math.sin(r) * (p.x - piece.x) + Math.cos(r) * (p.y - piece.y);
+    };
+    routes.sort((a, b) => (lateral(a) - lateral(b)) * (side === "L" ? 1 : -1));
+    centerline = routes[0];
+  }
+  const mid = centerline[Math.floor(centerline.length / 2)] ?? { x: piece.x, y: piece.y, deg: piece.rot };
   if (!snapsToTrack(def.mount)) {
     // 建物は線路の横（左右）に、線路から離して置く
     const r = (mid.deg * Math.PI) / 180;

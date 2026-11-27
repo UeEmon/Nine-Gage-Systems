@@ -535,10 +535,12 @@ export function platformLabels(pieces: Piece[], accessories: Accessory[], elevat
       const offset = def.offset ?? def.width / 2;
       const label: PlatformLabel = { station: name, tracks: new Map() };
       for (const t of st.tracks) {
-        for (const pid of t.pieces) {
-          const piece = byUid.get(pid);
+        if (t.siding) continue;
+        for (const route of t.routes) {
+          const piece = byUid.get(route.uid);
           if (!piece) continue;
           for (const p of trackPoints(piece, elevation, 5)) {
+            if (p.route !== route.routeIndex) continue;
             const { u, v } = toLocal(a, p);
             if (Math.abs(u) > def.length / 2 || Math.abs(Math.abs(v) - offset) > 8 || Math.abs(p.z - (a.z ?? 0)) > 5) continue;
             if (!label.tracks.has(Math.sign(v))) label.tracks.set(Math.sign(v), t.number);

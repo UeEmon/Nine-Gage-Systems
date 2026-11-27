@@ -14,7 +14,7 @@ import { routeSamples } from "../shapes";
 import { LIMITS, newTrainId, TRAIN_KINDS, type OperationPlan, type Train, type TrainKind } from "./model";
 import { carsFitting, fitCarsToPlatforms } from "./consist";
 import { computeSchedule, type ScheduleResult } from "./schedule";
-import { detectStations, type Station } from "./stations";
+import { detectStations, type TrackRoute, type Station } from "./stations";
 import { layoutLines, stationLines, trackLines, type LineSource } from "./lines";
 import { canonicalLine } from "../replica";
 
@@ -96,12 +96,12 @@ export function operationSessionOptions(): SessionOptions {
 }
 
 /** 線路の長さ(mm, 部品の経路0の長さの合計) */
-function trackLengthMm(pieces: Map<string, Piece>, uids: string[]): number {
+function trackLengthMm(pieces: Map<string, Piece>, routes: TrackRoute[]): number {
   let total = 0;
-  for (const uid of uids) {
+  for (const { uid, routeIndex } of routes) {
     const p = pieces.get(uid);
     if (!p) continue;
-    const pts = routeSamples(getPart(p.partId).routes[0], 5);
+    const pts = routeSamples(getPart(p.partId).routes[routeIndex], 5);
     for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
   }
   return total;
@@ -146,9 +146,9 @@ export function describeLayout(
   lines.push("## 駅と番線（ホームの長さと、そのホームに収まる両数）");
   stations.forEach((s, i) => {
     const tracks = s.tracks.map((t) => {
-      const len = trackLengthMm(byUid, t.pieces);
+      const len = trackLengthMm(byUid, t.routes);
       const line = tl.get(s.id)?.[t.number - 1];
-      return `${t.number}番線${line ? `［${line}］` : ""}（ホーム約${Math.round(t.platformLength)}mm・${carsFitting(t.platformLength)}両まで／線路約${Math.round(len)}mm）`;
+      return `${t.number}番線${line ? `［${line}］` : ""}（${t.siding ? "引き込み線" : "ホーム"}約${Math.round(t.platformLength)}mm・${carsFitting(t.platformLength)}両まで／線路約${Math.round(len)}mm）`;
     });
     lines.push(`- ${code(i)} ${name(s)}: ${tracks.join("、")}`);
   });

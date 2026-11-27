@@ -5,7 +5,7 @@
 // 列車が通るポイントは、近づくと運行計画の進路に自動で切り替える（自動進路）。
 
 import type { Piece } from "../geometry";
-import { computeSchedule, type OperationPlan, type ScheduleResult, type Station } from "../operation";
+import { routeKey, computeSchedule, type OperationPlan, type ScheduleResult, type Station } from "../operation";
 import { buildTwinMap, defaultSpeedStep, type TwinMap } from "./mapping";
 import { MAX_SPEED_STEP, type TwinCommand, type TwinConnection, type TwinEvent } from "./protocol";
 
@@ -43,7 +43,7 @@ export class SimulatedLayout implements TwinConnection {
   private sensors = new Map<number, boolean>();
   private listeners = new Set<(ev: TwinEvent) => void>();
   private turnoutByUid: Map<string, number>;
-  private sensorByUid = new Map<string, number>();
+  private sensorByRoute = new Map<string, number>();
   private started = false;
 
   constructor(pieces: Piece[], stations: Station[], plan: OperationPlan, opts: SimulatorOptions = {}) {
@@ -61,7 +61,7 @@ export class SimulatedLayout implements TwinConnection {
       forward: true,
     }));
     this.turnoutByUid = new Map(this.map.turnouts.map((t) => [t.uid, t.id]));
-    for (const s of this.map.sensors) for (const uid of s.pieces) this.sensorByUid.set(uid, s.id);
+    for (const s of this.map.sensors) for (const route of s.routes) this.sensorByRoute.set(routeKey(route), s.id);
   }
 
   subscribe(listener: (ev: TwinEvent) => void): () => void {
@@ -139,13 +139,12 @@ export class SimulatedLayout implements TwinConnection {
     let limit = after;
     for (const o of sch.occupancy) {
       if (!(before < o.from && o.from <= limit)) continue;
-      const sensor = this.sensorByUid.get(o.uid);
+      const sensor = this.sensorByRoute.get(routeKey(o));
       if (sensor === undefined) continue;
-      const pieces = new Set(this.map.sensors.find((x) => x.id === sensor)!.pieces);
       const taken = this.schedule.trains.some((other, j) => {
         if (j === index) return false;
         const p = this.trains[j].progress;
-        return other.occupancy.some((q) => pieces.has(q.uid) && q.from <= p && p < q.to);
+        return other.occupancy.some((q) => this.sensorByRoute.get(routeKey(q)) === sensor && q.from <= p && p < q.to);
       });
       if (taken) limit = Math.max(before, o.from - 1e-6);
     }
@@ -158,7 +157,7 @@ export class SimulatedLayout implements TwinConnection {
     this.schedule.trains.forEach((sch, i) => {
       const p = this.trains[i]?.progress ?? 0;
       for (const o of sch.occupancy) {
-        const sensor = this.sensorByUid.get(o.uid);
+        const sensor = this.sensorByRoute.get(routeKey(o));
         if (sensor !== undefined && o.from <= p && p < o.to) occupied.add(sensor);
         const turnout = this.turnoutByUid.get(o.uid);
         if (turnout !== undefined && o.from - ROUTE_AHEAD_SEC <= p && p < o.to) want.set(turnout, o.routeIndex > 0);
