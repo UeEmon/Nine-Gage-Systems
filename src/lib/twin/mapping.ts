@@ -6,12 +6,12 @@
 // いまはレイアウトから自動で決める。実機につなぐ段階で、利用者が番号を付け替えられるようにする。
 
 import type { Piece } from "../geometry";
-import type { OperationPlan, Station } from "../operation";
+import type { OperationPlan, Station, TrackRoute } from "../operation";
 import { getPart } from "../parts";
 import { MAX_SPEED_STEP } from "./protocol";
 
 export type TwinTurnout = { id: number; uid: string; name: string };
-export type TwinSensor = { id: number; stationId: string; track: number; pieces: string[] };
+export type TwinSensor = { id: number; stationId: string; track: number; pieces: string[]; routes: TrackRoute[] };
 export type TwinLoco = { cab: number; trainId: string };
 
 export type TwinMap = {
@@ -33,7 +33,7 @@ export function buildTwinMap(pieces: Piece[], stations: Station[], plan: Operati
   }
   const sensors: TwinSensor[] = [];
   for (const st of stations) {
-    for (const t of st.tracks) sensors.push({ id: sensors.length + 1, stationId: st.id, track: t.number, pieces: t.pieces });
+    for (const t of st.tracks) sensors.push({ id: sensors.length + 1, stationId: st.id, track: t.number, pieces: t.pieces, routes: t.routes });
   }
   const locos = plan.trains.map((t, i) => ({ cab: FIRST_CAB + i, trainId: t.id }));
   return { turnouts, sensors, locos };

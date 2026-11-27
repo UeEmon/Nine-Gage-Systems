@@ -57,6 +57,9 @@ export type Segment = {
 
 export type SegmentRef = { uid: string; routeIndex: number; reverse: boolean };
 
+export type TrackRoute = Pick<SegmentRef, "uid" | "routeIndex">;
+export const routeKey = (r: TrackRoute) => `${r.uid}:${r.routeIndex}`;
+
 /** 経路の両端のジョイント番号（なければ null） */
 type RouteEnds = { start: number | null; end: number | null };
 

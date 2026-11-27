@@ -10,7 +10,7 @@ import { getPart, type PartDef } from "../parts";
 import { routeSamples } from "../shapes";
 import type { OperationPlan, Train, TrainStop } from "./model";
 import { carsFitting } from "./consist";
-import { trackIndex, type Station } from "./stations";
+import { routeKey, trackIndex, type Station, type StationTrack, type TrackRoute } from "./stations";
 
 export type StopEvent = {
   stationId: string;
@@ -128,12 +128,13 @@ type Leg = {
  * 出発位置がすでに目的の番線の中なら、一度そこを出てから戻ってくる経路を探す（エンドレスを一周するなど）。
  */
 function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, trainLen: number, station: Station): Leg | null {
-  const trackOf = (uid: string) => {
-    for (const [n, set] of targets) if (set.has(uid)) return n;
+  const trackOf = (route: TrackRoute) => {
+    const key = routeKey(route);
+    for (const [n, set] of targets) if (set.has(key)) return n;
     return null;
   };
   type Node = { seg: Segment; dist: number; left: boolean; prev: string | null };
-  const startLeft = trackOf(pos.seg.uid) === null;
+  const startLeft = trackOf(pos.seg) === null;
   const nodes = new Map<string, Node>();
   const key = (s: Segment, left: boolean) => `${refKey(s)}|${left ? 1 : 0}`;
   const startKey = key(pos.seg, startLeft);
@@ -147,13 +148,13 @@ function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, t
     if (best === null) break;
     done.add(best);
     const cur = nodes.get(best)!;
-    if (best !== startKey && cur.left && trackOf(cur.seg.uid) !== null) {
+    if (best !== startKey && cur.left && trackOf(cur.seg) !== null) {
       found = best;
       break;
     }
     for (const ref of nextOptions(cache.graph, cur.seg)) {
       const seg = cache.get(ref);
-      const left = cur.left || trackOf(seg.uid) === null;
+      const left = cur.left || trackOf(seg) === null;
       const k = key(seg, left);
       const d = cur.dist + cur.seg.length;
       const old = nodes.get(k);
@@ -165,7 +166,7 @@ function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, t
   const path: Segment[] = [];
   for (let k: string | null = found; k !== null; k = nodes.get(k)!.prev) path.unshift(nodes.get(k)!.seg);
   const entry = nodes.get(found)!;
-  const track = trackOf(entry.seg.uid)!;
+  const track = trackOf(entry.seg)!;
   const set = targets.get(track)!;
 
   // 番線の線路を、まっすぐ（直進側を優先して）端までたどる
@@ -174,7 +175,7 @@ function findLeg(cache: SegCache, pos: Pos, targets: Map<number, Set<string>>, t
   for (;;) {
     const next = nextOptions(cache.graph, run[run.length - 1])
       .map((r) => cache.get(r))
-      .find((s) => set.has(s.uid) && !seen.has(s.uid));
+      .find((s) => set.has(routeKey(s)) && !seen.has(s.uid));
     if (!next) break;
     run.push(next);
     seen.add(next.uid);
@@ -223,23 +224,28 @@ function projectCenter(seg: Segment, center: { x: number; y: number }): { offset
   return best;
 }
 
+function candidateTracks(station: Station, track: number | null): StationTrack[] {
+  // 旅客ホームの自動選択で列車が引き込み線へ入らないようにする。
+  return station.tracks.filter(t => track === null ? (!t.siding || !station.platforms.length) : t.number === track);
+}
+
 function originCandidates(cache: SegCache, station: Station, track: number | null, trainLen: number): { pos: Pos; track: number }[] {
   const out: { pos: Pos; track: number; d: number }[] = [];
-  for (const t of station.tracks) {
-    if (track !== null && t.number !== track) continue;
-    for (const uid of t.pieces) {
+  for (const t of candidateTracks(station, track)) {
+    const routes = new Set(t.routes.map(routeKey));
+    for (const { uid, routeIndex } of t.routes) {
       const piece = cache.graph.pieces.get(uid);
       if (!piece) continue;
       const part = getPart(piece.partId);
       // ポイントの上には置かない（ほかに部品がなければ置く）
-      const penalty = part.routes.length > 1 ? 10_000 : 0;
+      const penalty = part.category === "turnout" ? 10_000 : 0;
       for (const reverse of [false, true]) {
-        const seg = cache.get({ uid, routeIndex: 0, reverse });
+        const seg = cache.get({ uid, routeIndex, reverse });
         const center = projectCenter(seg, t.platformCenter ?? station);
         let front = seg, offset = center.offset + trainLen / 2;
         const seen = new Set([seg.uid]);
         while (offset > front.length) {
-          const next = nextOptions(cache.graph, front).map((r) => cache.get(r)).find((s) => t.pieces.includes(s.uid) && !seen.has(s.uid));
+          const next = nextOptions(cache.graph, front).map((r) => cache.get(r)).find((s) => routes.has(routeKey(s)) && !seen.has(s.uid));
           if (!next) { offset = front.length; break; }
           offset -= front.length; front = next; seen.add(front.uid);
         }
@@ -287,7 +293,7 @@ function turnAround(cache: SegCache, refs: SegmentRef[], front: number, len: num
 }
 
 function targetsFor(station: Station, track: number | null): Map<number, Set<string>> {
-  return new Map(station.tracks.filter((t) => track === null || t.number === track).map((t) => [t.number, new Set(t.pieces)]));
+  return new Map(candidateTracks(station, track).map(t => [t.number, new Set(t.routes.map(routeKey))]));
 }
 
 // ---- 1本の列車 ----
@@ -332,7 +338,7 @@ function scheduleTrain(
   if (stops.length > 1) {
     const next = stations.get(stops[1].stop.stationId)!;
     let bestD = Infinity;
-    for (const c of cands.slice(0, 8)) {
+    for (const c of cands) {
       const leg = findLeg(cache, c.pos, targetsFor(next, stops[1].stop.track), len, next);
       // ほぼ等距離なら候補順を維持し、微小な曲線の測長差で進行方向を反転させない。
       if (leg && leg.distance < bestD - 0.5) {
@@ -344,9 +350,10 @@ function scheduleTrain(
 
   /** ホームより編成が長ければ知らせる。知らせたら true */
   const checkPlatform = (st: Station, track: number): boolean => {
-    const pl = st.tracks.find((x) => x.number === track)?.platformLength;
+    const stationTrack = st.tracks.find((x) => x.number === track);
+    const pl = stationTrack?.platformLength;
     if (pl === undefined || pl + 1 >= len) return false;
-    const w = `${stationName(st.id)} ${track}番線のホーム（約${Math.round(pl)}mm・${carsFitting(pl, train.carSize)}両まで）より編成（${train.cars}両・約${Math.round(len)}mm）が長く、はみ出します`;
+    const w = `${stationName(st.id)} ${track}番線の${stationTrack?.siding ? "引き込み線" : "ホーム"}（約${Math.round(pl)}mm・${carsFitting(pl, train.carSize)}両まで）より編成（${train.cars}両・約${Math.round(len)}mm）が長く、はみ出します`;
     if (!result.warnings.includes(w)) result.warnings.push(w);
     return true;
   };
@@ -453,8 +460,9 @@ export function computeSchedule(pieces: Piece[], stations: Station[], plan: Oper
 
   // 支障：同じ部品の交わる経路を、2本の列車が同じ時間に使う
   const tracks = trackIndex(stations);
-  const where = (uid: string) => {
-    const t = tracks.get(uid);
+  const where = (route: TrackRoute) => {
+    const uid = route.uid;
+    const t = tracks.get(routeKey(route));
     if (t) return `${name(t.station.id)} ${t.track}番線`;
     const p = graph.pieces.get(uid);
     const part = p ? getPart(p.partId) : null;
@@ -474,7 +482,7 @@ export function computeSchedule(pieces: Piece[], stations: Station[], plan: Oper
           if (!routesCross(getPart(piece.partId))[a.routeIndex]?.[b.routeIndex]) continue;
           if (!(a.from < b.to && b.from < a.to)) continue;
           const time = Math.max(a.from, b.from);
-          const location = where(a.uid);
+          const location = where(a);
           const k = location;
           const old = seen.get(k);
           if (!old || time < old.time) seen.set(k, { trainA: trains[i].trainId, trainB: trains[j].trainId, time, location });

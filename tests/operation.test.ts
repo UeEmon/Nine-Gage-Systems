@@ -19,7 +19,7 @@ import {
   type Train,
 } from "../src/lib/operation";
 import { operationFile, readOperationFile } from "../src/lib/operation/file";
-import { sidingPlan } from "./fixtures";
+import { p, sidingPlan } from "./fixtures";
 
 /** 待避線付きエンドレスに、本線の直線2か所へ相対式ホームを置いたレイアウト */
 function layout() {
@@ -46,6 +46,50 @@ describe("operation: stations", () => {
     expect(a.tracks[0].pieces).toContain("s0p1");
     expect(a.tracks[0].platformLength).toBe(getAccessory("kato:SIDE-A").length);
     expect(stations.map((s) => s.defaultName)).toEqual(["A駅", "B駅"]);
+  });
+
+  it("対向式ホームを置いた複線の上下線を別々の番線として運行する", () => {
+    const pieces = [0, 248, 496, 744].map((x, i) => ({ uid: `d${i}`, partId: "kato:DS248", mirror: false, x, y: 200, rot: 0 }));
+    const def = getAccessory("kato:SIDE-A");
+    const platforms = [pieces[0], pieces[3]].flatMap(p => [
+      placeOnPiece(def, p, undefined, "L", p.uid + "L"),
+      placeOnPiece(def, p, undefined, "R", p.uid + "R"),
+    ]);
+    const stations = detectStations(pieces, platforms);
+    expect(stations.map(s => s.tracks.length)).toEqual([2, 2]);
+    const trains = [1, 2].map(number => {
+      const ids = stations.map(s => s.id);
+      const t = train({ id: String(number), cars: 1 }, number === 1 ? ids : ids.reverse());
+      t.stops.forEach(s => { s.track = number; });
+      return t;
+    });
+    const result = computeSchedule(pieces, stations, { stationNames: {}, trains });
+    expect(result.trains.flatMap(t => t.errors)).toEqual([]);
+    expect(result.trains.map(t => t.events.map(e => e.track))).toEqual([[1, 1], [2, 2]]);
+    expect(result.trains.map(t => [...new Set(t.occupancy.map(o => o.routeIndex))])).toEqual([[1], [0]]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("引き込み線で折り返し待ちの間、別の列車が本線を使える", () => {
+    const { pieces } = buildFromPlan({ ...sidingPlan(), segments: [
+      { from: null, pieces: [p("S248"), p("S248"), p("TO6"), p("S248"), p("S248")] },
+      { from: { segment: 0, piece: 2, joint: 2 }, pieces: [p("S248"), p("S248")] },
+    ] });
+    const platforms = [pieces[0], pieces[4]].map(p => placeOnPiece(getAccessory("kato:SIDE-A"), p, undefined, "L", p.uid + "P"));
+    const stations = detectStations(pieces, platforms);
+    const owner = stations.find(s => s.tracks.some(t => t.siding))!;
+    const siding = owner.tracks.find(t => t.siding)!;
+    expect(siding.number).toBe(2);
+    expect(siding.pieces.sort()).toEqual(["s1p0", "s1p1"]);
+    const shunt = train({ id: "shunt", cars: 1 }, [stations[0].id, owner.id, stations[0].id]);
+    shunt.stops[1] = { stationId: owner.id, track: 2, pass: false, dwellSec: 180, turnback: true };
+    const through = train({ id: "through", cars: 1, departSec: 80 }, stations.map(s => s.id));
+    const result = computeSchedule(pieces, stations, { stationNames: {}, trains: [shunt, through] });
+    expect(result.trains.flatMap(t => t.errors)).toEqual([]);
+    expect(result.trains[0].events.map(e => e.track)).toEqual([1, 2, 1]);
+    expect(result.trains[0].occupancy.some(o => siding.pieces.includes(o.uid))).toBe(true);
+    expect(result.trains[1].occupancy.some(o => siding.pieces.includes(o.uid))).toBe(false);
+    expect(result.conflicts).toEqual([]);
   });
 
   it("puts both sides of an island platform into one station with two tracks", () => {
@@ -172,7 +216,7 @@ describe("operation: consist length and platforms", () => {
       id,
       defaultName: id,
       platforms: [id],
-      tracks: [{ number: 1, pieces: [], platformLength }],
+      tracks: [{ number: 1, pieces: [], routes: [], platformLength }],
       x: 0,
       y: 0,
     });
