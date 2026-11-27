@@ -42,25 +42,24 @@ export async function listRtmVehicles(): Promise<RtmVehicle[]> {
 
 /** 車両を保存する（同じ ID の車両は置き換える。前後の向き・中間車の設定は引き継ぐ） */
 export async function saveRtmVehicles(vehicles: RtmVehicle[]): Promise<void> {
-  const before = new Map((await listRtmVehicles().catch(() => [])).map((v) => [v.id, v]));
   await run("readwrite", (s) => {
     for (const v of vehicles) {
-      const old = before.get(v.id);
-      s.put({ ...v, ...(old?.flip ? { flip: true } : {}), ...(old?.middleId ? { middleId: old.middleId } : {}) });
+      const req = s.get(v.id);
+      req.onsuccess = () => {
+        const old: RtmVehicle | undefined = req.result;
+        s.put({ ...v, flip: old?.flip ?? v.flip, middleId: old?.middleId ?? v.middleId, formation: old?.formation });
+      };
     }
   });
   changed();
 }
 
-export async function updateRtmVehicle(id: string, patch: Partial<Pick<RtmVehicle, "flip" | "middleId">>): Promise<void> {
-  const all = await listRtmVehicles();
-  const v = all.find((x) => x.id === id);
-  if (!v) return;
-  const next: RtmVehicle = { ...v, ...patch };
-  if (!next.flip) delete next.flip;
-  if (!next.middleId) delete next.middleId;
+export async function updateRtmVehicle(id: string, patch: Partial<Pick<RtmVehicle, "flip" | "middleId" | "formation">>): Promise<void> {
   await run("readwrite", (s) => {
-    s.put(next);
+    const req = s.get(id);
+    req.onsuccess = () => {
+      if (req.result) s.put({ ...req.result, ...patch });
+    };
   });
   changed();
 }

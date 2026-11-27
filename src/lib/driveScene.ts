@@ -8,8 +8,8 @@ import { loadModelObject, modelGeometry } from "./object3d";
 import type { BedType } from "../data/trackCatalog";
 import { PIER_MIN_MM, type Pier } from "./elevation";
 import type { Board, Piece } from "./geometry";
-import { makeSegment, N_CAR, type DriveGraph, type DrivePoint, type VehicleType } from "./drive";
-import type { CarRole, VehicleKit } from "./rtm/three";
+import { formationAt, makeSegment, N_CAR, type DriveGraph, type DrivePoint, type VehicleType } from "./drive";
+import type { CarRole, RtmKits } from "./rtm/three";
 import { getPart, normDeg } from "./parts";
 import { PLATFORM_EDGE_MM } from "../data/accessories";
 import { accessoryCorners, getAccessory, hasAccessory, trackPoints, type Accessory } from "./accessories";
@@ -1096,7 +1096,7 @@ export function buildTrain(
   color = 0x2f6fb5,
   vehicleType: VehicleType = "commuter",
   /** 読み込んだ RealTrainMod の車両（先頭・最後尾と中間車）。あれば vehicleType より優先する */
-  rtm?: { front: VehicleKit; middle?: VehicleKit },
+  rtm?: RtmKits,
 ): { cars: THREE.Group[]; group: THREE.Group; dispose: () => void } {
   const { length, width, bogieCenters } = N_CAR;
   const group = new THREE.Group();
@@ -1106,7 +1106,9 @@ export function buildTrain(
     const list: THREE.Group[] = [];
     for (let i = 0; i < cars; i++) {
       const role: CarRole = cars === 1 ? "single" : i === 0 ? "front" : i === cars - 1 ? "rear" : "middle";
-      const car = (role === "middle" ? rtm.middle ?? rtm.front : rtm.front).makeCar(role);
+      const slot = rtm.sequence?.length ? formationAt(rtm.sequence, i, cars) : undefined;
+      const kit = slot?.kit ?? (role === "middle" ? rtm.middle ?? rtm.front : rtm.front);
+      const car = kit.makeCar(role, slot?.reversed);
       car.userData.vehicleType = vehicleType;
       list.push(car);
       group.add(car);

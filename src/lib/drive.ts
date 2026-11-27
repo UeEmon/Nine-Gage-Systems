@@ -208,7 +208,7 @@ export class Drive {
   /** 次のポイントだけ、選び方とは別に選ぶ進路（直進に近い順の番号） */
   nextOverride: number | null = null;
   /** 現在位置より後ろに残しておく線路の長さ（後ろの車両を線路に沿って置くため） */
-  readonly keepBehind: number;
+  keepBehind: number;
   private turnCount = new Map<string, number>();
   private rand: () => number;
 
@@ -221,6 +221,11 @@ export class Drive {
   }
 
   /** 後ろに keepBehind 分の線路がなければ、つながりを逆にたどって足す（行き止まりならそこまで） */
+  setHistoryLength(length: number) {
+    this.keepBehind = length;
+    this.fillBehind();
+  }
+
   private fillBehind() {
     for (let guard = 0; guard < 200 && this.s < this.keepBehind; guard++) {
       const first = this.segments[0];
@@ -438,13 +443,23 @@ export type CarSize = { length: number; bogieCenters: number };
  * 編成の車両の長さ。end は先頭と最後尾、middle は中間車（なければ end と同じ）。
  * ない編成は N_CAR（20m級）の車両。RealTrainMod の車両は、その車両の長さ（実物の 1/150）になる
  */
-export type ConsistSize = { end: CarSize; middle?: CarSize };
+export const MAX_CONSIST_CARS = 16;
+export type RtmSlot = { id: string; reversed: boolean };
+export type ConsistSize = { end: CarSize; middle?: CarSize; sequence?: CarSize[] };
+
+/** ダイヤで両数を変えた場合も最後尾を残し、不足する中間車は直前の車両を繰り返す。 */
+export function formationAt<T>(sequence: T[], i: number, cars: number): T {
+  if (i === 0) return sequence[0];
+  if (i === cars - 1) return sequence[sequence.length - 1];
+  return sequence[Math.min(i, Math.max(0, sequence.length - 2))];
+}
 
 const N_CAR_SIZE: CarSize = { length: N_CAR.length, bogieCenters: N_CAR.bogieCenters };
 
 /** 編成の i 両目の長さ */
 export function carSizeAt(i: number, cars: number, size?: ConsistSize): CarSize {
   if (!size) return N_CAR_SIZE;
+  if (size.sequence?.length) return formationAt(size.sequence, i, cars);
   return i === 0 || i === cars - 1 ? size.end : size.middle ?? size.end;
 }
 
@@ -461,12 +476,18 @@ export function normalizeConsistSize(v: unknown): ConsistSize | undefined {
   const end = car((v as ConsistSize).end);
   if (!end) return undefined;
   const middle = car((v as ConsistSize).middle);
+  const raw = (v as ConsistSize).sequence;
+  if (Array.isArray(raw) && raw.length > 0 && raw.length <= MAX_CONSIST_CARS) {
+    const sequence = raw.map(car);
+    if (sequence.every((c): c is CarSize => !!c)) return { end, sequence };
+  }
   return middle ? { end, middle } : { end };
 }
 
 export function sameConsistSize(a: ConsistSize | undefined, b: ConsistSize | undefined): boolean {
   const eq = (x?: CarSize, y?: CarSize) => x?.length === y?.length && x?.bogieCenters === y?.bogieCenters;
-  return eq(a?.end, b?.end) && eq(a?.middle, b?.middle);
+  return eq(a?.end, b?.end) && eq(a?.middle, b?.middle) && a?.sequence?.length === b?.sequence?.length &&
+    (a?.sequence?.every((c, i) => eq(c, b?.sequence?.[i])) ?? true);
 }
 
 /**

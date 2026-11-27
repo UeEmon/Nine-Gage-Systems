@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type ConsistSize, type VehicleType } from "@/lib/drive";
-import { consistSizeOf, leadVehicles } from "@/lib/rtm/pack";
+import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
+import { rtmFormationSize, leadVehicles } from "@/lib/rtm/pack";
 import { RtmVehiclesDialog, useRtmVehicles } from "../rtm/RtmVehicles";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
@@ -432,26 +432,22 @@ function TrainEditor({
   };
   const rtmVehicles = useRtmVehicles();
   const [rtmOpen, setRtmOpen] = useState(false);
-  /** RealTrainMod の車両の編成の長さ（このブラウザにその車両がなければ null = 分からない） */
-  const rtmSize = (type: VehicleType | undefined): ConsistSize | undefined | null => {
-    const id = rtmVehicleId(type);
-    if (!id) return undefined;
-    const v = rtmVehicles?.find((x) => x.id === id);
-    if (!v) return null;
-    return consistSizeOf(v, v.middleId ? rtmVehicles?.find((x) => x.id === v.middleId) : undefined);
+  const setVehicle = (vehicleType: VehicleType | undefined, vehicles = rtmVehicles) => {
+    const id = rtmVehicleId(vehicleType);
+    const lead = vehicles?.find(v => v.id === id);
+    const formation = lead?.formation;
+    const size = lead && vehicles ? rtmFormationSize(lead, vehicles, formation) : id ? train.carSize : undefined;
+    onChange({ vehicleType, formation, carSize: size, ...(formation ? { cars: formation.length } : {}) });
   };
-  const setVehicle = (vehicleType: VehicleType | undefined) => {
-    const size = rtmSize(vehicleType);
-    // 組み込みの車両に戻したら20m級。分からない（この端末にない）ときは今の長さのまま
-    onChange({ vehicleType, ...(size === null ? {} : { carSize: size }) });
-  };
-  // 車両パックを読み込み直した・中間車を変えたときは、編成の長さを合わせ直す
+  // 保存した個別編成はダイヤに保持する。自動編成は従来どおり読み込み直した寸法に合わせる。
   useEffect(() => {
-    if (!rtmAllowed) return;
-    const size = rtmSize(train.vehicleType);
-    if (size !== null && size !== undefined && !sameConsistSize(size, train.carSize)) onChange({ carSize: size });
+    if (!rtmAllowed || train.formation || !rtmVehicles) return;
+    const lead = rtmVehicles.find(v => v.id === rtmVehicleId(train.vehicleType));
+    if (!lead) return;
+    const size = rtmFormationSize(lead, rtmVehicles);
+    if (!sameConsistSize(size, train.carSize)) onChange({ carSize: size });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rtmVehicles, train.vehicleType, rtmAllowed]);
+  }, [rtmVehicles, train.vehicleType, train.formation, rtmAllowed]);
   const setKind = (kind: TrainKind) => {
     const oldDefault = TRAIN_KINDS.find((k) => k.value === train.kind)?.color;
     const color = train.color === oldDefault ? TRAIN_KINDS.find((k) => k.value === kind)!.color : train.color;
@@ -520,8 +516,8 @@ function TrainEditor({
           <RtmVehiclesDialog
             onClose={() => setRtmOpen(false)}
             pickLabel="この列車に使う"
-            onPick={(id) => {
-              setVehicle(rtmVehicleType(id));
+            onPick={(id, vehicles) => {
+              setVehicle(rtmVehicleType(id), vehicles);
               setRtmOpen(false);
             }}
           />

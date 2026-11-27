@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-rtm-consist-editor",
+    date: "2026-11-28T00:00:00+09:00",
+    title: "RTM車両を読み込んだ画面で編成を組めます",
+    body: "編成の車両・連結順・向きを1両ずつ選んで保存できます。自由運転や運行計画で選ぶと、設定した両数と並びで走ります。",
+  },
+  {
     id: "2026-11-28-operation-station-sidings",
     date: "2026-11-28T00:00:00+09:00",
     title: "対向式ホームの上下線と引き込み線を運行計画で使えます",
