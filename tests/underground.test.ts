@@ -1,9 +1,9 @@
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { systemPrompt, undergroundProblems } from "../src/lib/ai";
 import { getAccessory, placeOnPiece, type Accessory } from "../src/lib/accessories";
 import { buildDriveGraph, makeSegment, type DrivePoint } from "../src/lib/drive";
-import { autoFootbridges, bridgePosts, hallOpenings, FOOTBRIDGE_HEIGHT, FURNITURE_EDGE_MM, platformAccess, platformLabels, STAIR_RUN_PER_RISE, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
+import { autoFootbridges, bridgePosts, buildScene, hallOpenings, FOOTBRIDGE_HEIGHT, FURNITURE_EDGE_MM, platformAccess, platformLabels, STAIR_RUN_PER_RISE, FURNITURE_HALF_DEPTH, inHall, platformFurniture, isCovered, isCutting, joinRuns, POST_CLEAR_MM, stationHalls, undergroundOf } from "../src/lib/driveScene";
 import { levelOf, standardDepth } from "../src/lib/elevation";
 import { analyze, placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { getPart } from "../src/lib/parts";
@@ -99,6 +99,41 @@ describe("地下の線路", () => {
     const holeArea = holes.reduce((s, h) => s + Math.abs(THREE.ShapeUtils.area(h.map((p) => new THREE.Vector2(p.x, p.y)))), 0);
     expect(holeArea).toBeGreaterThan(0);
     expect(area).toBeCloseTo(board.width * board.height - holeArea, -2);
+  });
+
+  it("上下両方の坑口で運転席の高さを遮らず、トンネルの天井は残す", () => {
+    const pieces = dipPieces();
+    const graph = buildDriveGraph(pieces);
+    vi.stubGlobal("document", { createElement: () => ({ getContext: () => ({ fillRect() {} }) }) });
+    try {
+      const scene = buildScene(graph, pieces, [], board);
+      try {
+        scene.group.updateMatrixWorld(true);
+        const hits = (origin: THREE.Vector3, direction: THREE.Vector3, distance: number) =>
+          new THREE.Raycaster(origin, direction, 0, distance).intersectObject(scene.group, true);
+        let portals = 0;
+        for (const piece of pieces) {
+          const { points } = makeSegment(graph, { uid: piece.uid, routeIndex: 0, reverse: false });
+          for (let i = 1; i < points.length; i++) {
+            const a = points[i - 1], b = points[i];
+            if (isCovered(a.z) === isCovered(b.z)) continue;
+            const eye = new THREE.Vector3(a.x, a.z + 18, a.y);
+            const step = new THREE.Vector3(b.x - a.x, b.z - a.z, b.y - a.y);
+            expect(hits(eye, step.clone().normalize(), step.length())).toHaveLength(0);
+            portals++;
+          }
+        }
+        expect(portals).toBe(2);
+        const deep = makeSegment(graph, { uid: pieces[7].uid, routeIndex: 0, reverse: false }).points;
+        const p = deep[Math.floor(deep.length / 2)];
+        const ceiling = hits(new THREE.Vector3(p.x, p.z + 18, p.y), new THREE.Vector3(0, 1, 0), 15);
+        expect(ceiling[0]?.distance).toBeCloseTo(12);
+      } finally {
+        scene.dispose();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("端どうしが接する線は、向きが逆でもつなぐ", () => {

@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-underground-entrance-wall",
+    date: "2026-11-28T00:00:00+09:00",
+    title: "地下への出入口で線路をふさいでいた三角形の壁を取り除きました",
+    body: "走行映像で、地上からトンネルに入るときも、地下から地上へ戻るときも、坑口の先を見通せるようになりました。",
+  },
+  {
     id: "2026-11-26-realtrainmod-freight",
     date: "2026-11-26T07:30:00+09:00",
     title: "RealTrainMod の貨車は、そのまま列車として選べます",

@@ -866,41 +866,30 @@ export function buildScene(
           i = j;
         }
         for (const [r0, r1] of ranges) {
-          if (r1 - r0 < 1) continue;
-          const sub = frames.slice(r0, r1 + 1);
-          const under = (k: number) => seg.points[r0 + k].z < BELOW_BOARD_Z;
+          // 1経路の高さは両端の間で単調に変わる。側壁と天井はそれぞれ必要な区間だけを
+          // 本来の幅で描き、坑口と地上の線路の中心を結ぶ斜めの面を作らない。
+          const walls = frames.slice(r0, r1 + 1).filter((f) => f.p.y < BELOW_BOARD_Z);
+          if (walls.length < 2) continue;
           add(
-            sweep(
-              sub,
-              (k) => {
-                const z = seg.points[r0 + k].z;
-                const w = under(k) ? TUNNEL_HALF_WIDTH : 0.01;
-                const top = under(k) ? Math.min(BOARD_Y - z, TUNNEL_CLEAR) : -3;
-                return [
-                  [-w, top],
-                  [-w, -3.5],
-                  [w, -3.5],
-                  [w, top],
-                ];
-              },
-              false,
-            ),
-            tunnelMat,
-          );
-          add(
-            sweep(sub, (k) => {
-              const on = isCovered(seg.points[r0 + k].z);
-              const w = on ? TUNNEL_HALF_WIDTH + 1 : 0.01;
-              const v = on ? TUNNEL_CLEAR : -3;
+            sweep(walls, (k) => {
+              const top = Math.min(BOARD_Y - walls[k].p.y, TUNNEL_CLEAR);
               return [
-                [-w, v + 2],
-                [w, v + 2],
-                [w, v],
-                [-w, v],
+                [-TUNNEL_HALF_WIDTH, top],
+                [-TUNNEL_HALF_WIDTH, -3.5],
+                [TUNNEL_HALF_WIDTH, -3.5],
+                [TUNNEL_HALF_WIDTH, top],
               ];
-            }),
+            }, false),
             tunnelMat,
           );
+          const roof = walls.filter((f) => isCovered(f.p.y));
+          if (roof.length >= 2) {
+            const w = TUNNEL_HALF_WIDTH + 1;
+            add(
+              sweep(roof, () => [[-w, TUNNEL_CLEAR + 2], [w, TUNNEL_CLEAR + 2], [w, TUNNEL_CLEAR], [-w, TUNNEL_CLEAR]]),
+              tunnelMat,
+            );
+          }
         }
         // 坑口: 掘割とトンネルの境目に、天井からボードの面の少し上までの壁
         for (let i = 1; i < seg.points.length; i++) {
