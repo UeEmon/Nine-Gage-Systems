@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MAX_CONSIST_CARS, type RtmSlot } from "@/lib/drive";
 import type { RtmVehicle } from "@/lib/rtm/pack";
 import { updateRtmVehicle } from "@/lib/rtm/store";
+import { FormationSideView } from "./FormationSideView";
 
 export function FormationEditor({ lead, vehicles, onDone }: {
   lead: RtmVehicle;
@@ -17,9 +18,12 @@ export function FormationEditor({ lead, vehicles, onDone }: {
   const [error, setError] = useState("");
   const change = (i: number, patch: Partial<RtmSlot>) => setSlots(slots.map((s, k) => k === i ? { ...s, ...patch } : s));
   const move = (i: number, j: number) => {
-    const next = slots.slice();
-    [next[i], next[j]] = [next[j], next[i]];
-    setSlots(next);
+    setSlots(current => {
+      if (i < 1 || j < 1 || i >= current.length || j >= current.length || i === j) return current;
+      const next = current.slice();
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
   };
   const save = async (formation?: RtmSlot[]) => {
     setSaving(true);
@@ -34,6 +38,7 @@ export function FormationEditor({ lead, vehicles, onDone }: {
   return (
     <fieldset disabled={saving} className="rtm-formation">
       <legend>{lead.name} の編成（{slots.length}両）</legend>
+      <FormationSideView slots={slots} vehicles={vehicles} disabled={saving} onSwap={move} />
       <ol>
         {slots.map((slot, i) => (
           <li key={i}>

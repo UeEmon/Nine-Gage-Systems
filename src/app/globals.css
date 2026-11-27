@@ -734,6 +734,24 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .rtm-formation li { margin: 6px 0; }
 .rtm-formation li > * { margin-right: 6px; }
 .rtm-formation select { max-width: 100%; }
+.rtm-side-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
+.rtm-side-strip { display: flex; position: relative; }
+.rtm-side-strip canvas { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; }
+.rtm-side-car {
+  flex: 0 0 auto; position: relative; display: grid; min-width: 0; padding: 0; text-align: center;
+  background: transparent; border: 0; border-radius: 0;
+}
+button.rtm-side-car:disabled { opacity: 1; }
+.rtm-side-car[draggable="true"] { cursor: grab; }
+.rtm-side-car[aria-pressed="true"], .rtm-side-car:focus-visible, button.rtm-side-car:hover:not(:disabled) {
+  outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1;
+}
+.rtm-side-image { display: grid; place-items: center; font-size: 11px; color: var(--muted); }
+.rtm-side-name {
+  display: block; padding: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-top: 1px solid var(--border); border-right: 1px solid var(--border); background: var(--bg);
+}
+.rtm-side-car[aria-pressed="true"] .rtm-side-name { background: var(--accent-weak); }
 .rtm-actions select { max-width: 200px; }
 .rtm-help { font-size: 12px; }
 .rtm-files { display: flex; flex-wrap: wrap; gap: 8px; }

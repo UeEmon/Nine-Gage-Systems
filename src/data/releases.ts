@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-rtm-formation-side-view",
+    date: "2026-11-28T07:36:00+09:00",
+    title: "RTM編成を真横から見ながら入れ替えられます",
+    body: "編成エディタに、各車両の側面と向きを表示します。2両目以降は、側面の絵をドラッグするか、2両を順に選ぶと連結位置を入れ替えられます。",
+  },
+  {
     id: "2026-11-28-rtm-consist-editor",
     date: "2026-11-28T00:00:00+09:00",
     title: "RTM車両を読み込んだ画面で編成を組めます",

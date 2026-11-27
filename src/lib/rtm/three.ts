@@ -16,6 +16,8 @@ export type VehicleKit = {
   id: string;
   /** 1両分。+X が前、原点は車体の中心のレール面の高さ（buildTrain の車両と同じ） */
   makeCar(role: CarRole, reversed?: boolean): THREE.Group;
+  /** makeCar で使い始めたテクスチャを待つ（静止画の描画用） */
+  texturesReady(): Promise<void>;
   dispose(): void;
 };
 
@@ -94,6 +96,7 @@ async function loadTexture(data: Uint8Array): Promise<THREE.Texture | null> {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     tex.needsUpdate = true;
+    tex.addEventListener("dispose", () => bitmap.close());
     return tex;
   } catch {
     return null;
@@ -218,6 +221,9 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
 
   return {
     id: vehicle.id,
+    async texturesReady() {
+      await Promise.all(textures.values());
+    },
     makeCar(role, reversed = role === "rear") {
       const car = new THREE.Group();
       car.name = `rtm-${vehicle.id}`;
