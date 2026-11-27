@@ -18,6 +18,7 @@ import {
   type Station,
   type Train,
 } from "../src/lib/operation";
+import { operationFile, readOperationFile } from "../src/lib/operation/file";
 import { sidingPlan } from "./fixtures";
 
 /** 待避線付きエンドレスに、本線の直線2か所へ相対式ホームを置いたレイアウト */
@@ -203,6 +204,19 @@ describe("operation: model", () => {
     expect(parseTime("90")).toBe(90);
     expect(parseTime("1:75")).toBeNull();
     expect(parseTime("abc")).toBeNull();
+  });
+
+  it("round-trips a standalone timetable with its station, consist and stop settings", () => {
+    const express = train({ kind: "express", line: "本線", vehicleType: "express", departSec: 532, laps: 3 }, ["a", "b"]);
+    express.stops[1] = { stationId: "b", track: 2, pass: false, dwellSec: 55, turnback: true };
+    const timetable = { stationNames: { a: "中央", b: "終点" }, trains: [express] };
+    expect(readOperationFile(operationFile(timetable))).toEqual(timetable);
+    const data = JSON.parse(operationFile(timetable));
+    expect(() => readOperationFile(JSON.stringify({ ...data, version: 99 }))).toThrow();
+    data.operation.trains.push({ id: "broken" });
+    expect(() => readOperationFile(JSON.stringify(data))).toThrow();
+    expect(() => readOperationFile("{}")).toThrow();
+    expect(readOperationFile(operationFile({ trains: [], stationNames: {} }))).toEqual({ trains: [], stationNames: {} });
   });
 
   it("normalizes broken saved data", () => {

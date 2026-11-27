@@ -49,6 +49,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/src/lib/geometry.ts`
 - `/src/lib/shapes.ts`
 - `/src/lib/patternFile.ts`
+- `/src/lib/download.ts`
 - `/tests/geometry.test.ts`
 
 ### 線路カタログ・品番DB（`feature:catalog`）
@@ -89,6 +90,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 
 - `/src/lib/drive.ts`
 - `/src/lib/driveScene.ts`
+- `/src/lib/videoRecording.ts`
 - `/src/components/DriveView.tsx`
 - `/tests/drive.test.ts`
 - `/src/lib/rtm/`
