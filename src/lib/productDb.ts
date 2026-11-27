@@ -367,7 +367,37 @@ const CSV_HEADER = [
 
 function csvCell(v: string | number | null): string {
   const s = v === null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export function shoppingListCsv(need: Shortfall): string {
+  const groups = new Map<string, ShortfallRow[]>();
+  for (const row of need.rows) {
+    if (row.missing === 0) continue;
+    const key = row.buy ? `${row.buy.maker}:${row.buy.code}` : `unknown:${row.stockKey}`;
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+
+  const lines = ["メーカー,品番,製品名,不足部品（個数）,購入箱数,希望小売価格（税込円／箱）,小計（税込円）,備考"];
+  for (const rows of groups.values()) {
+    const product = rows[0].buy;
+    const packs = rows.reduce((sum, row) => sum + row.packs, 0);
+    const price = product?.priceJpy;
+    const notes = [];
+    if (!product) notes.push("品番要確認");
+    else if (product.perPack === null) notes.push("入数不明のため1箱1個で計算");
+    if (price == null) notes.push("価格不明");
+    lines.push([
+      product ? MAKER_INFO[product.maker].label : "",
+      product?.code ?? "", product?.name ?? "",
+      rows.map((row) => `${stockKeyName(row.stockKey)}×${row.missing}`).join(" / "),
+      product ? packs : null, price ?? null, price == null ? null : price * packs,
+      notes.join("・"),
+    ].map(csvCell).join(","));
+  }
+  return lines.join("\r\n") + "\r\n";
 }
 
 export function productsCsv(): string {

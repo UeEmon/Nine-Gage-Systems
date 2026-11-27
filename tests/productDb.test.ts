@@ -3,7 +3,7 @@ import { overStock } from "../src/lib/ai";
 import { usageOf } from "../src/lib/bom";
 import { evaluatePlan } from "../src/lib/plan";
 import { exampleFor } from "../src/lib/ai";
-import { findProduct, PRODUCTS, productsCsv, shortfall, stockFromInventory } from "../src/lib/productDb";
+import { findProduct, PRODUCTS, productsCsv, shoppingListCsv, shortfall, stockFromInventory } from "../src/lib/productDb";
 import { mergePatterns, parsePatternFile, toPatternFile } from "../src/lib/patternFile";
 import { getPart } from "../src/lib/parts";
 import { PRICE_UNKNOWN } from "../src/data/prices";
@@ -70,6 +70,25 @@ describe("product database", () => {
     const lines = productsCsv().trim().split("\n");
     expect(lines[0]).toContain("品番");
     expect(lines).toHaveLength(PRODUCTS.length + 1);
+  });
+
+  it("exports only additional boxes and combines mixed packs of the same product", () => {
+    const usage = new Map([["tomix:S18.5", 2], ["tomix:S33", 7], ["kato:R249-45", 4]]);
+    const stock = stockFromInventory({ "kato:20-100": 1, "tomix:1099": 0 });
+    const lines = shoppingListCsv(shortfall(usage, stock)).trimEnd().split("\r\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatch(/^TOMIX,1099,.*?,4,726,2904,$/);
+
+    const covered = stockFromInventory({ "kato:20-100": 1, "tomix:1099": 4 });
+    expect(shoppingListCsv(shortfall(usage, covered)).trimEnd().split("\r\n")).toHaveLength(1);
+  });
+
+  it("keeps unpriced shortages visible and quotes punctuation in product names", () => {
+    const need = shortfall(new Map([["kato:R249-45", 6]]), stockFromInventory({ "kato:20-100": 1 }));
+    const row = need.rows[0];
+    row.buy = { ...row.buy!, name: '曲線,"試作"', priceJpy: null };
+    row.costJpy = null;
+    expect(shoppingListCsv(need)).toMatch(/KATO,20-100,"曲線,""試作""",[^,]+×2,1,,,価格不明\r\n$/);
   });
 });
 
