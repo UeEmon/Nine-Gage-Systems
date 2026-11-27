@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-shortage-shopping-list",
+    date: "2026-11-28T00:00:00+09:00",
+    title: "不足部品の購入リストをCSVで保存できます",
+    body: "エディタの「部品リスト」で、手持ちを差し引いた購入リストを保存できます。メーカー・品番ごとに、購入する箱数と税込の参考金額を確認できます。",
+  },
+  {
     id: "2026-11-26-realtrainmod-freight",
     date: "2026-11-26T07:30:00+09:00",
     title: "RealTrainMod の貨車は、そのまま列車として選べます",
