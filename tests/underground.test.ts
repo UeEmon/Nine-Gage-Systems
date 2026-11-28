@@ -136,6 +136,68 @@ describe("地下の線路", () => {
     }
   });
 
+  function checkTrackClearance(pieces: Piece[], eyeHeight: number, openCut?: Piece) {
+    const graph = buildDriveGraph(pieces);
+    vi.stubGlobal("document", { createElement: () => ({ getContext: () => ({ fillRect() {} }) }) });
+    try {
+      const scene = buildScene(graph, pieces, [], board);
+      try {
+        scene.group.updateMatrixWorld(true);
+        const ray = new THREE.Raycaster();
+        for (const piece of pieces) {
+          getPart(piece.partId).routes.forEach((_, routeIndex) => {
+            const { points } = makeSegment(graph, { uid: piece.uid, routeIndex, reverse: false });
+            for (let i = 1; i < points.length; i++) {
+              const a = points[i - 1];
+              const b = points[i];
+              if (piece === openCut) {
+                // 掘割のどの進路にもボードが残らない。
+                ray.far = 20;
+                ray.set(new THREE.Vector3((a.x + b.x) / 2, a.z + 1, (a.y + b.y) / 2), new THREE.Vector3(0, 1, 0));
+                expect(ray.intersectObject(scene.group, true)).toHaveLength(0);
+              }
+              const step = new THREE.Vector3(b.x - a.x, b.z - a.z, b.y - a.y);
+              const right = new THREE.Vector3(-step.z, 0, step.x).normalize();
+              ray.far = step.length();
+              for (const offset of [0, -9, 9]) {
+                const origin = new THREE.Vector3(a.x, a.z + eyeHeight, a.y).addScaledVector(right, offset);
+                ray.set(origin, step.clone().normalize());
+                const hits = ray.intersectObject(scene.group, true);
+                expect(hits.length, `${piece.uid} 経路${routeIndex} 点${i} 横位置${offset} 高さ${eyeHeight}`).toBe(0);
+              }
+            }
+          });
+        }
+      } finally {
+        scene.dispose();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it.each([
+    ["kato:TO6", false, -50],
+    ["kato:TO4", true, -20],
+    ["kato:DXO", false, -20],
+    ["tomix:PY280-15", false, -50],
+    ["kato:X90", false, -20],
+  ] as const)("地下の %s で全経路の走行空間を確保する（鏡像 %s、高さ %s）", (partId, mirror, z) => {
+    const turnout = { ...placeAt(partId, mirror, 0, { x: 800, y: 700, deg: 25 }, "turnout"), z };
+    const pieces = [
+      turnout,
+      ...worldJoints(turnout).map((joint, i) => ({ ...placeAt("kato:S124", false, 0, joint, `branch${i}`), z })),
+    ];
+    checkTrackClearance(pieces, 18, z === -20 ? turnout : undefined);
+  });
+
+  it.each([[0, 50], [50, 0]])("地上と高架を結ぶ勾配に側壁が張り出さない（%s → %s）", (start, end) => {
+    const pieces = chain({ x: 500, y: 700, deg: 15 }, [
+      ["kato:S124", start], ["kato:S248", null], ["kato:S248", null], ["kato:S124", end],
+    ]);
+    checkTrackClearance(pieces, 1);
+  });
+
   it("端どうしが接する線は、向きが逆でもつなぐ", () => {
     const a = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
     const b = [{ x: 20, y: 0 }, { x: 10, y: 0 }];

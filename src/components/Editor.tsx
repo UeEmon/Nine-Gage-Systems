@@ -7,10 +7,12 @@ import {
   analyze,
   newUid,
   placeAt,
+  translateLayoutParts,
   worldJoints,
   worldSamples,
   type Board,
   type Layout,
+  type MovablePart,
   type Piece,
   type WorldJoint,
 } from "@/lib/geometry";
@@ -79,9 +81,18 @@ const emptyLayout = (): Layout => ({
 
 type Selection =
   | { kind: "joint"; uid: string; index: number }
-  | { kind: "piece"; uid: string }
-  | { kind: "acc"; uid: string }
+  | MovablePart
+  | { kind: "group"; items: MovablePart[] }
   | null;
+
+function selectedParts(selection: Selection): MovablePart[] {
+  if (!selection) return [];
+  if (selection.kind === "group") return selection.items;
+  if (selection.kind === "joint") return [{ kind: "piece", uid: selection.uid }];
+  return [selection];
+}
+
+const samePart = (a: MovablePart, b: MovablePart) => a.kind === b.kind && a.uid === b.uid;
 
 type ProposedPattern =
   | {
@@ -237,6 +248,12 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [layout, setLayout] = useState<Layout>(emptyLayout);
   const [layoutRestored, setLayoutRestored] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
+  const [multiSelect, setMultiSelect] = useState(false);
+  const group = selection?.kind === "group" ? selection.items : undefined;
+  const selectedUid = selection?.kind === "piece" || selection?.kind === "joint" ? selection.uid : null;
+  const selectedAccUid = selection?.kind === "acc" ? selection.uid : null;
+  const selectedModelUid = selection?.kind === "model" ? selection.uid : null;
+  const groupIds = useMemo(() => new Set(group?.map(item => `${item.kind}:${item.uid}`)), [group]);
   const [mirrorNext, setMirrorNext] = useState(false);
   const [attachJoint, setAttachJoint] = useState(0);
   const [category, setCategory] = useState<PartCategory>("straight");
@@ -300,11 +317,20 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const [pendingPart, setPendingPart] = useState<string | null>(null);
   const [applyToRun, setApplyToRun] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
+  type GroupDrag = {
+    kind: "group";
+    items: MovablePart[];
+    toggleOnClick?: MovablePart;
+    sx: number;
+    sy: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  };
   const drag = useRef<
-    | { kind: "piece"; uid: string; dx: number; dy: number; moved: boolean }
+    | GroupDrag
+    | { kind: MovablePart["kind"]; uid: string; dx: number; dy: number; moved: boolean }
     | { kind: "pan"; sx: number; sy: number; vx: number; vy: number }
-    | { kind: "acc"; uid: string; dx: number; dy: number }
-    | { kind: "model"; uid: string; dx: number; dy: number }
     | null
   >(null);
 
@@ -345,16 +371,8 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const placedModels = useMemo(() => layout.models ?? [], [layout.models]);
   const localModels = useModels3d(modelsAllowed);
   const localModelIds = useMemo(() => new Set((localModels ?? []).map((m) => m.id)), [localModels]);
-  const [selectedModelUid, setSelectedModelUid] = useState<string | null>(null);
   const setPlacedModels = (fn: (ms: PlacedModel[]) => PlacedModel[]) => setLayout((l) => ({ ...l, models: fn(l.models ?? []) }));
-  // 線路やパーツを選んだら、設置物の選択は外す
-  useEffect(() => {
-    if (selection) setSelectedModelUid(null);
-  }, [selection]);
-  const selectModel = (uid: string | null) => {
-    setSelection(null);
-    setSelectedModelUid(uid);
-  };
+  const selectModel = (uid: string | null) => setSelection(uid ? { kind: "model", uid } : null);
   const bom = useMemo(() => billOfMaterials(layout.pieces, accessories), [layout.pieces, accessories]);
   const stock = useMemo(() => stockFromInventory(inventory), [inventory]);
   const hasStock = [...stock.keys()].some((key) => key.startsWith(`${maker}:`));
@@ -442,7 +460,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const addAccessory = (key: string) => {
     const def = getAccessory(key);
     const uid = newAccessoryUid();
-    const host = selection && selection.kind !== "acc" ? layout.pieces.find((q) => q.uid === selection.uid) : undefined;
+    const host = layout.pieces.find(q => q.uid === selectedUid);
     let acc: Accessory;
     if (host) {
       acc = placeOnPiece(def, host, analysis.elevation, "L", uid);
@@ -500,8 +518,6 @@ export function Editor({ user }: { user: SessionUser | null }) {
   };
 
   // ---- 選択中の部品の操作 ----
-  const selectedUid = selection && selection.kind !== "acc" ? selection.uid : null;
-  const selectedAccUid = selection?.kind === "acc" ? selection.uid : null;
   const selectedAcc = selectedAccUid ? accessories.find((a) => a.uid === selectedAccUid) : undefined;
   const updateSelectedAcc = (fn: (a: Accessory) => Accessory) => {
     if (!selectedAccUid) return;
@@ -524,7 +540,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const deleteSelected = () => {
     if (selectedModelUid) {
       setPlacedModels((ms) => ms.filter((m) => m.uid !== selectedModelUid));
-      setSelectedModelUid(null);
+      setSelection(null);
       return;
     }
     if (selectedAccUid) {
@@ -593,8 +609,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
       else if (e.key === "R") rotateSelected(-15);
       else if (e.key === "Escape") {
         setPendingPart(null);
+        drag.current = null;
         setSelection(null);
-        setSelectedModelUid(null);
+        setMultiSelect(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -611,37 +628,57 @@ export function Editor({ user }: { user: SessionUser | null }) {
     return m ? pt.matrixTransform(m.inverse()) : { x: 0, y: 0 };
   };
 
-  const onPiecePointerDown = (piece: Piece) => (e: React.PointerEvent<SVGGElement>) => {
-    e.stopPropagation();
-    const p = toSvg(e);
-    drag.current = { kind: "piece", uid: piece.uid, dx: p.x - piece.x, dy: p.y - piece.y, moved: false };
-    svgRef.current?.setPointerCapture(e.pointerId);
-    setSelection({ kind: "piece", uid: piece.uid });
+  const togglePart = (item: MovablePart) => {
+    setSelection(current => {
+      const items = selectedParts(current);
+      const next = items.some(p => samePart(p, item)) ? items.filter(p => !samePart(p, item)) : [...items, item];
+      return next.length > 1 ? { kind: "group", items: next } : next[0] ?? null;
+    });
   };
 
-  const onAccPointerDown = (acc: Accessory) => (e: React.PointerEvent<SVGGElement>) => {
-    e.stopPropagation();
-    const p = toSvg(e);
-    drag.current = { kind: "acc", uid: acc.uid, dx: p.x - acc.x, dy: p.y - acc.y };
-    svgRef.current?.setPointerCapture(e.pointerId);
-    setSelection({ kind: "acc", uid: acc.uid });
-  };
-
-  const onModelPointerDown = (m: PlacedModel) => (e: React.PointerEvent<SVGGElement>) => {
-    e.stopPropagation();
-    const p = toSvg(e);
-    drag.current = { kind: "model", uid: m.uid, dx: p.x - m.x, dy: p.y - m.y };
-    svgRef.current?.setPointerCapture(e.pointerId);
-    selectModel(m.uid);
-  };
+  const onPartPointerDown = (kind: MovablePart["kind"], part: { uid: string; x: number; y: number }) =>
+    (e: React.PointerEvent<SVGElement>) => {
+      e.stopPropagation();
+      if (!e.isPrimary || e.button !== 0 || drag.current) return;
+      const item = { kind, uid: part.uid };
+      const inGroup = groupIds.has(`${kind}:${part.uid}`);
+      const selected = inGroup || selectedParts(selection).some(p => samePart(p, item));
+      if (e.shiftKey || (multiSelect && !selected)) {
+        togglePart(item);
+        return;
+      }
+      const p = toSvg(e);
+      if (inGroup || multiSelect) {
+        drag.current = {
+          kind: "group", items: group ?? [item], toggleOnClick: multiSelect ? item : undefined,
+          sx: e.clientX, sy: e.clientY, x: p.x, y: p.y, moved: false,
+        };
+      } else {
+        drag.current = { kind, uid: part.uid, dx: p.x - part.x, dy: p.y - part.y, moved: false };
+        setSelection(item);
+      }
+      svgRef.current?.setPointerCapture(e.pointerId);
+    };
 
   const onBgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!e.isPrimary || e.button !== 0 || drag.current) return;
     drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
     svgRef.current?.setPointerCapture(e.pointerId);
   };
 
+  const moveGroup = (e: React.PointerEvent<SVGSVGElement>, d: GroupDrag) => {
+    if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 3) return;
+    const { x, y } = toSvg(e);
+    const dx = x - d.x;
+    const dy = y - d.y;
+    d.x = x;
+    d.y = y;
+    d.moved = true;
+    if (dx || dy) setLayout(l => translateLayoutParts(l, d.items, dx, dy));
+  };
+
   const onPlacementPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!pendingPart || e.button !== 0) return;
+    if (!pendingPart || !e.isPrimary || e.button !== 0) return;
     const target = e.target;
     const joint = target instanceof SVGCircleElement && target.dataset.jointIndex !== undefined
       ? analysis.openJoints.find(j => j.pieceUid === target.dataset.pieceUid && j.index === Number(target.dataset.jointIndex))
@@ -657,7 +694,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const d = drag.current;
-    if (!d) return;
+    if (!e.isPrimary || !d) return;
+    if (d.kind === "group") {
+      moveGroup(e, d);
+      return;
+    }
     if (d.kind === "pan") {
       const rect = svgRef.current!.getBoundingClientRect();
       const scale = Math.max(view.w / rect.width, view.h / rect.height);
@@ -692,13 +733,18 @@ export function Editor({ user }: { user: SessionUser | null }) {
   };
 
   const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!e.isPrimary) return;
     const d = drag.current;
     drag.current = null;
     if (!d) return;
+    if (d.kind === "group") {
+      moveGroup(e, d);
+      if (!d.moved && d.toggleOnClick) togglePart(d.toggleOnClick);
+      return;
+    }
     if (d.kind === "pan") {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 3) {
         setSelection(null);
-        setSelectedModelUid(null);
       }
       return;
     }
@@ -1052,7 +1098,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
         <section>
           <h2>線路以外のパーツ</h2>
           <p className="hint">
-            {selection && selection.kind !== "acc"
+            {selectedUid
               ? "選択中の線路のまんなかに置きます"
               : "線路を選んでから押すとその線路に置きます。ドラッグすると近くの線路に吸着します"}
           </p>
@@ -1093,7 +1139,12 @@ export function Editor({ user }: { user: SessionUser | null }) {
 
         <section>
           <h2>選択中の部品</h2>
-          {selectedAcc ? (
+          {group ? (
+            <>
+              <p className="hint" role="status">{group.length}個のパーツを選択中。選んだパーツをドラッグすると一緒に移動します。</p>
+              <button onClick={() => setSelection(null)}>選択を解除</button>
+            </>
+          ) : selectedAcc ? (
             (() => {
               const def = getAccessory(selectedAcc.itemId);
               const host = selectedAcc.host ? layout.pieces.find((p) => p.uid === selectedAcc.host) : undefined;
@@ -1222,7 +1273,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
               <p className="hint">{heightInfo(selectedPiece.uid)}</p>
             </>
           ) : (
-            <p className="hint">線路やパーツをクリックすると選択できます</p>
+            <p className="hint">{multiSelect
+              ? "パーツをクリックして選び、ドラッグしてまとめて移動します。"
+              : "クリックで選択できます。Shiftを押しながらクリックすると選択を追加・解除できます。"}</p>
           )}
         </section>
 
@@ -1265,6 +1318,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           onPointerDown={onBgPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={e => { if (e.isPrimary) drag.current = null; }}
           onWheel={onWheel}
         >
           <defs>
@@ -1286,10 +1340,10 @@ export function Editor({ user }: { user: SessionUser | null }) {
             <PlacedModelShape
               key={m.uid}
               model={m}
-              selected={false}
+              selected={groupIds.has(`model:${m.uid}`)}
               missing={!modelsAllowed || (localModels !== null && !localModelIds.has(m.modelId))}
               fontSize={Math.max(view.w / 110, 9)}
-              onPointerDown={modelsAllowed ? onModelPointerDown(m) : undefined}
+              onPointerDown={modelsAllowed ? onPartPointerDown("model", m) : undefined}
             />
           ))}
           {drawOrder.map((p) => {
@@ -1299,11 +1353,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
               <TrackPiece
                 key={p.uid}
                 piece={p}
-                selected={p.uid === selectedUid}
+                selected={p.uid === selectedUid || groupIds.has(`piece:${p.uid}`)}
                 warn={warnSet.has(p.uid)}
                 level={levelOf(p.uid)}
                 dim={!visible}
-                onPointerDown={visible ? onPiecePointerDown(p) : undefined}
+                onPointerDown={visible ? onPartPointerDown("piece", p) : undefined}
               />
             );
           })}
@@ -1345,9 +1399,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
               <AccessoryShape
                 key={a.uid}
                 acc={a}
-                selected={a.uid === selectedAccUid}
+                selected={a.uid === selectedAccUid || groupIds.has(`acc:${a.uid}`)}
                 dim={!visible}
-                onPointerDown={visible ? onAccPointerDown(a) : undefined}
+                onPointerDown={visible ? onPartPointerDown("acc", a) : undefined}
               />
             );
           })}
@@ -1361,7 +1415,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
               selected
               missing={localModels !== null && !localModelIds.has(m.modelId)}
               fontSize={Math.max(view.w / 110, 9)}
-              onPointerDown={modelsAllowed ? onModelPointerDown(m) : undefined}
+              onPointerDown={modelsAllowed ? onPartPointerDown("model", m) : undefined}
             />
           ))}
           {layout.pieces.filter((p) => isVisible(p.uid)).flatMap((p) =>
@@ -1379,8 +1433,12 @@ export function Editor({ user }: { user: SessionUser | null }) {
                     data-piece-uid={j.pieceUid}
                     data-joint-index={j.index}
                     onPointerDown={(e) => {
-                      e.stopPropagation();
-                      setSelection({ kind: "joint", uid: j.pieceUid, index: j.index });
+                      if (e.shiftKey || multiSelect || groupIds.has(`piece:${p.uid}`)) {
+                        onPartPointerDown("piece", p)(e);
+                      } else {
+                        e.stopPropagation();
+                        if (e.isPrimary && e.button === 0) setSelection({ kind: "joint", uid: j.pieceUid, index: j.index });
+                      }
                     }}
                   />
                 );
@@ -1411,6 +1469,17 @@ export function Editor({ user }: { user: SessionUser | null }) {
             <input type="checkbox" checked={showPiers} onChange={(e) => setShowPiers(e.target.checked)} />
             橋脚
           </label>
+          <button
+            className={multiSelect ? "on" : ""}
+            aria-pressed={multiSelect}
+            title="クリックで複数のパーツを選び、ドラッグでまとめて移動します"
+            onClick={() => {
+              setMultiSelect(v => !v);
+              setPendingPart(null);
+            }}
+          >
+            複数選択
+          </button>
           <button className={showProfile ? "on" : ""} onClick={() => setShowProfile((v) => !v)}>
             断面図
           </button>

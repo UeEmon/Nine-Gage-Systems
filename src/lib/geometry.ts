@@ -45,6 +45,26 @@ export type Layout = {
   models?: PlacedModel[];
 };
 
+export type MovablePart = { kind: "piece" | "acc" | "model"; uid: string };
+
+export function translateLayoutParts(layout: Layout, selection: readonly MovablePart[], dx: number, dy: number): Layout {
+  if (dx === 0 && dy === 0) return layout;
+  const ids = { piece: new Set<string>(), acc: new Set<string>(), model: new Set<string>() };
+  for (const item of selection) ids[item.kind].add(item.uid);
+  const move = <T extends { x: number; y: number }>(p: T): T => ({ ...p, x: p.x + dx, y: p.y + dy });
+  return {
+    ...layout,
+    pieces: ids.piece.size ? layout.pieces.map(p => ids.piece.has(p.uid) ? move(p) : p) : layout.pieces,
+    accessories: layout.accessories?.map(a => {
+      // 線路に吸着しているホームなどは、線路と一緒に移動する。
+      if (a.host && ids.piece.has(a.host)) return move(a);
+      if (ids.acc.has(a.uid)) return move({ ...a, host: undefined, z: undefined });
+      return a;
+    }),
+    models: ids.model.size ? layout.models?.map(m => ids.model.has(m.uid) ? move(m) : m) : layout.models,
+  };
+}
+
 export type WorldJoint = Joint & { pieceUid: string; index: number };
 
 const rad = (d: number) => (d * Math.PI) / 180;
