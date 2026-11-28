@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-ai-expand-saved-pattern",
+    date: "2026-11-28T13:32:00+09:00",
+    title: "登録したパターンを土台にAIで拡張できます",
+    body: "パターンの保存欄の「AIで拡張」から、登録した線路や建物の配置に線路やパーツを追加する案を作れます。案を確認して表示し、新しいパターンとして登録できます。",
+  },
+  {
     id: "2026-11-28-manual-track-elevation",
     date: "2026-11-28T12:27:00+09:00",
     title: "地下や高架の線路を好きな高さと場所に置けます",

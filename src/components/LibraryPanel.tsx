@@ -12,6 +12,8 @@ type Props = {
   currentId: string | null;
   setCurrentId: (id: string | null) => void;
   onOpen: (layout: Layout) => void;
+  onExpand?: (pattern: SavedPattern) => void;
+  expanding: boolean;
 };
 
 function downloadJson(name: string, data: unknown) {
@@ -27,7 +29,7 @@ function downloadJson(name: string, data: unknown) {
 const clone = (l: Layout): Layout => JSON.parse(JSON.stringify(l));
 
 /** パターンの登録・保存・ファイル出力・読み込み */
-export function LibraryPanel({ layout, patterns, setPatterns, currentId, setCurrentId, onOpen }: Props) {
+export function LibraryPanel({ layout, patterns, setPatterns, currentId, setCurrentId, onOpen, onExpand, expanding }: Props) {
   const current = patterns.find((p) => p.id === currentId) ?? null;
 
   const saveNew = () => {
@@ -91,6 +93,9 @@ export function LibraryPanel({ layout, patterns, setPatterns, currentId, setCurr
                 {p.layout.pieces.length}本・{new Date(p.savedAt).toLocaleDateString("ja-JP")}
               </span>
               <span className="actions">
+                {onExpand && p.layout.pieces.length > 0 && (
+                  <button className="mini" disabled={expanding} onClick={() => onExpand(p)} title={`「${p.name}」を土台にする`}>AIで拡張</button>
+                )}
                 <button className="mini" onClick={() => rename(p)}>名前</button>
                 <button className="mini" onClick={() => downloadJson(p.name, toPatternFile([p]))}>出力</button>
                 <button className="mini danger" onClick={() => remove(p)}>削除</button>
