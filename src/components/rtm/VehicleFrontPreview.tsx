@@ -6,7 +6,7 @@ import type { RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, vehiclePreviewScene } from "@/lib/rtm/three";
 
 const SIZE = 144;
-type DrawFront = (vehicle: RtmVehicle, canvas: HTMLCanvasElement, signal: AbortSignal) => Promise<void>;
+export type DrawFront = (vehicle: RtmVehicle, reversed: boolean, canvas: HTMLCanvasElement, signal: AbortSignal) => Promise<void>;
 
 /** 一覧の全サムネイルを、一つのレンダラーで順番に作る。 */
 export function useDrawVehicleFront(): DrawFront {
@@ -18,7 +18,7 @@ export function useDrawVehicleFront(): DrawFront {
     renderer.current = undefined;
   }, []);
 
-  return useCallback((vehicle, canvas, signal) => {
+  return useCallback((vehicle, reversed, canvas, signal) => {
     const draw = async () => {
       signal.throwIfAborted();
       if (renderer.current === undefined) {
@@ -36,7 +36,7 @@ export function useDrawVehicleFront(): DrawFront {
       const kit = await buildVehicleKit(vehicle);
       try {
         signal.throwIfAborted();
-        const model = kit.makeCar("front", vehicle.formation?.[0]?.reversed);
+        const model = kit.makeCar("front", reversed);
         const bounds = new THREE.Box3().setFromObject(model);
         if (bounds.isEmpty()) throw new Error("車両モデルが空です");
         const center = bounds.getCenter(new THREE.Vector3());
@@ -62,18 +62,22 @@ export function useDrawVehicleFront(): DrawFront {
   }, []);
 }
 
-export function VehicleFrontPreview({ vehicle, drawFront }: { vehicle: RtmVehicle; drawFront: DrawFront }) {
+export function VehicleFrontPreview({ vehicle, reversed = false, drawFront }: {
+  vehicle: RtmVehicle | undefined;
+  reversed?: boolean;
+  drawFront: DrawFront;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
 
   useEffect(() => {
     const element = canvas.current;
-    if (!element) return;
+    if (!element || !vehicle) return;
     const controller = new AbortController();
     const { signal } = controller;
     setStatus("loading");
     const draw = () => {
-      void drawFront(vehicle, element, signal).then(
+      void drawFront(vehicle, reversed, element, signal).then(
         () => { if (!signal.aborted) setStatus("ready"); },
         () => { if (!signal.aborted) setStatus("unavailable"); },
       );
@@ -90,20 +94,22 @@ export function VehicleFrontPreview({ vehicle, drawFront }: { vehicle: RtmVehicl
       observer.disconnect();
       controller.abort();
     };
-  }, [vehicle, drawFront]);
+  }, [vehicle, reversed, drawFront]);
 
   return (
     <div className="rtm-vehicle-front">
-      <canvas
-        ref={canvas}
-        width={SIZE}
-        height={SIZE}
-        role="img"
-        aria-label={`${vehicle.name}の前面`}
-        aria-hidden={status !== "ready"}
-        className={status === "ready" ? undefined : "rtm-vehicle-front-pending"}
-      />
-      {status === "unavailable" && <span>画像なし</span>}
+      {vehicle && (
+        <canvas
+          ref={canvas}
+          width={SIZE}
+          height={SIZE}
+          role="img"
+          aria-label={`${vehicle.name}の前面`}
+          aria-hidden={status !== "ready"}
+          className={status === "ready" ? undefined : "rtm-vehicle-front-pending"}
+        />
+      )}
+      {(!vehicle || status === "unavailable") && <span>画像なし</span>}
     </div>
   );
 }

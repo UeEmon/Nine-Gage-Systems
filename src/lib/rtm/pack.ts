@@ -62,6 +62,10 @@ export type RtmVehicle = {
   addedAt: number;
 };
 
+/** 車両パックとは別に保存する、名前付きの編成。 */
+export type RtmFormation = { id: string; name: string; formation: RtmSlot[] };
+export type RtmLibrary = { vehicles: RtmVehicle[]; formations: RtmFormation[] };
+
 /**
  * Gson の lenient モードと同じくらいゆるく json を読む（RTM の車両パックは Gson で読むので、厳密な json でないものが多い）。
  * コメント（行コメント・ブロックコメント・#）・末尾のカンマ・単引用符・引用符のないキーや値（trta010_7001 など）・区切りの ; と = を許す
@@ -266,10 +270,14 @@ export function consistSizeOf(v: Pick<RtmVehicle, "config">, middle?: Pick<RtmVe
   return mid && (mid.length !== end.length || mid.bogieCenters !== end.bogieCenters) ? { end, middle: mid } : { end };
 }
 
-/** この端末にない車両は先頭車のモデルで補う。 */
-export function rtmFormationSize(lead: RtmVehicle, vehicles: RtmVehicle[], formation?: RtmSlot[]): ConsistSize {
-  if (formation?.length) return { end: carSizeOf(lead), sequence: formation.map(slot => carSizeOf(vehicles.find(v => v.id === slot.id) ?? lead)) };
-  return consistSizeOf(lead, vehicles.find(v => v.id === lead.middleId));
+/** この端末にない車両は、元の先頭車か読み込まれている編成内の車両で補う。 */
+export function rtmFormationSize(lead: RtmVehicle | undefined, vehicles: RtmVehicle[], formation?: RtmSlot[]): ConsistSize | undefined {
+  if (formation?.length) {
+    const cars = formation.map(slot => vehicles.find(v => v.id === slot.id));
+    const front = cars[0] ?? lead ?? cars.find(Boolean);
+    if (front) return { end: carSizeOf(front), sequence: cars.map(vehicle => carSizeOf(vehicle ?? front)) };
+  }
+  return lead && consistSizeOf(lead, vehicles.find(v => v.id === lead.middleId));
 }
 
 export type PackResult = { vehicles: RtmVehicle[]; problems: string[] };
@@ -533,6 +541,10 @@ export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
  */
 export function leadVehicles(vehicles: RtmVehicle[], selectedId?: string | null): RtmVehicle[] {
   return vehicles.filter((v) => v.role !== "middle" || isFreightCar(v) || v.id === selectedId);
+}
+
+export function rtmConsists(library: RtmLibrary | null, selectedId?: string | null): (RtmVehicle | RtmFormation)[] {
+  return library ? [...leadVehicles(library.vehicles, selectedId), ...library.formations] : [];
 }
 
 /** 先頭車の「中間車」に選べる車両（先頭車として見分けた車両は外す） */

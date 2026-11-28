@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
-import { rtmFormationSize, leadVehicles } from "@/lib/rtm/pack";
-import { RtmVehiclesDialog, useRtmVehicles } from "../rtm/RtmVehicles";
+import { rtmConsists, rtmFormationSize } from "@/lib/rtm/pack";
+import { RtmVehiclesDialog, useRtmLibrary } from "../rtm/RtmVehicles";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
 import {
@@ -430,24 +430,25 @@ function TrainEditor({
     [s[i], s[j]] = [s[j], s[i]];
     onChange({ stops: s });
   };
-  const rtmVehicles = useRtmVehicles();
+  const rtmLibrary = useRtmLibrary();
+  const rtmOptions = rtmConsists(rtmAllowed ? rtmLibrary : null, rtmVehicleId(train.vehicleType));
   const [rtmOpen, setRtmOpen] = useState(false);
-  const setVehicle = (vehicleType: VehicleType | undefined, vehicles = rtmVehicles) => {
+  const setVehicle = (vehicleType: VehicleType | undefined, library = rtmLibrary) => {
     const id = rtmVehicleId(vehicleType);
-    const lead = vehicles?.find(v => v.id === id);
-    const formation = lead?.formation;
-    const size = lead && vehicles ? rtmFormationSize(lead, vehicles, formation) : id ? train.carSize : undefined;
+    const lead = library?.vehicles.find(v => v.id === id);
+    const formation = lead?.formation ?? library?.formations.find(entry => entry.id === id)?.formation;
+    const size = id ? rtmFormationSize(lead, library?.vehicles ?? [], formation) ?? train.carSize : undefined;
     onChange({ vehicleType, formation, carSize: size, ...(formation ? { cars: formation.length } : {}) });
   };
   // 保存した個別編成はダイヤに保持する。自動編成は従来どおり読み込み直した寸法に合わせる。
   useEffect(() => {
-    if (!rtmAllowed || train.formation || !rtmVehicles) return;
-    const lead = rtmVehicles.find(v => v.id === rtmVehicleId(train.vehicleType));
+    if (!rtmAllowed || train.formation || !rtmLibrary) return;
+    const lead = rtmLibrary.vehicles.find(v => v.id === rtmVehicleId(train.vehicleType));
     if (!lead) return;
-    const size = rtmFormationSize(lead, rtmVehicles);
+    const size = rtmFormationSize(lead, rtmLibrary.vehicles);
     if (!sameConsistSize(size, train.carSize)) onChange({ carSize: size });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rtmVehicles, train.vehicleType, train.formation, rtmAllowed]);
+  }, [rtmLibrary, train.vehicleType, train.formation, rtmAllowed]);
   const setKind = (kind: TrainKind) => {
     const oldDefault = TRAIN_KINDS.find((k) => k.value === train.kind)?.color;
     const color = train.color === oldDefault ? TRAIN_KINDS.find((k) => k.value === kind)!.color : train.color;
@@ -491,10 +492,10 @@ function TrainEditor({
           <select value={train.vehicleType ?? ""} onChange={(e) => setVehicle((e.target.value || undefined) as VehicleType | undefined)}>
             <option value="">自動（列車種別に合わせる）</option>
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-            {((rtmAllowed && rtmVehicles && rtmVehicles.length > 0) || rtmVehicleId(train.vehicleType)) && (
-              <optgroup label="読み込んだ車両（RealTrainMod）">
-                {rtmAllowed && rtmVehicles && leadVehicles(rtmVehicles, rtmVehicleId(train.vehicleType)).map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
-                {rtmVehicleId(train.vehicleType) && !(rtmAllowed && rtmVehicles?.some((v) => rtmVehicleType(v.id) === train.vehicleType)) && (
+            {(rtmOptions.length > 0 || rtmVehicleId(train.vehicleType)) && (
+              <optgroup label="RealTrainMod の編成">
+                {rtmOptions.map(entry => <option key={entry.id} value={rtmVehicleType(entry.id)}>{entry.name}</option>)}
+                {rtmVehicleId(train.vehicleType) && !rtmOptions.some(entry => rtmVehicleType(entry.id) === train.vehicleType) && (
                   <option value={train.vehicleType}>
                     {rtmAllowed ? "この端末に読み込まれていない車両（列車種別に合わせて表示）" : "RealTrainMod の車両（プレミアムユーザー以上で表示。いまは列車種別に合わせて表示）"}
                   </option>
@@ -516,8 +517,8 @@ function TrainEditor({
           <RtmVehiclesDialog
             onClose={() => setRtmOpen(false)}
             pickLabel="この列車に使う"
-            onPick={(id, vehicles) => {
-              setVehicle(rtmVehicleType(id), vehicles);
+            onPick={(id, library) => {
+              setVehicle(rtmVehicleType(id), library);
               setRtmOpen(false);
             }}
           />
