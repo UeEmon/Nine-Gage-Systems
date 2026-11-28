@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { isFreightCar, leadVehicles, middleCandidates, readVehicleFiles, type RtmVehicle } from "@/lib/rtm/pack";
 import { FormationEditor } from "./FormationEditor";
+import { useDrawVehicleFront, VehicleFrontPreview } from "./VehicleFrontPreview";
 import { deleteRtmVehicle, listRtmVehicles, RTM_CHANGED_EVENT, saveRtmVehicles, updateRtmVehicle } from "@/lib/rtm/store";
 
 /** このブラウザに読み込んだ RealTrainMod の車両（読み込み中は null） */
@@ -24,8 +25,6 @@ export function useRtmVehicles(): RtmVehicle[] | null {
   return vehicles;
 }
 
-const ROLE_LABEL = { cab: "先頭車", middle: "中間車" } as const;
-
 const TRAIN_TYPES: Record<string, string> = {
   EC: "電車", DC: "気動車", EL: "電気機関車", DL: "ディーゼル機関車", SL: "蒸気機関車", CC: "コンテナ車", TC: "タンク車",
 };
@@ -34,7 +33,7 @@ const TRAIN_TYPES: Record<string, string> = {
 export function RtmVehiclesDialog({
   onClose,
   onPick,
-  pickLabel = "この車両で走る",
+  pickLabel = "この編成で走る",
 }: {
   onClose: () => void;
   /** 車両を選んだとき（なければ選ぶボタンを出さない） */
@@ -42,10 +41,15 @@ export function RtmVehiclesDialog({
   pickLabel?: string;
 }) {
   const vehicles = useRtmVehicles();
+  const drawFront = useDrawVehicleFront();
   const [editId, setEditId] = useState<string | null>(null);
   const editLead = vehicles?.find(v => v.id === editId);
+  const byId = new Map(vehicles?.map(vehicle => [vehicle.id, vehicle]));
+  const formations = leadVehicles(vehicles ?? []);
+  const [manageId, setManageId] = useState("");
+  const managed = byId.get(manageId);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ added: string[]; problems: string[] } | null>(null);
+  const [message, setMessage] = useState<{ added: number; problems: string[] } | null>(null);
   // Esc はこのダイアログだけを閉じる（後ろの運転や運行計画の画面は閉じない）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -72,9 +76,9 @@ export function RtmVehiclesDialog({
         await saveRtmVehicles(r.vehicles);
         setEditId(leadVehicles(r.vehicles)[0]?.id ?? null);
       }
-      setMessage({ added: r.vehicles.map((v) => v.name), problems: r.problems });
+      setMessage({ added: r.vehicles.length, problems: r.problems });
     } catch (e) {
-      setMessage({ added: [], problems: [e instanceof Error ? e.message : "読み込めませんでした"] });
+      setMessage({ added: 0, problems: [e instanceof Error ? e.message : "読み込めませんでした"] });
     } finally {
       setBusy(false);
     }
@@ -129,7 +133,7 @@ export function RtmVehiclesDialog({
         </div>
         {message && (
           <div className="rtm-result">
-            {message.added.length > 0 && <p>{message.added.length}両を読み込みました：{message.added.join("、")}</p>}
+            {message.added > 0 && <p>{message.added}両を読み込みました。</p>}
             {message.problems.length > 0 && (
               <ul className="warn-text">
                 {message.problems.slice(0, 8).map((p, i) => <li key={i}>{p}</li>)}
@@ -139,43 +143,73 @@ export function RtmVehiclesDialog({
           </div>
         )}
         {editLead && vehicles && <FormationEditor key={editLead.id} lead={editLead} vehicles={vehicles} onDone={() => setEditId(null)} />}
-        {vehicles && vehicles.length > 0 && (
-          <ul className="rtm-list">
-            {vehicles.map((v) => (
-              <li key={v.id}>
-                <div className="rtm-name">
-                  <b>{v.name}</b>
-                  <span className="muted">
-                    {isFreightCar(v) ? "貨車" : `${v.role ? `${ROLE_LABEL[v.role]}・` : ""}${TRAIN_TYPES[v.config.trainType] ?? v.config.trainType}`}・{v.source}
-                  </span>
-                </div>
-                <div className="rtm-actions">
-                  <label title="先頭が後ろ向きに表示されるときに使います">
-                    <input type="checkbox" checked={!!v.flip} onChange={(e) => void updateRtmVehicle(v.id, { flip: e.target.checked })} />
-                    前後を入れ替える
-                  </label>
-                  {v.role === "middle" && !isFreightCar(v) ? (
-                    <span className="muted">中間車だけでは走らせません。先頭車の「中間車」で選んでください</span>
-                  ) : (
-                    <>
-                      <button onClick={() => setEditId(v.id)}>編成を設定{v.formation ? `（${v.formation.length}両）` : ""}</button>
-                      {!v.formation && <label>
+        {vehicles && formations.length > 0 && (
+          <ul className="rtm-list" aria-label="読み込んだ編成">
+            {formations.map(lead => {
+              const selectedMiddle = lead.middleId ? byId.get(lead.middleId) : undefined;
+              const cars = lead.formation?.map(slot => byId.get(slot.id)?.name ?? "未読込の車両");
+              const summary = cars
+                ? cars.join(" → ")
+                : selectedMiddle ? `先頭・最後尾 ${lead.name} ／ 中間 ${selectedMiddle.name}` : "同じ車両で連結";
+              return (
+                <li key={lead.id} className="rtm-vehicle-row">
+                  <VehicleFrontPreview vehicle={lead} drawFront={drawFront} />
+                  <div className="rtm-vehicle-details">
+                    <div className="rtm-name">
+                      <b>{lead.name}</b>
+                      <span className="muted">
+                        {cars ? `${cars.length}両編成` : "自動編成"}・{isFreightCar(lead) ? "貨車" : TRAIN_TYPES[lead.config.trainType] ?? lead.config.trainType}・{lead.source}
+                      </span>
+                    </div>
+                    <p className="rtm-formation-summary">{summary}</p>
+                    <div className="rtm-actions">
+                      <label title="先頭が後ろ向きに表示されるときに使います">
+                        <input type="checkbox" checked={!!lead.flip} onChange={(e) => void updateRtmVehicle(lead.id, { flip: e.target.checked })} />
+                        前後を入れ替える
+                      </label>
+                      <button onClick={() => setEditId(lead.id)}>編成を設定{cars ? `（${cars.length}両）` : ""}</button>
+                      {!cars && <label>
                         中間車
-                        <select value={v.middleId ?? ""} onChange={(e) => void updateRtmVehicle(v.id, { middleId: e.target.value || undefined })}>
+                        <select value={selectedMiddle?.id ?? ""} onChange={(e) => void updateRtmVehicle(lead.id, { middleId: e.target.value || undefined })}>
                           <option value="">この車両と同じ</option>
-                          {middleCandidates(vehicles, v).map((x) => (
-                            <option key={x.id} value={x.id}>{x.name}{x.role ? `（${ROLE_LABEL[x.role]}）` : ""}</option>
+                          {middleCandidates(vehicles, lead).map(vehicle => (
+                            <option key={vehicle.id} value={vehicle.id}>{vehicle.name}{vehicle.role === "middle" ? "（中間車）" : ""}</option>
                           ))}
                         </select>
                       </label>}
-                      {onPick && <button disabled={editId === v.id} onClick={() => onPick(v.id, vehicles)}>{pickLabel}</button>}
-                    </>
-                  )}
-                  <button className="danger" onClick={() => void deleteRtmVehicle(v.id)}>削除</button>
-                </div>
-              </li>
-            ))}
+                      {onPick && <button disabled={editId === lead.id} onClick={() => onPick(lead.id, vehicles)}>{pickLabel}</button>}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
+        )}
+        {vehicles && vehicles.length > 0 && (
+          <>
+            {formations.length === 0 && <p className="muted">先頭車を読み込むと編成が表示されます。</p>}
+            <details className="rtm-vehicle-management">
+              <summary>個別車両の管理</summary>
+              <div className="rtm-actions">
+                <label>
+                  車両
+                  <select value={managed?.id ?? ""} onChange={e => setManageId(e.target.value)}>
+                    <option value="">車両を選ぶ</option>
+                    {vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}
+                  </select>
+                </label>
+                {managed && (
+                  <>
+                    <label>
+                      <input type="checkbox" checked={!!managed.flip} onChange={e => void updateRtmVehicle(managed.id, { flip: e.target.checked })} />
+                      前後を入れ替える
+                    </label>
+                    <button className="danger" onClick={() => void deleteRtmVehicle(managed.id)}>削除</button>
+                  </>
+                )}
+              </div>
+            </details>
+          </>
         )}
         {vehicles && vehicles.length === 0 && !message && <p className="muted">まだ車両を読み込んでいません。</p>}
         <p className="muted rtm-help">

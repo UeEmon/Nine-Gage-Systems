@@ -16,8 +16,20 @@ export type VehicleKit = {
   id: string;
   /** 1両分。+X が前、原点は車体の中心のレール面の高さ（buildTrain の車両と同じ） */
   makeCar(role: CarRole, reversed?: boolean): THREE.Group;
+  /** makeCar で使い始めたテクスチャを待つ（静止画の描画用） */
+  texturesReady(): Promise<void>;
   dispose(): void;
 };
+
+/** 車両パックのモデルをプレビュー用の照明で照らす */
+export function vehiclePreviewScene(lightPosition: [number, number, number]): THREE.Scene {
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xd7dbe3, 2.4));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2);
+  keyLight.position.set(...lightPosition);
+  scene.add(keyLight);
+  return scene;
+}
 
 /**
  * 台車の幅の倍率。RTM の台車は実物の線路幅（1067mm）に合わせて作られているが、Nゲージの線路は 9mm
@@ -94,6 +106,7 @@ async function loadTexture(data: Uint8Array): Promise<THREE.Texture | null> {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     tex.needsUpdate = true;
+    tex.addEventListener("dispose", () => bitmap.close());
     return tex;
   } catch {
     return null;
@@ -218,6 +231,9 @@ export async function buildVehicleKit(vehicle: RtmVehicle): Promise<VehicleKit> 
 
   return {
     id: vehicle.id,
+    async texturesReady() {
+      await Promise.all(textures.values());
+    },
     makeCar(role, reversed = role === "rear") {
       const car = new THREE.Group();
       car.name = `rtm-${vehicle.id}`;

@@ -4,22 +4,27 @@ import { useState } from "react";
 import { MAX_CONSIST_CARS, type RtmSlot } from "@/lib/drive";
 import type { RtmVehicle } from "@/lib/rtm/pack";
 import { updateRtmVehicle } from "@/lib/rtm/store";
+import { FormationSideView } from "./FormationSideView";
 
 export function FormationEditor({ lead, vehicles, onDone }: {
   lead: RtmVehicle;
   vehicles: RtmVehicle[];
   onDone: () => void;
 }) {
+  const defaultMiddle = vehicles.find(vehicle => vehicle.id === lead.middleId)?.id ?? lead.id;
   const [slots, setSlots] = useState<RtmSlot[]>(() => lead.formation ?? [
-    { id: lead.id, reversed: false }, { id: lead.middleId ?? lead.id, reversed: false }, { id: lead.id, reversed: true },
+    { id: lead.id, reversed: false }, { id: defaultMiddle, reversed: false }, { id: lead.id, reversed: true },
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const change = (i: number, patch: Partial<RtmSlot>) => setSlots(slots.map((s, k) => k === i ? { ...s, ...patch } : s));
   const move = (i: number, j: number) => {
-    const next = slots.slice();
-    [next[i], next[j]] = [next[j], next[i]];
-    setSlots(next);
+    setSlots(current => {
+      if (i < 1 || j < 1 || i >= current.length || j >= current.length || i === j) return current;
+      const next = current.slice();
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
   };
   const save = async (formation?: RtmSlot[]) => {
     setSaving(true);
@@ -34,6 +39,7 @@ export function FormationEditor({ lead, vehicles, onDone }: {
   return (
     <fieldset disabled={saving} className="rtm-formation">
       <legend>{lead.name} の編成（{slots.length}両）</legend>
+      <FormationSideView slots={slots} vehicles={vehicles} disabled={saving} onSwap={move} />
       <ol>
         {slots.map((slot, i) => (
           <li key={i}>
@@ -53,7 +59,7 @@ export function FormationEditor({ lead, vehicles, onDone }: {
         ))}
       </ol>
       <div className="rtm-actions">
-        <button disabled={slots.length >= MAX_CONSIST_CARS} onClick={() => setSlots([...slots, { id: lead.middleId ?? lead.id, reversed: false }])}>1両追加</button>
+        <button disabled={slots.length >= MAX_CONSIST_CARS} onClick={() => setSlots([...slots, { id: defaultMiddle, reversed: false }])}>1両追加</button>
         <button disabled={slots.some(s => !vehicles.some(v => v.id === s.id))} onClick={() => void save(slots)}>編成を保存</button>
         {lead.formation && <button onClick={() => void save()}>自動編成に戻す</button>}
         <button onClick={onDone}>キャンセル</button>
