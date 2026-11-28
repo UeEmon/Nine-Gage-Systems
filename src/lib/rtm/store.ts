@@ -55,21 +55,27 @@ export async function loadRtmLibrary(): Promise<RtmLibrary> {
   }
 }
 
-/** 車両を保存する（同じ ID の車両は置き換える。前後の向き・中間車の設定は引き継ぐ） */
+/** 同じ ID の車両は既存の編成設定を引き継いで置き換え、自動編成を一覧に戻す。 */
 export async function saveRtmVehicles(vehicles: RtmVehicle[]): Promise<void> {
   await run(VEHICLES, (s) => {
     for (const v of vehicles) {
       const req = s.get(v.id);
       req.onsuccess = () => {
         const old: RtmVehicle | undefined = req.result;
-        s.put({ ...v, flip: old?.flip ?? v.flip, middleId: old?.middleId ?? v.middleId, formation: old?.formation });
+        s.put({
+          ...v,
+          flip: old?.flip ?? v.flip,
+          middleId: old?.middleId ?? v.middleId,
+          formation: old?.formation,
+          autoFormationDeleted: undefined,
+        });
       };
     }
   });
   changed();
 }
 
-export async function updateRtmVehicle(id: string, patch: Partial<Pick<RtmVehicle, "flip" | "middleId" | "formation">>): Promise<void> {
+export async function updateRtmVehicle(id: string, patch: Partial<Pick<RtmVehicle, "flip" | "middleId" | "formation" | "autoFormationDeleted">>): Promise<void> {
   await run(VEHICLES, (s) => {
     const req = s.get(id);
     req.onsuccess = () => {

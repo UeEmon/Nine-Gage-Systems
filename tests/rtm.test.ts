@@ -373,6 +373,16 @@ describe("RealTrainMod の車両パック", () => {
     }
   });
 
+  it("自動編成を削除しても、同じ車両を使う手動編成や運行計画の寸法を保持する", async () => {
+    const { vehicles: [car] } = await readVehicleFiles([{ name: "test-pack.zip", data: samplePack() }]);
+    const lead = { ...car, autoFormationDeleted: true };
+    const manual = { id: "f123", name: "試験編成", formation: [{ id: lead.id, reversed: false }] };
+    const library = { vehicles: [lead], formations: [manual] };
+    expect(rtmConsists(library, lead.id)).toEqual([manual]);
+    expect(rtmFormationSize(lead, library.vehicles)).toEqual(consistSizeOf(car));
+    expect(rtmFormationSize(undefined, library.vehicles, manual.formation)?.sequence).toEqual([carSizeOf(car)]);
+  });
+
   it("車両の置き方は車両ごとの長さで並ぶ", () => {
     const straight = { poseAt: (o = 0) => ({ x: o, y: 0, z: 0 }) as never };
     const size = { end: { length: 90, bogieCenters: 60 }, middle: { length: 160, bogieCenters: 110 } };
