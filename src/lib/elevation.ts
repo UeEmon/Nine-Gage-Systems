@@ -7,7 +7,7 @@
 
 import { PIER_SYSTEMS, pierHeights } from "../data/piers";
 import type { Connection, Piece } from "./geometry";
-import { getPart, type Maker } from "./parts";
+import { getPart, type Maker, type PartDef } from "./parts";
 import { routeLength, routeSamples } from "./shapes";
 
 /** これより低いところには橋脚を立てない（地上・勾配の上り始め） */
@@ -116,18 +116,39 @@ export function computeElevation(pieces: Piece[], connections: Connection[]): El
 /** 高さの階層。地上・勾配・高架・地下 */
 export type Level = "ground" | "ramp" | "elevated" | "underground";
 
+function levelAtHeight(z: number): Exclude<Level, "ramp"> {
+  if (z >= PIER_MIN_MM) return "elevated";
+  if (z <= UNDERGROUND_MAX_MM) return "underground";
+  return "ground";
+}
+
 /** 部品の階層（色分け・絞り込みに使う） */
 export function levelOf(piece: Piece, elev: Elevation): Level {
   if (isRamp(piece)) return "ramp";
-  const { min, max } = zRange(elev, piece.uid);
-  if (max >= PIER_MIN_MM) return "elevated";
-  if (min <= UNDERGROUND_MAX_MM) return "underground";
-  return "ground";
+  return levelAtHeight(elev.joints.get(piece.uid)?.[0] ?? 0);
 }
 
 /** 地下の標準の深さ(mm, 正の値)。上を地上の線路が通れるよう、立体交差に必要な高さの差と同じにする */
 export function standardDepth(maker: Maker): number {
   return PIER_SYSTEMS[maker].clearance;
+}
+
+/** つなぐ端が同じ階層にあれば、その端の高さを引き継ぐ。 */
+export function trackPlacementHeight(
+  part: Pick<PartDef, "maker" | "category">,
+  level: Level | "auto" | number,
+  endHeight?: number,
+): Pick<Piece, "z" | "ramp"> {
+  if (typeof level === "number") return { z: level };
+  if (level === "ramp") return { ramp: true };
+  if (endHeight !== undefined && (level === "auto" || levelAtHeight(endHeight) === level)) {
+    return endHeight === 0 ? {} : { z: endHeight };
+  }
+  if (level === "elevated" || (level === "auto" && part.category === "bridge")) {
+    return { z: PIER_SYSTEMS[part.maker].standardHeight };
+  }
+  if (level === "underground") return { z: -standardDepth(part.maker) };
+  return {};
 }
 
 /** 部品の高さの範囲 */

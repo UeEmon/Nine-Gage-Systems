@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-placement-follows-track-level",
+    date: "2026-11-28T14:10:00+09:00",
+    title: "表示中の階層に線路を置けます",
+    body: "地上・勾配・高架・地下を選んで線路を追加すると、その階層に配置されます。「すべて」で線路の端につなぐと、勾配の途中でも、その端の高さを引き継ぎます。",
+  },
+  {
     id: "2026-11-28-rtm-edit-leading-car",
     date: "2026-11-28T13:40:00+09:00",
     title: "RTMの手動編成を作成し、先頭車を変更できます",

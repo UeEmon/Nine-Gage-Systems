@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { overpassExampleFor, systemPrompt } from "../src/lib/ai";
 import { billOfMaterials, usageOf } from "../src/lib/bom";
+import { trackPlacementHeight } from "../src/lib/elevation";
 import { analyze, placeAt, worldJoints, type Piece } from "../src/lib/geometry";
 import { evaluatePlan, planSchemaFor, type LayoutPlan } from "../src/lib/plan";
 import { findProduct, shortfall } from "../src/lib/productDb";
@@ -21,6 +22,36 @@ function chain(start: { x: number; y: number; deg: number }, parts: [string, num
 }
 
 describe("elevation", () => {
+  it("places new track at the selected level or at the exact height of the connecting end", () => {
+    const part = getPart("kato:S248");
+    expect(trackPlacementHeight(part, "ground")).toEqual({});
+    expect(trackPlacementHeight(part, "ramp", 0)).toEqual({ ramp: true });
+    expect(trackPlacementHeight(part, "elevated", 0)).toEqual({ z: 50 });
+    expect(trackPlacementHeight(part, "elevated", 73.5)).toEqual({ z: 73.5 });
+    expect(trackPlacementHeight(getPart("tomix:S280"), "underground")).toEqual({ z: -55 });
+    expect(trackPlacementHeight(part, -65)).toEqual({ z: -65 });
+
+    const pieces = chain({ x: 50, y: 300, deg: 0 }, [["kato:S248", 73.5], ["kato:S248", null]]);
+    const rampEnd = analyze({ board, pieces }).elevation.joints.get("c1")![1];
+    const next = {
+      ...placeAt(part.key, false, 0, worldJoints(pieces[1])[1], "next"),
+      ...trackPlacementHeight(part, "auto", rampEnd),
+    };
+    expect(next).toMatchObject({ z: 73.5 });
+    expect(next.ramp).toBeUndefined();
+    expect(analyze({ board, pieces: [...pieces, next] }).heightSteps).toEqual([]);
+  });
+
+  it("connects to the same height when another open end overlaps it in plan view", () => {
+    const [ground] = chain({ x: 50, y: 300, deg: 0 }, [["kato:S248", 0]]);
+    const elevated = { ...ground, uid: "elevated", z: 50 };
+    const next = { ...placeAt("kato:S248", false, 0, worldJoints(elevated)[1], "next"), z: 50 };
+    const analysis = analyze({ board, pieces: [ground, elevated, next] });
+    expect(analysis.connections).toHaveLength(1);
+    expect(analysis.connections[0]).toMatchObject({ a: { pieceUid: "elevated" }, b: { pieceUid: "next" } });
+    expect(analysis.heightSteps).toEqual([]);
+  });
+
   it("interpolates a ramp between ground and viaduct by length", () => {
     const pieces = chain({ x: 50, y: 300, deg: 0 }, [
       ["kato:S248", 0],
