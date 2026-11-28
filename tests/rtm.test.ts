@@ -6,7 +6,7 @@ import { buildTrain } from "../src/lib/driveScene";
 import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { assignCarRoles, carSizeOf, consistSizeOf, rtmConsists, rtmFormationSize, findFile, isFreightCar, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
+import { autoFormationSlots, assignCarRoles, carSizeOf, consistSizeOf, rtmConsists, rtmFormationSize, findFile, isFreightCar, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
 import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
@@ -511,5 +511,17 @@ describe("RealTrainMod の車両パック", () => {
     expect(mids[0].role).toBe("middle");
     expect(mids.some((v) => v.role === "cab")).toBe(false);
     expect(mids.some((v) => v.name === "w_1")).toBe(true);
+  });
+});
+
+describe("固定両数の自動編成", () => {
+  it("1両なら先頭のみ、2両以上なら最後尾だけを逆向きにする", () => {
+    const front = { id: "cab", reversed: false };
+    const rear = { id: "cab", reversed: true };
+    const middle = { id: "coach", reversed: false };
+    expect(autoFormationSlots("cab", "coach", 1)).toEqual([front]);
+    expect(autoFormationSlots("cab", "coach", 2)).toEqual([front, rear]);
+    expect(autoFormationSlots("cab", "coach", 4)).toEqual([front, middle, middle, rear]);
+    expect(autoFormationSlots("cab", undefined, 3)).toEqual([front, front, rear]);
   });
 });

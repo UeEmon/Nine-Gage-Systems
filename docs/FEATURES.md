@@ -95,6 +95,7 @@ SenroLab のソースを機能ごとに分け、機能ごとに担当者を決�
 - `/tests/drive.test.ts`
 - `/src/lib/rtm/`
 - `/src/components/rtm/`
+- `/src/app/rtm/`
 - `/tests/rtm.test.ts`
 
 ### 運行計画（`feature:operation`）

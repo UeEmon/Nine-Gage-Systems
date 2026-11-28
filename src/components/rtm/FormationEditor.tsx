@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 import { MAX_CONSIST_CARS, type RtmSlot } from "@/lib/drive";
-import type { RtmVehicle } from "@/lib/rtm/pack";
+import { autoFormationSlots, type RtmVehicle } from "@/lib/rtm/pack";
 import { FormationSideView } from "./FormationSideView";
 import { VehicleFrontPreview, type DrawFront } from "./VehicleFrontPreview";
 
-export function FormationEditor({ name, initialSlots, defaultCarId, manual, vehicles, drawFront, onSave, onReset, onDone }: {
+export function FormationEditor({ name, initialSlots, defaultCarId, automatic, vehicles, drawFront, onSave, onReset, onDone }: {
   name: string;
   initialSlots: RtmSlot[];
   defaultCarId: string;
-  manual: boolean;
+  automatic: boolean;
   vehicles: RtmVehicle[];
   drawFront: DrawFront;
   onSave: (slots: RtmSlot[], name: string) => Promise<void>;
@@ -19,10 +19,12 @@ export function FormationEditor({ name, initialSlots, defaultCarId, manual, vehi
 }) {
   const [draftName, setDraftName] = useState(name);
   const [slots, setSlots] = useState(initialSlots);
+  const [autoCount, setAutoCount] = useState(initialSlots.length);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const first = slots[0];
   const front = vehicles.find(vehicle => vehicle.id === first.id);
+  const autoMiddle = vehicles.find(vehicle => vehicle.id === front?.middleId);
   const change = (i: number, patch: Partial<RtmSlot>) => setSlots(current => current.map((s, k) => k === i ? { ...s, ...patch } : s));
   const move = (i: number, j: number) => {
     setSlots(current => {
@@ -45,8 +47,16 @@ export function FormationEditor({ name, initialSlots, defaultCarId, manual, vehi
   };
   return (
     <fieldset disabled={saving} className="rtm-formation">
-      <legend>{manual ? "手動編成" : `${name} の編成`}（{slots.length}両）</legend>
-      {manual && <label>編成名 <input value={draftName} maxLength={60} onChange={e => setDraftName(e.target.value)} /></label>}
+      <legend>{!automatic ? "手動編成" : `${name} の編成`}（{slots.length}両）</legend>
+      {automatic && <div className="rtm-actions">
+        <label>両数 <select value={autoCount} onChange={e => setAutoCount(Number(e.target.value))}>
+          {Array.from({ length: MAX_CONSIST_CARS }, (_, i) => <option key={i} value={i + 1}>{i + 1}両</option>)}
+        </select></label>
+        <button disabled={!front} onClick={() => {
+          if (front) setSlots(autoFormationSlots(front.id, autoMiddle?.id, autoCount));
+        }}>この両数で自動編成</button>
+      </div>}
+      {!automatic && <label>編成名 <input value={draftName} maxLength={60} onChange={e => setDraftName(e.target.value)} /></label>}
       <div className="rtm-formation-preview">
         <VehicleFrontPreview key={`${first.id}:${first.reversed}`} vehicle={front} reversed={first.reversed} drawFront={drawFront} />
         <FormationSideView slots={slots} vehicles={vehicles} disabled={saving} onSwap={move} />

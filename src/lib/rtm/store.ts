@@ -36,7 +36,14 @@ async function run(store: string, fn: (s: IDBObjectStore) => void): Promise<void
 }
 
 const changed = () => {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(RTM_CHANGED_EVENT));
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(RTM_CHANGED_EVENT));
+  try {
+    // 別タブには更新の合図だけを送り、車両データは IndexedDB から読む。
+    window.localStorage.setItem(RTM_CHANGED_EVENT, crypto.randomUUID());
+  } catch {
+    // ストレージへの書き込みが制限されても、このタブでの保存は完了している。
+  }
 };
 
 export async function loadRtmLibrary(): Promise<RtmLibrary> {
