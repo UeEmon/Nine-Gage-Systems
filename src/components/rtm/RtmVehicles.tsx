@@ -85,7 +85,7 @@ export function RtmVehiclesDialog({
 
   const remove = async (id: string, name: string, kind: keyof typeof REMOVALS) => {
     const { label, write } = REMOVALS[kind];
-    const detail = kind === "auto" ? "\n登録済み車両は引き続き手動編成に使えます。" : "";
+    const detail = kind === "auto" ? "\n登録済み車両は引き続き手動編成に使えます。車両パックを再読み込みすると編成を戻せます。" : "";
     if (!window.confirm(`${label}「${name}」を削除しますか？${detail}`)) return;
     setDeleting(true);
     setDeleteError("");
@@ -112,8 +112,8 @@ export function RtmVehiclesDialog({
       );
       const r = await readVehicleFiles(files);
       if (r.vehicles.length > 0) {
-        const saved = await saveRtmVehicles(r.vehicles);
-        setEditId(leadVehicles(saved)[0]?.id ?? null);
+        await saveRtmVehicles(r.vehicles);
+        setEditId(leadVehicles(r.vehicles)[0]?.id ?? null);
       }
       setMessage({ added: r.vehicles.length, problems: r.problems });
     } catch (e) {

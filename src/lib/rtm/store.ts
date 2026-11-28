@@ -55,28 +55,24 @@ export async function loadRtmLibrary(): Promise<RtmLibrary> {
   }
 }
 
-/** 同じ ID の車両は置き換え、既存の編成設定と自動編成の削除状態を引き継ぐ。 */
-export async function saveRtmVehicles(vehicles: RtmVehicle[]): Promise<RtmVehicle[]> {
-  const saved: RtmVehicle[] = [];
+/** 同じ ID の車両は既存の編成設定を引き継いで置き換え、自動編成を一覧に戻す。 */
+export async function saveRtmVehicles(vehicles: RtmVehicle[]): Promise<void> {
   await run(VEHICLES, (s) => {
     for (const v of vehicles) {
       const req = s.get(v.id);
       req.onsuccess = () => {
         const old: RtmVehicle | undefined = req.result;
-        const entry: RtmVehicle = {
+        s.put({
           ...v,
           flip: old?.flip ?? v.flip,
           middleId: old?.middleId ?? v.middleId,
           formation: old?.formation,
-          autoFormationDeleted: old?.autoFormationDeleted,
-        };
-        s.put(entry);
-        saved.push(entry);
+          autoFormationDeleted: undefined,
+        });
       };
     }
   });
   changed();
-  return saved;
 }
 
 export async function updateRtmVehicle(id: string, patch: Partial<Pick<RtmVehicle, "flip" | "middleId" | "formation" | "autoFormationDeleted">>): Promise<void> {
