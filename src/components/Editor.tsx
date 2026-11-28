@@ -19,7 +19,7 @@ import { shoppingListCsv, shortfall, stockFromInventory, type Inventory, type Sh
 import type { SavedPattern } from "@/lib/patternFile";
 import { CATALOG_SOURCES } from "@/data/trackCatalog";
 import { heightText, PIER_SYSTEMS } from "@/data/piers";
-import { isRamp, levelOf as pieceLevel, PIER_MIN_MM, standardDepth, zRange } from "@/lib/elevation";
+import { levelOf as pieceLevel, PIER_MIN_MM, standardDepth, trackPlacementHeight, zRange } from "@/lib/elevation";
 import { BED_INFO, bedVariantsOf, CATEGORY_LABELS, getPart, MAKER_INFO, MAKERS, normDeg, partsFor, type Maker } from "@/lib/parts";
 import type { BedType, PartCategory } from "@/data/trackCatalog";
 import { canUseModels, canUseRtm, type SessionUser } from "@/lib/roles";
@@ -114,8 +114,8 @@ const LEVEL_FILTERS: { value: LevelFilter; label: string }[] = [
   { value: "elevated", label: "高架" },
   { value: "underground", label: "地下" },
 ];
-/** 新しく置く部品の高さ。auto はつなぐ先の部品に合わせる */
-type PlaceHeight = "auto" | "ground" | "elevated" | "underground" | "ramp" | "custom";
+/** 表示階層・接続先で決まらないときに使う配置設定 */
+type PlaceHeight = Level | "auto" | "custom";
 const MIN_TRACK_HEIGHT = -200;
 const MAX_TRACK_HEIGHT = 300;
 
@@ -457,48 +457,37 @@ export function Editor({ user }: { user: SessionUser | null }) {
   };
 
   // ---- 部品の追加 ----
+  const selectedJoint = selection?.kind === "joint"
+    ? analysis.openJoints.find(j => j.pieceUid === selection.uid && j.index === selection.index)
+    : undefined;
+  // 勾配を始める／終えるときは、表示階層を切り替えても選択中の端を使う。
+  const placementJoint = selectedJoint && (
+    isVisible(selectedJoint.pieceUid) || levelFilter === "ramp" || levelOf(selectedJoint.pieceUid) === "ramp"
+  ) ? selectedJoint : undefined;
+  const placementMode = (joint?: WorldJoint): PlaceHeight => levelFilter !== "all" ? levelFilter : joint ? "auto" : placeHeight;
+  const menuHeight = placementMode(pickLocation ? undefined : placementJoint);
+  const heightLocked = levelFilter !== "all" || (!pickLocation && !!placementJoint);
   const customZ = customPlaceHeight.trim() === "" ? NaN : Number(customPlaceHeight);
-  const invalidCustomHeight = placeHeight === "custom" && !(customZ >= MIN_TRACK_HEIGHT && customZ <= MAX_TRACK_HEIGHT);
-  const canPlace = (partId: string) => !invalidCustomHeight && (placeHeight !== "ramp" || !!getPart(partId).rampEnds);
+  const invalidCustomHeight = !(customZ >= MIN_TRACK_HEIGHT && customZ <= MAX_TRACK_HEIGHT);
+  const canPlace = (partId: string, mode = menuHeight) =>
+    (mode !== "custom" || !invalidCustomHeight) && (mode !== "ramp" || !!getPart(partId).rampEnds);
 
-  const addPart = (partId: string, at?: { x: number; y: number }) => {
-    if (!canPlace(partId)) return;
+  const addPart = (partId: string, at?: { x: number; y: number }, clickedJoint?: WorldJoint) => {
+    const attach = at ? clickedJoint : placementJoint;
+    const mode = placementMode(attach);
+    if (!canPlace(partId, mode)) return;
     const part = getPart(partId);
     const jIdx = Math.min(attachJoint, part.joints.length - 1);
-    const attach = !at && selection?.kind === "joint" ? selection : null;
-    const source = attach ? layout.pieces.find((p) => p.uid === attach.uid) : undefined;
-    let target: { x: number; y: number; deg: number };
-    if (at) {
-      target = { ...at, deg: 0 };
-    } else if (attach) {
-      const j = source && worldJoints(source)[attach.index];
-      if (!j) return;
-      target = j;
-    } else {
-      const b = layout.board;
-      // 何も選んでいなければ、ボード上部の中央付近から右向きに置く
-      target = { x: b.width / 2 - 250, y: Math.max(60, b.height * 0.12), deg: 0 };
-    }
-    // 置く高さ: つなぐ先に合わせる（auto）か、指定した階層
-    let height: Pick<Piece, "z" | "ramp"> = {};
-    if (placeHeight === "elevated") height = { z: standardHeight };
-    else if (placeHeight === "underground") height = { z: -depth };
-    else if (placeHeight === "ramp") height = { ramp: true };
-    else if (placeHeight === "custom") height = { z: customZ };
-    else if (placeHeight === "auto") {
-      if (source && isRamp(source) && part.rampEnds) height = { ramp: true };
-      else if (source && attach) {
-        const z = analysis.elevation.joints.get(source.uid)?.[attach.index] ?? source.z ?? 0;
-        if (z !== 0) height = { z };
-      }
-      else if (part.category === "bridge") height = { z: standardHeight };
-    }
+    // 何も選んでいなければ、ボード上部の中央付近から右向きに置く。
+    const board = layout.board;
+    const target = attach ?? { ...(at ?? { x: board.width / 2 - 250, y: Math.max(60, board.height * 0.12) }), deg: 0 };
+    const endHeight = attach ? analysis.elevation.joints.get(attach.pieceUid)?.[attach.index] : undefined;
+    const height = trackPlacementHeight(part, mode === "custom" ? customZ : mode, endHeight);
     const piece: Piece = { ...placeAt(partId, mirrorNext, jIdx, target, newUid()), ...height };
     const next = [...layout.pieces, piece];
     setPieces(() => next);
     // 続けてつなげるよう、新しい部品の空いている出口を選ぶ
     const a = analyze({ board: layout.board, pieces: next });
-    if (hideOthers && levelFilter !== "all" && levelFilter !== pieceLevel(piece, a.elevation)) setLevelFilter("all");
     const exits = a.openJoints.filter((j) => j.pieceUid === piece.uid && j.index !== jIdx);
     const exit = exits.find((j) => j.index === (jIdx === 0 ? 1 : 0)) ?? exits[0];
     setSelection(exit ? { kind: "joint", uid: piece.uid, index: exit.index } : { kind: "piece", uid: piece.uid });
@@ -652,12 +641,17 @@ export function Editor({ user }: { user: SessionUser | null }) {
   };
 
   const onPlacementPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!pendingPart || e.button !== 0 || !canPlace(pendingPart)) return;
+    if (!pendingPart || e.button !== 0) return;
+    const target = e.target;
+    const joint = target instanceof SVGCircleElement && target.dataset.jointIndex !== undefined
+      ? analysis.openJoints.find(j => j.pieceUid === target.dataset.pieceUid && j.index === Number(target.dataset.jointIndex))
+      : undefined;
+    if (!canPlace(pendingPart, placementMode(joint))) return;
     const { x, y } = toSvg(e);
     if (x < 0 || x > layout.board.width || y < 0 || y > layout.board.height) return;
     e.preventDefault();
     e.stopPropagation();
-    addPart(pendingPart, { x: Math.round(x), y: Math.round(y) });
+    addPart(pendingPart, { x: Math.round(x), y: Math.round(y) }, joint);
     setPendingPart(null);
   };
 
@@ -957,7 +951,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <div className="row">
             <label className="small">
               置く高さ
-              <select value={placeHeight} onChange={(e) => {
+              <select value={menuHeight} disabled={heightLocked} title={levelFilter !== "all" ? "表示階層に合わせて配置します" : undefined} onChange={(e) => {
                 const value = e.target.value as PlaceHeight;
                 if (value === "custom") {
                   const z = placeHeight === "elevated" ? standardHeight : placeHeight === "underground" ? -depth : 0;
@@ -966,16 +960,16 @@ export function Editor({ user }: { user: SessionUser | null }) {
                 setPlaceHeight(value);
                 setPendingPart(null);
               }}>
-                <option value="auto">つなぐ先に合わせる</option>
+                <option value="auto">接続する端の高さに合わせる</option>
                 <option value="ground">地上</option>
-                <option value="elevated">高架（{standardHeight}mm）</option>
-                <option value="underground">地下（-{depth}mm）</option>
+                <option value="elevated">高架（標準 {standardHeight}mm）</option>
+                <option value="underground">地下（標準 -{depth}mm）</option>
                 <option value="ramp">勾配（前後の高さの間を自動で上り下り）</option>
                 <option value="custom">高さを数値で指定</option>
               </select>
             </label>
           </div>
-          {placeHeight === "custom" && (
+          {menuHeight === "custom" && (
             <div className="row">
               <label className="small">
                 配置する高さ（mm。地下は負の値）
@@ -1037,7 +1031,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
                         className={pendingPart === p.key ? "part on" : "part"}
                         disabled={!canPlace(p.key)}
                         onClick={() => choosePart(p.key)}
-                        title={placeHeight === "ramp" && !p.rampEnds
+                        title={menuHeight === "ramp" && !p.rampEnds
                           ? "この部品は勾配にできません"
                           : [p.description, p.jointHelp, p.geometryNote].filter(Boolean).join("\n")}
                       >
@@ -1382,6 +1376,8 @@ export function Editor({ user }: { user: SessionUser | null }) {
                     cy={j.y}
                     r={sel ? jointR * 1.4 : jointR}
                     className={`joint${sel ? " is-selected" : ""}`}
+                    data-piece-uid={j.pieceUid}
+                    data-joint-index={j.index}
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       setSelection({ kind: "joint", uid: j.pieceUid, index: j.index });
@@ -1397,8 +1393,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
               <button
                 key={f.value}
                 className={levelFilter === f.value ? "on" : ""}
+                aria-pressed={levelFilter === f.value}
                 onClick={() => setLevelFilter(f.value)}
-                title={f.value === "all" ? "すべての高さを表示" : `${f.label}の線路だけを強調`}
+                title={f.value === "all" ? "すべての高さを表示し、接続する端に高さを合わせます" : `${f.label}の線路を強調し、新しい線路をこの階層に置きます`}
               >
                 {f.value !== "all" && <i className={`swatch lv-${f.value}`} />}
                 {f.label}
