@@ -3,6 +3,7 @@
 // 真上から見るとレイアウトの図と同じ向きになる。
 
 import * as THREE from "three";
+import { difference, type Polygon } from "polygon-clipping";
 import type { SimObject } from "./replica";
 import { loadModelObject, modelGeometry } from "./object3d";
 import type { BedType } from "../data/trackCatalog";
@@ -82,7 +83,7 @@ function framesOf(points: DrivePoint[]): Frame[] {
 }
 
 /** 断面 profile（点ごとに変えてよい、点の数は同じ）を中心線に沿って押し出したメッシュの頂点 */
-function sweep(frames: Frame[], profileAt: (i: number) => Profile, closed = true): THREE.BufferGeometry {
+function sweep(frames: Frame[], profileAt: (i: number) => Profile, closed = true, includeSpan?: (i: number) => boolean): THREE.BufferGeometry {
   const pos: number[] = [];
   const idx: number[] = [];
   const n = profileAt(0).length;
@@ -93,6 +94,7 @@ function sweep(frames: Frame[], profileAt: (i: number) => Profile, closed = true
   });
   const edges = closed ? n : n - 1;
   for (let i = 0; i < frames.length - 1; i++) {
+    if (includeSpan && !includeSpan(i)) continue;
     for (let k = 0; k < edges; k++) {
       const a = i * n + k;
       const b = i * n + ((k + 1) % n);
@@ -181,10 +183,7 @@ export function undergroundOf(graph: DriveGraph, pieces: Piece[], halls: Station
   const openHalls = halls.filter((h) => !h.covered);
   const inOpenHall = (p: XY) => openHalls.some((h) => inHall(h, p, 0.5));
   for (const piece of pieces) {
-    const part = getPart(piece.partId);
-    // ポイント・交差は経路が重なるので直進側だけ
-    const routeCount = part.category === "turnout" || part.category === "crossing" ? 1 : part.routes.length;
-    for (let r = 0; r < routeCount; r++) {
+    for (let r = 0; r < getPart(piece.partId).routes.length; r++) {
       const seg = makeSegment(graph, { uid: piece.uid, routeIndex: r, reverse: false }, 4);
       let run: XY[] = [];
       let prev: DrivePoint | null = null;
@@ -217,6 +216,20 @@ export function undergroundOf(graph: DriveGraph, pieces: Piece[], halls: Station
   const holes = joinRuns(runs).map((line) => stripOutline(line, TUNNEL_HALF_WIDTH));
   for (const h of openHalls) holes.push(hallCorners(h));
   return { holes, lowest };
+}
+
+/** 掘割の分岐・交差やボードの縁も、ひとつの平面として切り抜く。 */
+function boardGeometry(board: Board, cuts: XY[][]): THREE.ShapeGeometry {
+  const outline: Polygon = [[[0, 0], [board.width, 0], [board.width, board.height], [0, board.height]]];
+  const polygons = cuts.length
+    ? difference(outline, ...cuts.map((cut): Polygon => [cut.map(p => [p.x, p.y])]))
+    : [outline];
+  const shapes = polygons.map(([outer, ...holes]) => {
+    const shape = new THREE.Shape(outer.map(([x, y]) => new THREE.Vector2(x, -y)));
+    shape.holes = holes.map(ring => new THREE.Path(ring.map(([x, y]) => new THREE.Vector2(x, -y))));
+    return shape;
+  });
+  return new THREE.ShapeGeometry(shapes);
 }
 
 // ---- 地下駅 ----
@@ -721,6 +734,31 @@ function grassTexture(): THREE.Texture {
   return t;
 }
 
+/** 側壁の近くを通る別の進路を、高さも含めて探す。 */
+function sidewallClearance(tracks: DrivePoint[]) {
+  const clearance = POST_CLEAR_MM;
+  const cell = 2 * clearance;
+  const byCell = new Map<string, DrivePoint[]>();
+  for (const p of tracks) {
+    const key = `${Math.floor(p.x / cell)},${Math.floor(p.y / cell)}`;
+    const bucket = byCell.get(key);
+    if (bucket) bucket.push(p);
+    else byCell.set(key, [p]);
+  }
+  return (a: Frame, b: Frame, offset: number) => {
+    const x = (a.p.x + b.p.x + (a.right.x + b.right.x) * offset) / 2;
+    const y = (a.p.z + b.p.z + (a.right.z + b.right.z) * offset) / 2;
+    const z = (a.p.y + b.p.y) / 2;
+    for (let i = Math.floor((x - clearance) / cell); i <= Math.floor((x + clearance) / cell); i++) {
+      for (let j = Math.floor((y - clearance) / cell); j <= Math.floor((y + clearance) / cell); j++) {
+        const tracks = byCell.get(`${i},${j}`);
+        if (tracks?.some(p => Math.abs(p.z - z) < PIER_MIN_MM && Math.hypot(p.x - x, p.y - y) < clearance)) return false;
+      }
+    }
+    return true;
+  };
+}
+
 /** レイアウト全体の情景（ボード・線路・橋脚・木と建物） */
 export function buildScene(
   graph: DriveGraph,
@@ -766,18 +804,8 @@ export function buildScene(
   const inAnyHall = (p: XY) => halls.some((h) => inHall(h, p));
   // 地下の線路があれば、掘割の所はボードに穴を開け、床と枠をその下まで下げる
   const { holes, lowest } = undergroundOf(graph, pieces, halls);
-  const boardShape = new THREE.Shape([
-    new THREE.Vector2(0, 0),
-    new THREE.Vector2(board.width, 0),
-    new THREE.Vector2(board.width, -board.height),
-    new THREE.Vector2(0, -board.height),
-  ]);
-  for (const hole of holes) {
-    // 画面の y は下向きなので、Shape の平面では -y にする（下で x 軸まわりに -90° 回して戻す）
-    boardShape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x, -p.y))));
-  }
   grass.repeat.set(1 / 300, 1 / 300);
-  const boardMesh = add(new THREE.ShapeGeometry(boardShape), mat(0xffffff, { map: grass }));
+  const boardMesh = add(boardGeometry(board, holes), mat(0xffffff, { map: grass }));
   boardMesh.rotation.x = -Math.PI / 2;
   boardMesh.position.set(0, BOARD_Y, 0);
   const frameDepth = Math.max(40, BOARD_Y - lowest + 10);
@@ -803,7 +831,7 @@ export function buildScene(
   const ballastMats = new Map<number, THREE.Material>();
   const sleeperBoxes = new Map<number, THREE.Matrix4[]>();
   const slabBlocks: THREE.Matrix4[] = [];
-  const allPoints: DrivePoint[] = [];
+  const clearSidewall = sidewallClearance(centerline);
 
   for (const piece of pieces) {
     const part = getPart(piece.partId);
@@ -811,7 +839,6 @@ export function buildScene(
     part.routes.forEach((_, routeIndex) => {
       const seg = makeSegment(graph, { uid: piece.uid, routeIndex, reverse: false }, 4);
       const frames = framesOf(seg.points);
-      allPoints.push(...seg.points);
       const elevated = (i: number) => seg.points[i].z >= PIER_MIN_MM || part.bed === "viaduct";
       const groundDepth = (i: number) => BOARD_Y - seg.points[i].z - 0.2;
 
@@ -830,26 +857,19 @@ export function buildScene(
         }),
         ballastMats.get(style.ballastColor)!,
       );
-      // 高架の桁と側壁
-      if (seg.points.some((_, i) => elevated(i))) {
-        add(
-          sweep(frames, (i) => {
-            const on = elevated(i);
-            const w = on ? 30 : 0.01;
-            const bottom = on ? -9 : -3;
-            return [
-              [-w / 2, 2.5],
-              [-w / 2 + 1.2, 2.5],
-              [-w / 2 + 1.2, -3],
-              [w / 2 - 1.2, -3],
-              [w / 2 - 1.2, 2.5],
-              [w / 2, 2.5],
-              [w / 2, bottom],
-              [-w / 2, bottom],
-            ];
-          }),
-          deckMat,
-        );
+      // 桁は高架区間だけ本来の幅で描く。側壁の端が線路中央に向かって絞られない。
+      const deck = frames.filter((_, i) => elevated(i));
+      if (deck.length >= 2) {
+        add(sweep(deck, () => [[-15, -3], [15, -3], [15, -9], [-15, -9]]), deckMat);
+        for (const side of [-1, 1]) {
+          const outer = side * 15;
+          const inner = side * 13.8;
+          add(
+            sweep(deck, () => [[outer, 2.5], [inner, 2.5], [inner, -3], [outer, -3]],
+              true, i => clearSidewall(deck[i], deck[i + 1], inner)),
+            deckMat,
+          );
+        }
       }
       // 地下: 掘割は両側の壁、トンネルは壁と天井。坑口には地上に出る面を立てる
       // 地下駅の広間の中は、線路ごとのトンネルではなく広間の壁と天井で囲む。
@@ -872,18 +892,17 @@ export function buildScene(
           // 本来の幅で描き、坑口と地上の線路の中心を結ぶ斜めの面を作らない。
           const walls = frames.slice(r0, r1 + 1).filter((f) => f.p.y < BELOW_BOARD_Z);
           if (walls.length < 2) continue;
-          add(
-            sweep(walls, (k) => {
-              const top = Math.min(BOARD_Y - walls[k].p.y, TUNNEL_CLEAR);
-              return [
-                [-TUNNEL_HALF_WIDTH, top],
-                [-TUNNEL_HALF_WIDTH, -3.5],
-                [TUNNEL_HALF_WIDTH, -3.5],
-                [TUNNEL_HALF_WIDTH, top],
-              ];
-            }, false),
-            tunnelMat,
-          );
+          add(sweep(walls, () => [[-TUNNEL_HALF_WIDTH, -3.5], [TUNNEL_HALF_WIDTH, -3.5]], false), tunnelMat);
+          for (const side of [-1, 1]) {
+            const offset = side * TUNNEL_HALF_WIDTH;
+            add(
+              sweep(walls, k => [
+                [offset, -3.5],
+                [offset, Math.max(-3.5, Math.min(BOARD_Y - walls[k].p.y, TUNNEL_CLEAR))],
+              ], false, i => clearSidewall(walls[i], walls[i + 1], offset)),
+              tunnelMat,
+            );
+          }
           const roof = walls.filter((f) => isCovered(f.p.y));
           if (roof.length >= 2) {
             const w = TUNNEL_HALF_WIDTH + 1;
@@ -1041,7 +1060,7 @@ export function buildScene(
     if (cs.length) accBoxes.push({ x0: Math.min(...cs.map((c) => c.x)), x1: Math.max(...cs.map((c) => c.x)), y0: Math.min(...cs.map((c) => c.y)), y1: Math.max(...cs.map((c) => c.y)) });
   }
   const farFromTrack = (x: number, y: number, r: number) =>
-    allPoints.every((p) => Math.abs(p.x - x) > r || Math.abs(p.y - y) > r || Math.hypot(p.x - x, p.y - y) > r) &&
+    centerline.every((p) => Math.abs(p.x - x) > r || Math.abs(p.y - y) > r || Math.hypot(p.x - x, p.y - y) > r) &&
     accBoxes.every((b) => x < b.x0 - r || x > b.x1 + r || y < b.y0 - r || y > b.y1 + r);
   const trunkMat = mat(0x6b4a2e);
   const leafMats = [mat(0x3f6b34), mat(0x4f7d3a), mat(0x355c2d)];

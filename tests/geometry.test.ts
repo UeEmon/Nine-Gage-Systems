@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyze, placeAt, worldJoints } from "../src/lib/geometry";
+import { analyze, findConnections, placeAt, translateLayoutParts, worldJoints, type Layout } from "../src/lib/geometry";
 import { evaluatePlan, type LayoutPlan } from "../src/lib/plan";
 import { sidingPlan } from "./fixtures";
 
@@ -31,6 +31,30 @@ describe("geometry", () => {
     const j1 = worldJoints(piece)[1];
     expect(j1.deg).toBeCloseTo(45);
     expect(j1.y).toBeGreaterThan(0);
+  });
+
+  it("moves selected parts and attached platforms together without breaking a track connection", () => {
+    const first = { ...placeAt("kato:S124", false, 0, { x: 100, y: 200, deg: 15 }, "a"), z: 50 };
+    const second = { ...placeAt("kato:S124", false, 0, worldJoints(first)[1], "b"), z: 50 };
+    const platform = { uid: "platform", itemId: "kato:SIDE", host: first.uid, x: 140, y: 180, rot: 15, z: 50 };
+    const loose = { uid: "signal", itemId: "kato:SIDE", host: "other", x: 180, y: 270, rot: 90, z: 50 };
+    const untouched = { uid: "building", itemId: "kato:SIDE", x: 700, y: 420, rot: 0 };
+    const layout: Layout = { title: "", description: "", board, pieces: [first, second], accessories: [platform, loose, untouched] };
+    const moved = translateLayoutParts(layout, [
+      { kind: "piece", uid: first.uid },
+      { kind: "piece", uid: second.uid },
+      { kind: "acc", uid: platform.uid },
+      { kind: "acc", uid: loose.uid },
+    ], 35, -20);
+
+    expect(findConnections(moved.pieces).connections).toHaveLength(1);
+    expect(moved.pieces).toEqual(layout.pieces.map(p => ({ ...p, x: p.x + 35, y: p.y - 20 })));
+    expect(moved.accessories).toEqual([
+      { ...platform, x: 175, y: 160 },
+      { ...loose, x: 215, y: 250, host: undefined, z: undefined },
+      untouched,
+    ]);
+    expect(layout.pieces[0]).toBe(first);
   });
 
   it("closes a simple oval with no open ends", () => {
