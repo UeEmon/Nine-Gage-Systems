@@ -1,6 +1,6 @@
 // 読み込んだ RealTrainMod の車両を、このブラウザ（IndexedDB）に保存する。サーバーには送らない。
 
-import type { RtmFormation, RtmLibrary, RtmVehicle } from "./pack";
+import { vehicleId, type RtmFormation, type RtmLibrary, type RtmVehicle } from "./pack";
 
 const DB = "senrolab-rtm";
 const VEHICLES = "vehicles";
@@ -66,16 +66,26 @@ export async function loadRtmLibrary(): Promise<RtmLibrary> {
 export async function saveRtmVehicles(vehicles: RtmVehicle[]): Promise<void> {
   await run(VEHICLES, (s) => {
     for (const v of vehicles) {
-      const req = s.get(v.id);
-      req.onsuccess = () => {
-        const old: RtmVehicle | undefined = req.result;
-        s.put({
-          ...v,
-          flip: old?.flip ?? v.flip,
-          middleId: old?.middleId ?? v.middleId,
-          formation: old?.formation,
-          autoFormationDeleted: undefined,
-        });
+      const save = (old?: RtmVehicle) => s.put({
+        ...v,
+        id: old?.id ?? v.id,
+        flip: old?.flip ?? v.flip,
+        middleId: old?.middleId ?? v.middleId,
+        formation: old?.formation,
+        autoFormationDeleted: undefined,
+      });
+      const current = s.get(v.id);
+      current.onsuccess = () => {
+        if (current.result) {
+          save(current.result);
+          return;
+        }
+        const legacy = s.get(vehicleId(v.name));
+        legacy.onsuccess = () => {
+          const old: RtmVehicle | undefined = legacy.result;
+          // 保存済み編成が参照する旧 ID は、同じパックの再登録で引き継ぐ。
+          save(old?.source === v.source && old.name === v.name ? old : undefined);
+        };
       };
     }
   });
@@ -92,8 +102,11 @@ export async function updateRtmVehicle(id: string, patch: Partial<Pick<RtmVehicl
   changed();
 }
 
-export async function deleteRtmVehicle(id: string): Promise<void> {
-  await run(VEHICLES, (s) => s.delete(id));
+export async function deleteRtmVehicles(ids: readonly string[]): Promise<void> {
+  if (!ids.length) return;
+  await run(VEHICLES, (s) => {
+    for (const id of ids) s.delete(id);
+  });
   changed();
 }
 

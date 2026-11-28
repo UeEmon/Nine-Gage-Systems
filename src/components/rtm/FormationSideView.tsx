@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { N_CAR, type RtmSlot } from "@/lib/drive";
-import { carSizeOf, type RtmVehicle } from "@/lib/rtm/pack";
+import { carSizeOf, findRtmVehicle, type RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, vehiclePreviewScene, type VehicleKit } from "@/lib/rtm/three";
 
 const VIEW_HEIGHT = 76;
@@ -29,10 +29,9 @@ export function FormationSideView({ slots, vehicles, disabled, onSwap }: {
   const selectedIndex = selected ? slots.indexOf(selected) : -1;
 
   const cars = useMemo(() => {
-    const byId = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]));
     let left = 0;
     return slots.map(slot => {
-      const vehicle = byId.get(slot.id);
+      const vehicle = findRtmVehicle(vehicles, slot.id);
       const length = vehicle ? carSizeOf(vehicle).length : N_CAR.length;
       const width = Math.round(Math.min(420, Math.max(48, length + N_CAR.gap)));
       const center = left + width / 2;
@@ -160,7 +159,7 @@ export function FormationSideView({ slots, vehicles, disabled, onSwap }: {
                 disabled={disabled || slots.length < 2}
                 aria-pressed={selectedIndex === i}
                 aria-label={`${i === 0 ? "先頭" : `${i + 1}両目`} ${name}${slot.reversed ? "（逆向き）" : ""}`}
-                title={name}
+                title={vehicle ? `${name}（${vehicle.source}）` : name}
                 draggable={!disabled && slots.length > 1}
                 onClick={() => selectedIndex >= 0 ? swap(selectedIndex, i) : setSelected(slot)}
                 onDragStart={e => {

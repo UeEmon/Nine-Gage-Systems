@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { rtmConsists, type RtmLibrary } from "@/lib/rtm/pack";
 import { FormationList } from "./FormationList";
-import { useDrawVehicleFront } from "./VehicleFrontPreview";
+import { useDrawVehiclePreview } from "./VehiclePreview";
 
 export function RtmVehiclesDialog({ library, error, onClose, onPick, pickLabel = "この編成で走る" }: {
   library: RtmLibrary | null;
@@ -12,7 +12,7 @@ export function RtmVehiclesDialog({ library, error, onClose, onPick, pickLabel =
   onPick?: (id: string, library: RtmLibrary) => void;
   pickLabel?: string;
 }) {
-  const drawFront = useDrawVehicleFront();
+  const drawPreview = useDrawVehiclePreview();
   const entries = rtmConsists(library);
   // Esc はこのダイアログだけを閉じる（後ろの運転や運行計画の画面は閉じない）
   useEffect(() => {
@@ -32,7 +32,7 @@ export function RtmVehiclesDialog({ library, error, onClose, onPick, pickLabel =
         {error && <p role="alert">{error}</p>}
         {!error && !library && <p role="status">読み込み中…</p>}
         {library && (entries.length ? (
-          <FormationList entries={entries} vehicles={library.vehicles} drawFront={drawFront}
+          <FormationList entries={entries} vehicles={library.vehicles} drawPreview={drawPreview}
             actions={entry => onPick && <button onClick={() => onPick(entry.id, library)}>{pickLabel}</button>} />
         ) : <p>選択できる編成がありません。RTM車両管理から車両パックを登録してください。</p>)}
         <a className="button" href="/rtm" target="_blank" rel="noopener">RTM車両管理を開く（別タブ）</a>

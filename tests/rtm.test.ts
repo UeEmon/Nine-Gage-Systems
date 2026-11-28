@@ -6,7 +6,7 @@ import { buildTrain } from "../src/lib/driveScene";
 import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { autoFormationSlots, assignCarRoles, carSizeOf, consistSizeOf, rtmConsists, rtmFormationSize, findFile, isFreightCar, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
+import { autoMiddleFor, findRtmVehicle, groupVehiclesBySource, autoFormationSlots, assignCarRoles, carSizeOf, consistSizeOf, rtmConsists, rtmFormationSize, findFile, isFreightCar, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
 import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
@@ -193,7 +193,7 @@ describe("RealTrainMod の車両パック", () => {
     expect(r.problems).toEqual([]);
     expect(r.vehicles).toHaveLength(1);
     const v = r.vehicles[0];
-    expect(v.id).toBe(vehicleId("テスト103系 クハ"));
+    expect(v.id).toBe(vehicleId("テスト103系 クハ", "test-pack.zip"));
     expect(v.source).toBe("test-pack.zip");
     expect(v.config.body.modelFile).toBe("assets/minecraft/models/test_103.mqo");
     expect(Object.keys(v.files).some((p) => p.endsWith(".ogg"))).toBe(false);
@@ -322,6 +322,31 @@ describe("RealTrainMod の車両パック", () => {
     expect(r.problems).toEqual([]);
     expect(r.vehicles[0].source).toBe("MyPack");
     expect(r.vehicles[0].config.bogies[0]?.modelFile).toBe("MyPack/assets/minecraft/models/test_bogie.obj");
+  });
+
+  it("車両パックと展開フォルダの同名車両を、別々の編成スロットに保存できる", async () => {
+    const zip = samplePack();
+    const loose = (await readZip(zip)).map(e => ({
+      name: e.path.split("/").pop()!, path: `展開済みパック/${e.path}`, data: e.data,
+    }));
+    const { vehicles } = await readVehicleFiles([{ name: "列車パック.zip", data: zip }, ...loose]);
+    const [archive, folder] = vehicles;
+    expect(vehicles).toHaveLength(2);
+    expect(archive.name).toBe(folder.name);
+    expect(archive.id).not.toBe(folder.id);
+    expect(vehicles.every(v => isVehicleType(rtmVehicleType(v.id)))).toBe(true);
+    expect(new Map(groupVehiclesBySource(vehicles))).toEqual(new Map([
+      ["列車パック.zip", [archive]], ["展開済みパック", [folder]],
+    ]));
+    const formation = vehicles.map(v => ({ id: v.id, reversed: false }));
+    expect(formation.map(slot => findRtmVehicle(vehicles, slot.id))).toEqual(vehicles);
+    expect(rtmFormationSize(undefined, vehicles, formation)?.sequence).toEqual(vehicles.map(carSizeOf));
+    const legacyId = vehicleId(archive.name);
+    expect(findRtmVehicle([archive], legacyId)).toBe(archive);
+    expect(findRtmVehicle(vehicles, legacyId)).toBeUndefined();
+    const legacy = { ...archive, id: legacyId };
+    expect(findRtmVehicle([legacy, folder], archive.id)).toBe(legacy);
+    expect(findRtmVehicle([legacy, folder], legacyId)).toBe(legacy);
   });
 
   it("編成の長さは車両ごとの長さで計算する（短い貨車・長い車両）", () => {
@@ -489,14 +514,14 @@ describe("RealTrainMod の車両パック", () => {
     // 貨車は先頭車・中間車に分けず、そのまま列車として選べる
     expect(get("toki15001").role).toBeUndefined();
     expect(get("toki15002").role).toBeUndefined();
-    expect(get("Hr_X_1001").middleId).not.toBe(vehicleId("toki15001"));
+    expect(get("Hr_X_1001").middleId).not.toBe(get("toki15001").id);
     expect(get("Hr_X_1001").role).toBe("cab");
-    expect(get("Hr_X_1001").middleId).toBe(vehicleId("Hr_X_1002"));
-    expect(get("Hr_X_0001").middleId).toBe(vehicleId("Hr_X_0002"));
+    expect(get("Hr_X_1001").middleId).toBe(get("Hr_X_1002").id);
+    expect(get("Hr_X_0001").middleId).toBe(get("Hr_X_0002").id);
     expect(get("Hr_X_0002").role).toBe("middle");
     expect(get("Hr_X_0002").middleId).toBeUndefined();
     expect(get("m_7001").role).toBe("cab");
-    expect(get("m_7101").middleId).toBe(vehicleId("m_7201"));
+    expect(get("m_7101").middleId).toBe(get("m_7201").id);
     expect(get("m_7301").role).toBe("middle");
     expect(get("w_1").role).toBeUndefined();
     expect(get("w_1").middleId).toBeUndefined();
@@ -506,11 +531,14 @@ describe("RealTrainMod の車両パック", () => {
     // 列車として選べるのは先頭車と見分けられない車両だけ。中間車の選択肢に先頭車は出さない
     const names = (l: { name: string }[]) => l.map((v) => v.name).sort();
     expect(names(leadVehicles(vehicles))).toEqual(["Hr_X_0001", "Hr_X_1001", "m_7001", "m_7101", "toki15001", "toki15002", "w_1", "w_2"]);
-    expect(leadVehicles(vehicles, vehicleId("m_7201")).some((v) => v.name === "m_7201")).toBe(true);
+    expect(leadVehicles(vehicles, get("m_7201").id).some((v) => v.name === "m_7201")).toBe(true);
     const mids = middleCandidates(vehicles, get("Hr_X_1001"));
     expect(mids[0].role).toBe("middle");
     expect(mids.some((v) => v.role === "cab")).toBe(false);
-    expect(mids.some((v) => v.name === "w_1")).toBe(true);
+    expect(mids.every(v => v.source === get("Hr_X_1001").source)).toBe(true);
+    expect(autoMiddleFor(vehicles, get("Hr_X_1001"))).toBe(get("Hr_X_1002"));
+    expect(autoMiddleFor(vehicles, { ...get("Hr_X_1001"), middleId: get("m_7201").id })).toBeUndefined();
+    expect(mids.some((v) => v.name === "toki15002")).toBe(true);
   });
 });
 

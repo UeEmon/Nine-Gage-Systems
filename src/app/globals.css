@@ -732,18 +732,31 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .rtm-list li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
 .rtm-list li.rtm-vehicle-row { display: flex; align-items: center; gap: 10px; }
 .rtm-vehicle-details { min-width: 0; flex: 1; display: grid; gap: 6px; }
-.rtm-vehicle-front {
+.rtm-vehicle-front, .rtm-vehicle-side {
   position: relative; flex: 0 0 72px; width: 72px; aspect-ratio: 1; display: grid; place-items: center;
   background: var(--bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
 }
-.rtm-vehicle-front canvas { display: block; width: 100%; height: 100%; }
+.rtm-vehicle-side { flex: 0 1 150px; width: min(150px, 35%); aspect-ratio: 2.5; }
+.rtm-vehicle-front canvas, .rtm-vehicle-side canvas { display: block; width: 100%; height: 100%; }
 .rtm-vehicle-front-pending { opacity: 0; }
 .rtm-vehicle-details .muted, .rtm-formation-summary { overflow-wrap: anywhere; }
 .rtm-formation-summary { margin: 0; }
-.rtm-vehicle-management { margin: 8px 0; }
+.rtm-vehicle-management { margin: 8px 0; min-width: 0; }
+.rtm-bulk-delete { margin-top: 12px; }
+.rtm-bulk-delete summary { cursor: pointer; }
+.rtm-vehicle-choices {
+  list-style: none; margin: 8px 0; padding: 4px 8px; max-height: 16rem; overflow: auto;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.rtm-vehicle-group + .rtm-vehicle-group { border-top: 1px solid var(--border); }
+.rtm-vehicle-group h4 { margin: 8px 0; overflow-wrap: anywhere; }
+.rtm-vehicle-group ul { list-style: none; margin: 0; padding: 0; }
+.rtm-vehicle-group li { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.rtm-vehicle-choice-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.rtm-vehicle-choice-name small { display: block; }
 .rtm-vehicle-management .rtm-actions { margin-top: 8px; }
 .rtm-vehicle-details .rtm-actions label, .rtm-vehicle-management .rtm-actions label { flex-direction: row; }
-.rtm-vehicle-front span { position: absolute; color: var(--muted); font-size: 11px; }
+.rtm-vehicle-front span, .rtm-vehicle-side span { position: absolute; color: var(--muted); font-size: 11px; }
 .rtm-name { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; min-width: 0; }
 .rtm-name b { overflow-wrap: anywhere; }
 .rtm-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }

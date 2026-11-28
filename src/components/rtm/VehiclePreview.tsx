@@ -5,11 +5,12 @@ import * as THREE from "three";
 import type { RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, vehiclePreviewScene } from "@/lib/rtm/three";
 
-const SIZE = 144;
-export type DrawFront = (vehicle: RtmVehicle, reversed: boolean, canvas: HTMLCanvasElement, signal: AbortSignal) => Promise<void>;
+const HEIGHT = 144;
+type PreviewView = "front" | "side";
+export type DrawVehiclePreview = (vehicle: RtmVehicle, reversed: boolean, view: PreviewView, canvas: HTMLCanvasElement, signal: AbortSignal) => Promise<void>;
 
 /** 一覧の全サムネイルを、一つのレンダラーで順番に作る。 */
-export function useDrawVehicleFront(): DrawFront {
+export function useDrawVehiclePreview(): DrawVehiclePreview {
   const renderer = useRef<THREE.WebGLRenderer | null | undefined>(undefined);
   const queue = useRef(Promise.resolve());
 
@@ -18,13 +19,12 @@ export function useDrawVehicleFront(): DrawFront {
     renderer.current = undefined;
   }, []);
 
-  return useCallback((vehicle, reversed, canvas, signal) => {
+  return useCallback((vehicle, reversed, view, canvas, signal) => {
     const draw = async () => {
       signal.throwIfAborted();
       if (renderer.current === undefined) {
         try {
           renderer.current = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-          renderer.current.setSize(SIZE, SIZE, false);
         } catch {
           renderer.current = null;
         }
@@ -41,16 +41,20 @@ export function useDrawVehicleFront(): DrawFront {
         if (bounds.isEmpty()) throw new Error("車両モデルが空です");
         const center = bounds.getCenter(new THREE.Vector3());
         const size = bounds.getSize(new THREE.Vector3());
-        const half = Math.max(size.y, size.z, 1) * 0.58;
-        const camera = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, size.x + 20);
-        camera.position.set(bounds.max.x + 10, center.y, center.z);
+        const side = view === "side";
+        const aspect = canvas.width / canvas.height;
+        const half = Math.max(size.y, (side ? size.x : size.z) / aspect, 1) * 0.58;
+        const camera = new THREE.OrthographicCamera(-half * aspect, half * aspect, half, -half, 0.1, (side ? size.z : size.x) + 20);
+        if (side) camera.position.set(center.x, center.y, bounds.min.z - 10);
+        else camera.position.set(bounds.max.x + 10, center.y, center.z);
         camera.lookAt(center);
-        const scene = vehiclePreviewScene([200, 100, -100]);
+        const scene = vehiclePreviewScene(side ? [-150, 100, -200] : [200, 100, -100]);
         scene.add(model);
         await kit.texturesReady();
         signal.throwIfAborted();
+        gl.setSize(canvas.width, canvas.height, false);
         gl.render(scene, camera);
-        context.clearRect(0, 0, SIZE, SIZE);
+        context.clearRect(0, 0, canvas.width, canvas.height);
         context.drawImage(gl.domElement, 0, 0);
       } finally {
         kit.dispose();
@@ -62,10 +66,11 @@ export function useDrawVehicleFront(): DrawFront {
   }, []);
 }
 
-export function VehicleFrontPreview({ vehicle, reversed = false, drawFront }: {
+export function VehiclePreview({ vehicle, reversed = false, view = "front", drawPreview }: {
   vehicle: RtmVehicle | undefined;
   reversed?: boolean;
-  drawFront: DrawFront;
+  view?: PreviewView;
+  drawPreview: DrawVehiclePreview;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
@@ -77,7 +82,7 @@ export function VehicleFrontPreview({ vehicle, reversed = false, drawFront }: {
     const { signal } = controller;
     setStatus("loading");
     const draw = () => {
-      void drawFront(vehicle, reversed, element, signal).then(
+      void drawPreview(vehicle, reversed, view, element, signal).then(
         () => { if (!signal.aborted) setStatus("ready"); },
         () => { if (!signal.aborted) setStatus("unavailable"); },
       );
@@ -94,17 +99,18 @@ export function VehicleFrontPreview({ vehicle, reversed = false, drawFront }: {
       observer.disconnect();
       controller.abort();
     };
-  }, [vehicle, reversed, drawFront]);
+  }, [vehicle, reversed, view, drawPreview]);
 
+  const side = view === "side";
   return (
-    <div className="rtm-vehicle-front">
+    <div className={side ? "rtm-vehicle-side" : "rtm-vehicle-front"}>
       {vehicle && (
         <canvas
           ref={canvas}
-          width={SIZE}
-          height={SIZE}
+          width={side ? 360 : HEIGHT}
+          height={HEIGHT}
           role="img"
-          aria-label={`${vehicle.name}の前面`}
+          aria-label={`${vehicle.name}の${side ? "側面" : "前面"}`}
           aria-hidden={status !== "ready"}
           className={status === "ready" ? undefined : "rtm-vehicle-front-pending"}
         />
