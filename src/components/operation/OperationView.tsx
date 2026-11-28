@@ -431,7 +431,9 @@ function TrainEditor({
     onChange({ stops: s });
   };
   const rtmLibrary = useRtmLibrary();
-  const rtmOptions = rtmConsists(rtmAllowed ? rtmLibrary : null, rtmVehicleId(train.vehicleType));
+  const rtmId = rtmVehicleId(train.vehicleType);
+  const rtmOptions = rtmConsists(rtmAllowed ? rtmLibrary : null, rtmId);
+  const removedAuto = rtmAllowed ? rtmLibrary?.vehicles.find(v => v.id === rtmId && v.autoFormationDeleted) : undefined;
   const [rtmOpen, setRtmOpen] = useState(false);
   const setVehicle = (vehicleType: VehicleType | undefined, library = rtmLibrary) => {
     const id = rtmVehicleId(vehicleType);
@@ -492,10 +494,12 @@ function TrainEditor({
           <select value={train.vehicleType ?? ""} onChange={(e) => setVehicle((e.target.value || undefined) as VehicleType | undefined)}>
             <option value="">自動（列車種別に合わせる）</option>
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-            {(rtmOptions.length > 0 || rtmVehicleId(train.vehicleType)) && (
+            {(rtmOptions.length > 0 || rtmId) && (
               <optgroup label="RealTrainMod の編成">
                 {rtmOptions.map(entry => <option key={entry.id} value={rtmVehicleType(entry.id)}>{entry.name}</option>)}
-                {rtmVehicleId(train.vehicleType) && !rtmOptions.some(entry => rtmVehicleType(entry.id) === train.vehicleType) && (
+                {removedAuto ? (
+                  <option value={train.vehicleType} disabled>{removedAuto.name}（この運行計画で使用中）</option>
+                ) : rtmId && !rtmOptions.some(entry => entry.id === rtmId) && (
                   <option value={train.vehicleType}>
                     {rtmAllowed ? "この端末に読み込まれていない車両（列車種別に合わせて表示）" : "RealTrainMod の車両（プレミアムユーザー以上で表示。いまは列車種別に合わせて表示）"}
                   </option>

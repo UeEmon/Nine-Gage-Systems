@@ -57,6 +57,8 @@ export type RtmVehicle = {
   /** 中間車に使う車両の ID（なければこの車両を中間車にも使う） */
   middleId?: string;
   formation?: RtmSlot[];
+  /** パックから作った編成を一覧から削除済み。車両は引き続き編成に使える。 */
+  autoFormationDeleted?: boolean;
   /** 先頭車か中間車か（読み込んだときにパックの中で見分けられたら付ける） */
   role?: RtmCarRole;
   addedAt: number;
@@ -540,7 +542,7 @@ export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
  * 中間車は先頭車の「中間車」で選ぶ
  */
 export function leadVehicles(vehicles: RtmVehicle[], selectedId?: string | null): RtmVehicle[] {
-  return vehicles.filter((v) => v.role !== "middle" || isFreightCar(v) || v.id === selectedId);
+  return vehicles.filter(v => !v.autoFormationDeleted && (v.role !== "middle" || isFreightCar(v) || v.id === selectedId));
 }
 
 export function rtmConsists(library: RtmLibrary | null, selectedId?: string | null): (RtmVehicle | RtmFormation)[] {

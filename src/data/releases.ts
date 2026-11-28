@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-rtm-delete-auto-formation",
+    date: "2026-11-28T14:18:00+09:00",
+    title: "RTMの自動編成を削除できます",
+    body: "車両パックから作られた自動編成を、編成一覧の「編成を削除」から削除できます。読み込んだ車両は引き続き手動編成に使えます。",
+  },
+  {
     id: "2026-11-28-rtm-edit-leading-car",
     date: "2026-11-28T13:40:00+09:00",
     title: "RTMの手動編成を作成し、先頭車を変更できます",

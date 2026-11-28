@@ -32,6 +32,11 @@ const TRAIN_TYPES: Record<string, string> = {
   EC: "電車", DC: "気動車", EL: "電気機関車", DL: "ディーゼル機関車", SL: "蒸気機関車", CC: "コンテナ車", TC: "タンク車",
 };
 const NEW_FORMATION = "new";
+const REMOVALS = {
+  vehicle: { label: "登録車両", write: deleteRtmVehicle },
+  manual: { label: "手動編成", write: deleteRtmFormation },
+  auto: { label: "パックの編成", write: (id: string) => updateRtmVehicle(id, { autoFormationDeleted: true }) },
+};
 
 /** RealTrainMod の車両パックを読み込む・管理するダイアログ */
 export function RtmVehiclesDialog({
@@ -50,8 +55,9 @@ export function RtmVehiclesDialog({
   const [editId, setEditId] = useState<string | null>(null);
   const byId = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]));
   const formations = rtmConsists(library);
-  const editLead = editId ? byId.get(editId) : undefined;
-  const editManual = library?.formations.find(formation => formation.id === editId);
+  const editing = formations.find(entry => entry.id === editId);
+  const editLead = editing && "config" in editing ? editing : undefined;
+  const editManual = editing && !("config" in editing) ? editing : undefined;
   const starter = editLead ?? formations.find(entry => "config" in entry) ?? vehicles[0];
   const defaultMiddle = editLead && (byId.get(editLead.middleId ?? "")?.id ?? editLead.id);
   const editSlots = editManual?.formation ?? (editLead?.formation?.length ? editLead.formation : undefined)
@@ -77,17 +83,18 @@ export function RtmVehiclesDialog({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
-  const remove = async (id: string, name: string, manual: boolean) => {
-    const target = manual ? "手動編成" : "登録車両";
-    if (!window.confirm(`${target}「${name}」を削除しますか？`)) return;
+  const remove = async (id: string, name: string, kind: keyof typeof REMOVALS) => {
+    const { label, write } = REMOVALS[kind];
+    const detail = kind === "auto" ? "\n登録済み車両は引き続き手動編成に使えます。" : "";
+    if (!window.confirm(`${label}「${name}」を削除しますか？${detail}`)) return;
     setDeleting(true);
     setDeleteError("");
     try {
-      await (manual ? deleteRtmFormation(id) : deleteRtmVehicle(id));
+      await write(id);
       setEditId(current => current === id ? null : current);
-      setManageId(current => current === id ? "" : current);
+      if (kind === "vehicle") setManageId(current => current === id ? "" : current);
     } catch {
-      setDeleteError(`${target}を削除できませんでした。`);
+      setDeleteError(`${label}を削除できませんでした。`);
     } finally {
       setDeleting(false);
     }
@@ -105,8 +112,8 @@ export function RtmVehiclesDialog({
       );
       const r = await readVehicleFiles(files);
       if (r.vehicles.length > 0) {
-        await saveRtmVehicles(r.vehicles);
-        setEditId(leadVehicles(r.vehicles)[0]?.id ?? null);
+        const saved = await saveRtmVehicles(r.vehicles);
+        setEditId(leadVehicles(saved)[0]?.id ?? null);
       }
       setMessage({ added: r.vehicles.length, problems: r.problems });
     } catch (e) {
@@ -185,7 +192,7 @@ export function RtmVehiclesDialog({
                   {vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}
                 </select>
               </label>
-              <button className="danger" disabled={!managed} onClick={() => managed && void remove(managed.id, managed.name, false)}>登録車両を削除</button>
+              <button className="danger" disabled={!managed} onClick={() => managed && void remove(managed.id, managed.name, "vehicle")}>登録車両を削除</button>
               {managed && <label>
                 <input type="checkbox" checked={!!managed.flip} onChange={e => void updateRtmVehicle(managed.id, { flip: e.target.checked })} />
                 前後を入れ替える
@@ -249,7 +256,7 @@ export function RtmVehiclesDialog({
                           ))}
                         </select>
                       </label>}
-                      {!lead && <button className="danger" disabled={deleting} onClick={() => void remove(entry.id, entry.name, true)}>編成を削除</button>}
+                      <button className="danger" disabled={deleting} onClick={() => void remove(entry.id, entry.name, lead ? "auto" : "manual")}>編成を削除</button>
                       {onPick && <button disabled={editId === entry.id} onClick={() => onPick(entry.id, library)}>{pickLabel}</button>}
                     </div>
                   </div>
