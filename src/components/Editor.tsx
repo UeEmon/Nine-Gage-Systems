@@ -144,6 +144,16 @@ const patternLayout = (p: Extract<ProposedPattern, { ok: true }>) => ({
   ...(p.board ? { board: p.board } : {}),
 });
 
+function expandedLayout(p: Extract<ProposedPattern, { ok: true }>, base: Layout): Layout {
+  return {
+    ...base,
+    title: p.plan.title,
+    description: p.plan.description,
+    pieces: p.pieces,
+    accessories: p.accessories ?? base.accessories,
+  };
+}
+
 /**
  * 応答をJSONとして読む。サーバーの時間切れなどでJSONでない応答（空・HTML）が返ったときに、
  * ブラウザの分かりにくいエラー（Safari の「The string did not match the expected pattern.」など）ではなく、
@@ -215,7 +225,7 @@ const FAITHFUL_CONFIRM = [
 type AiState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "done"; provider: string; mode: AiMode; budgetJpy: number | null; patterns: ProposedPattern[]; shown: number }
+  | { status: "done"; provider: string; mode: AiMode; budgetJpy: number | null; patterns: ProposedPattern[]; shown: number; base?: Layout }
   | { status: "error"; message: string };
 
 const isInventory = (v: unknown): v is Inventory =>
@@ -241,6 +251,13 @@ export function Editor({ user }: { user: SessionUser | null }) {
   /** 「AIで作ったレイアウト」の一覧を読み直すための番号 */
   const [aiHistoryVersion, setAiHistoryVersion] = useState(0);
   const [aiMode, setAiMode] = useState<AiMode>("free");
+  const [expansion, setExpansion] = useState<{ pattern: SavedPattern; board: Board; request: string } | null>(null);
+  const aiRequestInput = useRef<HTMLTextAreaElement>(null);
+  const expandingPattern = aiMode === "expand" ? expansion : null;
+  const invalidExpansionBoard = !!expandingPattern && (["width", "height"] as const).some(axis => {
+    const size = expandingPattern.board[axis];
+    return !(size >= Math.max(200, expandingPattern.pattern.layout.board[axis]) && size <= 10000);
+  });
   const [patternCount, setPatternCount] = useState(1);
   /** 追加購入の予算上限（円）。空なら制限なし */
   const [budget, setBudget] = useState("");
@@ -722,16 +739,27 @@ export function Editor({ user }: { user: SessionUser | null }) {
   };
 
   // ---- AI ----
+  const prepareExpansion = (pattern: SavedPattern) => {
+    setExpansion({ pattern, board: { ...pattern.layout.board }, request: "" });
+    setAiMode("expand");
+    setAi({ status: "idle" });
+    aiRequestInput.current?.focus();
+  };
+
   const showPattern = (p: ProposedPattern, index: number) => {
     if (!p.ok) return;
-    setLayout((l) => ({ ...l, ...patternLayout(p) }));
+    if (ai.status === "done" && ai.base) setLayout(expandedLayout(p, ai.base));
+    else setLayout((l) => ({ ...l, ...patternLayout(p) }));
     setSelection(null);
     setCurrentId(null);
     setAi((a) => (a.status === "done" ? { ...a, shown: index } : a));
   };
 
   const runAi = async (fresh = false) => {
-    if (needsStock(aiMode) && !hasStock) {
+    if (invalidExpansionBoard || ai.status === "loading") return;
+    const base = expandingPattern ? { ...expandingPattern.pattern.layout, board: expandingPattern.board } : undefined;
+    const proposalMaker = base ? base.maker ?? "kato" : maker;
+    if (needsStock(aiMode) && !hasStock && !base) {
       setAi({ status: "error", message: "先に左の「所有パーツ」に品番と箱数を登録してください。" });
       return;
     }
@@ -747,13 +775,14 @@ export function Editor({ user }: { user: SessionUser | null }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          board: layout.board,
-          request: aiMode === "replica" ? replicaExtra : request,
-          maker,
+          board: base?.board ?? layout.board,
+          request: expandingPattern?.request ?? (aiMode === "replica" ? replicaExtra : request),
+          maker: proposalMaker,
           mode: aiMode,
           inventory,
           patterns: patternCount,
           budgetJpy,
+          ...(base ? { base: { pieces: base.pieces, accessories: base.accessories } } : {}),
           ...(aiMode === "replica" ? { replica: { kind: replicaKind, name: replicaName.trim(), level: replicaLevel } } : {}),
           fresh,
           background: true,
@@ -762,8 +791,8 @@ export function Editor({ user }: { user: SessionUser | null }) {
       const data = await waitProposeJob(res);
       const patterns = data.patterns as ProposedPattern[];
       const first = patterns.findIndex((p) => p.ok);
-      setAi({ status: "done", provider: data.provider, mode: data.mode, budgetJpy: data.budgetJpy ?? null, patterns, shown: first });
-      if (first >= 0) {
+      setAi({ status: "done", provider: data.provider, mode: data.mode, budgetJpy: data.budgetJpy ?? null, patterns, shown: base ? -1 : first, base });
+      if (!base && first >= 0) {
         const p = patterns[first];
         if (p.ok) {
           setLayout((l) => ({ ...l, ...patternLayout(p) }));
@@ -801,7 +830,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       id,
       name: p.plan.title,
       savedAt: new Date().toISOString(),
-      layout: { maker, board: layout.board, ...patternLayout(p) },
+      layout: ai.status === "done" && ai.base ? expandedLayout(p, ai.base) : { maker, board: layout.board, ...patternLayout(p) },
     };
     setLibrary((ps) => [saved, ...ps]);
     track("save", "ai");
@@ -1209,6 +1238,8 @@ export function Editor({ user }: { user: SessionUser | null }) {
           setPatterns={setLibrary}
           currentId={currentId}
           setCurrentId={setCurrentId}
+          onExpand={user ? prepareExpansion : undefined}
+          expanding={ai.status === "loading"}
           onOpen={(l) => {
             setLayout({ ...l, maker: l.maker ?? "kato" });
             setSelection(null);
@@ -1460,14 +1491,34 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <div className="row">
             <div className="seg">
               {AI_MODES.map((m) => (
-                <button key={m.mode} className={aiMode === m.mode ? "on" : ""} onClick={() => setAiMode(m.mode)} title={m.help}>
+                <button key={m.mode} disabled={ai.status === "loading"} className={aiMode === m.mode ? "on" : ""} onClick={() => setAiMode(m.mode)} title={m.help}>
                   {m.label}
                 </button>
               ))}
             </div>
           </div>
-          <p className="hint">{AI_MODES.find((m) => m.mode === aiMode)!.help}</p>
-          {needsStock(aiMode) && !hasStock && <p className="warn-text">所有パーツが未登録です（左の「所有パーツ」から登録）</p>}
+          {expandingPattern ? (
+            <fieldset disabled={ai.status === "loading"}>
+              <legend>拡張元　{expandingPattern.pattern.name}</legend>
+              <div className="row wrap">
+                {(["width", "height"] as const).map(axis => (
+                  <label key={axis}>
+                    {axis === "width" ? "幅" : "奥行"}（mm）
+                    <input type="number" min={Math.max(200, expandingPattern.pattern.layout.board[axis])} max={10000}
+                      value={expandingPattern.board[axis] || ""}
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
+                        setExpansion({ ...expandingPattern, board: { ...expandingPattern.board, [axis]: value } });
+                      }}
+                    />
+                  </label>
+                ))}
+                <button type="button" onClick={() => { setExpansion(null); setAi({ status: "idle" }); }}>拡張元を解除</button>
+              </div>
+              {invalidExpansionBoard && <p className="warn-text">ボードは登録パターンと同じ大きさ以上、各辺200〜10000mmで指定してください。</p>}
+            </fieldset>
+          ) : <p className="hint">{AI_MODES.find((m) => m.mode === aiMode)!.help}</p>}
+          {needsStock(aiMode) && !hasStock && !expandingPattern && <p className="warn-text">所有パーツが未登録です（左の「所有パーツ」から登録）</p>}
           {aiMode === "replica" && (
             <>
               <div className="replica-input">
@@ -1507,10 +1558,16 @@ export function Editor({ user }: { user: SessionUser | null }) {
             </>
           )}
           <textarea
-            value={aiMode === "replica" ? replicaExtra : request}
-            onChange={(e) => (aiMode === "replica" ? setReplicaExtra(e.target.value) : setRequest(e.target.value))}
+            ref={aiRequestInput}
+            value={expandingPattern?.request ?? (aiMode === "replica" ? replicaExtra : request)}
+            onChange={(e) => {
+              if (expandingPattern) setExpansion({ ...expandingPattern, request: e.target.value });
+              else if (aiMode === "replica") setReplicaExtra(e.target.value);
+              else setRequest(e.target.value);
+            }}
             rows={aiMode === "replica" ? 2 : 4}
-            placeholder={aiMode === "replica" ? "追加の要望（任意）。例: エンドレスにして周回できるように" : "例: 複線のエンドレスと、車両基地への引き込み線を2本"}
+            maxLength={2000}
+            placeholder={expandingPattern ? "追加したい内容。例　空いている端から引き込み線を延ばす" : aiMode === "replica" ? "追加の要望（任意）。例: エンドレスにして周回できるように" : "例: 複線のエンドレスと、車両基地への引き込み線を2本"}
           />
           <div className="row">
             <label className="small">
@@ -1544,17 +1601,19 @@ export function Editor({ user }: { user: SessionUser | null }) {
           {budgetJpy !== undefined && (
             <p className="hint">
               追加で買う部品の合計（メーカー希望小売価格・税込）が{yen(budgetJpy)}以内の案だけを出します
-              {hasStock ? "。所有パーツの分は費用に数えません" : ""}。
+              {expandingPattern ? "。拡張元と手持ちの部品を差し引きます" : hasStock ? "。所有パーツの分は費用に数えません" : ""}。
             </p>
           )}
-          <button className="primary" onClick={() => runAi()} disabled={ai.status === "loading"}>
+          <button className="primary" onClick={() => runAi()} disabled={ai.status === "loading" || invalidExpansionBoard}>
             {ai.status === "loading"
               ? aiMode === "replica" && replicaLevel === "faithful"
                 ? "設計中…（忠実は数分〜30分ほどかかることがあります）"
                 : "設計中…（1〜3分かかります）"
-              : "提案してもらう"}
+              : expandingPattern ? "拡張案を作る" : "提案してもらう"}
           </button>
-          <p className="hint">今のボードの大きさで設計し、1つ目の案がキャンバスに表示されます（編集中の線路は置き換わります）。</p>
+          <p className="hint">{expandingPattern
+            ? "登録済みの配置に線路やパーツを追加します。案を表示して編集するか、新しいパターンとして登録できます。"
+            : "今のボードの大きさで設計し、1つ目の案がキャンバスに表示されます（編集中の線路は置き換わります）。"}</p>
           {ai.status === "error" && <p className="error">{ai.message}</p>}
           {ai.status === "done" && ai.patterns.some((p) => p.ok && p.cached) && (
             <p className="hint">

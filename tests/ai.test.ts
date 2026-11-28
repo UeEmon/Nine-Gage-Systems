@@ -97,6 +97,40 @@ describe("proposeLayout (provider independent loop)", () => {
     expect(res.remainingProblems).toBeNull();
   });
 
+  it("extends the saved pattern from an open endpoint and preserves its parts and IDs", async () => {
+    const base = {
+      pieces: [
+        { uid: "s0p0", partId: "kato:S124", x: 300, y: 300, rot: 0, mirror: false },
+        { uid: "s0p1", partId: "kato:S124", x: 424, y: 300, rot: 0, mirror: false },
+      ],
+      accessories: [{ uid: "acc0", itemId: "kato:SIDE-A", x: 362, y: 322, rot: 0, host: "s0p0" }],
+    };
+    const plan = {
+      title: "引き込み線を延長",
+      description: "",
+      start: { x: 0, y: 0, heading: 0 },
+      segments: [{
+        from: { segment: -1, piece: 1, joint: 1 },
+        pieces: [{ part: "BUMPER", dir: "L", enter: 0, exit: 0, height: 0 }],
+      }],
+      accessories: [{ item: "SIDE-A", segment: -1, piece: 1, side: "R" }],
+    };
+    const occupied = {
+      ...plan,
+      segments: [{ ...plan.segments[0], from: { segment: -1, piece: 0, joint: 1 } }],
+      accessories: [],
+    };
+    const { session, prompts } = fakeSession([occupied, plan]);
+    const result = await proposeLayout({ board, request: "引き込み線を延長", base }, session, "m");
+    expect(prompts[0]).toContain("from.segment=-1");
+    expect(prompts[1]).toContain("ジョイント1は空いていません");
+    expect(result.remainingProblems).toBeNull();
+    expect(result.pieces.slice(0, 2)).toEqual(base.pieces);
+    expect(result.pieces[2]).toMatchObject({ uid: "added-s0p0", x: 548, y: 300, partId: "kato:BUMPER" });
+    expect(result.accessories[0]).toEqual(base.accessories[0]);
+    expect(result.accessories[1]).toMatchObject({ uid: "added-acc0", host: "s0p1" });
+  });
+
   it("fails clearly when no attempt yields a plan", async () => {
     const { session } = fakeSession([null, null, null, null]);
     await expect(proposeLayout({ board, request: "" }, session, "tiny-model")).rejects.toThrow(/tiny-model/);

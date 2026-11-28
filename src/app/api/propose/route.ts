@@ -12,6 +12,7 @@ import { settingsForUserNow, type KeySource } from "@/lib/server/ownAi";
 import { MAKERS } from "@/lib/parts";
 import { REPLICA_LEVELS, type ReplicaLevel } from "@/lib/replica";
 import { shortfall, stockFromInventory } from "@/lib/productDb";
+import { TrackLayoutSchema } from "@/lib/plan";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -36,6 +37,11 @@ const BodySchema = z.object({
   maker: z.enum(MAKERS).default("kato"),
   /** free=自由に設計, owned=所有パーツだけで組む, expand=所有パーツを広げる拡張案, replica=実在の路線・駅を再現 */
   mode: z.enum(["free", "owned", "expand", "replica"]).default("free"),
+  base: TrackLayoutSchema.refine(
+    ({ pieces, accessories }) =>
+      new Set(pieces.map(p => p.uid)).size === pieces.length &&
+      new Set(accessories.map(a => a.uid)).size === accessories.length,
+  ).optional(),
   /** replica のときに再現する実在の路線名・駅名 */
   replica: z
     .object({
@@ -123,9 +129,12 @@ export async function POST(req: Request) {
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(
-      { error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで、路線名・駅名は60文字まで）" },
+      { error: "入力が正しくありません（ボードは200〜10000mm、要望は2000文字まで、路線名・駅名は60文字まで。拡張元の線路とパーツも確認してください）" },
       { status: 400 },
     );
+  }
+  if (parsed.data.base && parsed.data.mode !== "expand") {
+    return Response.json({ error: "登録パターンを土台にするには「拡張案」を選んでください。" }, { status: 400 });
   }
   if (parsed.data.background) {
     const body = parsed.data;
@@ -139,14 +148,20 @@ type Guarded = Extract<Awaited<ReturnType<typeof requireUser>>, { ok: true }>;
 
 async function propose(g: Guarded, body: z.infer<typeof BodySchema>, deadline: number): Promise<Response> {
   const parsed = { data: body };
-  const { board, request, maker, mode, inventory, patterns, fresh } = parsed.data;
+  const { board, request, maker, mode, inventory, patterns, fresh, base } = parsed.data;
   const replica = mode === "replica" ? parsed.data.replica : undefined;
   if (mode === "replica" && !replica) {
     return Response.json({ error: "再現する路線名か駅名を入力してください。" }, { status: 400 });
   }
   // 手持ちだけの案は買い足しがないので予算は使わない
   const budgetJpy = mode === "owned" ? undefined : parsed.data.budgetJpy;
-  const counts = stockFromInventory(inventory, maker);
+  const counts = stockFromInventory(inventory, base ? undefined : maker);
+  if (base) {
+    // 登録パターンに置かれている部品は購入済みとして扱う。在庫との重複を数えない。
+    for (const [key, used] of usageOf(base.pieces, base.accessories)) {
+      counts.set(key, Math.max(used, counts.get(key) ?? 0));
+    }
+  }
   if (mode === "owned" && counts.size === 0) {
     return Response.json({ error: "所有パーツが登録されていません。先に所有パーツを登録してください。" }, { status: 400 });
   }
@@ -185,6 +200,7 @@ async function propose(g: Guarded, body: z.infer<typeof BodySchema>, deadline: n
       budgetJpy,
       replica,
       hint,
+      base,
     });
   const lookup = (key: string) => {
     try {
@@ -239,6 +255,7 @@ async function propose(g: Guarded, body: z.infer<typeof BodySchema>, deadline: n
         stock,
         budgetJpy,
         replica,
+        base,
         // 再現度「忠実」はボードの大きさを制限しない（できた形に合わせてボードを広げる）
         unboundedBoard: replica?.level === "faithful",
         deadline,
