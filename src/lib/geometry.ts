@@ -1,5 +1,5 @@
 import { PIER_SYSTEMS } from "../data/piers";
-import { computeElevation, placePiers, samplesWithZ, STEP_TOLERANCE_MM, type Elevation, type Pier } from "./elevation";
+import { computeElevation, isRamp, placePiers, samplesWithZ, STEP_TOLERANCE_MM, type Elevation, type Pier } from "./elevation";
 import { getPart, localJoints, normDeg, type Joint, type Maker, type PartDef } from "./parts";
 import { routeSamples, routeSvg } from "./shapes";
 import type { Accessory } from "./accessories";
@@ -165,6 +165,10 @@ function angleDiff(a: number, b: number) {
 /** ジョイントのつながりと、近いがつながっていない組を調べる */
 export function findConnections(pieces: Piece[]) {
   const joints = pieces.flatMap(worldJoints);
+  const fixedHeights = new Map(pieces.filter(p => !isRamp(p)).map(p => [p.uid, p.z ?? 0]));
+  const levelMatches: Connection[] = [];
+  const ramps: Connection[] = [];
+  const steps: Connection[] = [];
   const used = new Set<string>();
   const key = (j: WorldJoint) => `${j.pieceUid}:${j.index}`;
   const connections: Connection[] = [];
@@ -178,13 +182,26 @@ export function findConnections(pieces: Piece[]) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (d > 60) continue;
       const ad = 180 - angleDiff(a.deg, b.deg); // 0 なら正対
-      if (d <= JOIN_TOLERANCE_MM && ad <= JOIN_TOLERANCE_DEG && !used.has(key(a)) && !used.has(key(b))) {
-        connections.push({ a, b });
-        used.add(key(a));
-        used.add(key(b));
+      if (d <= JOIN_TOLERANCE_MM && ad <= JOIN_TOLERANCE_DEG) {
+        const za = fixedHeights.get(a.pieceUid);
+        const zb = fixedHeights.get(b.pieceUid);
+        if (za === undefined || zb === undefined) ramps.push({ a, b });
+        else if (Math.abs(za - zb) <= STEP_TOLERANCE_MM) levelMatches.push({ a, b });
+        else steps.push({ a, b });
       } else if (d <= 60 && ad <= 45) {
         nearMisses.push({ a, b, distance: d, angleDiff: ad });
       }
+    }
+  }
+
+  // 平面上で端が重なっている場合は、高さが合う組を先につなぐ。
+  for (const candidates of [levelMatches, ramps, steps]) {
+    for (const c of candidates) {
+      const a = key(c.a), b = key(c.b);
+      if (used.has(a) || used.has(b)) continue;
+      connections.push(c);
+      used.add(a);
+      used.add(b);
     }
   }
 

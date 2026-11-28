@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { hasAccessory } from "@/lib/accessories";
 import { createSession, toLlmError, type ResolvedAiSettings } from "@/lib/llm";
 import { emptyUsage } from "@/lib/llm/types";
 import { OperationProposeError, operationSessionOptions, proposeOperation } from "@/lib/operation/ai";
-import { hasPart, MAKERS } from "@/lib/parts";
+import { MAKERS } from "@/lib/parts";
+import { TrackLayoutSchema } from "@/lib/plan";
 import { logUsage, priced, usageLog, type NewUsage } from "@/lib/server/aiUsage";
 import { requireUser } from "@/lib/server/auth";
 import { settingsForUserNow, type KeySource } from "@/lib/server/ownAi";
@@ -11,40 +11,8 @@ import { settingsForUserNow, type KeySource } from "@/lib/server/ownAi";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const num = z.number().finite();
-const BodySchema = z.object({
+const BodySchema = TrackLayoutSchema.extend({
   maker: z.enum(MAKERS).default("kato"),
-  pieces: z
-    .array(
-      z.object({
-        uid: z.string().max(64),
-        partId: z.string().max(64).refine(hasPart),
-        mirror: z.boolean(),
-        x: num,
-        y: num,
-        rot: num,
-        z: num.optional(),
-        ramp: z.boolean().optional(),
-        line: z.string().max(40).optional(),
-      }),
-    )
-    .min(1)
-    .max(3000),
-  accessories: z
-    .array(
-      z.object({
-        uid: z.string().max(64),
-        itemId: z.string().max(64).refine(hasAccessory),
-        x: num,
-        y: num,
-        rot: num,
-        z: num.optional(),
-        host: z.string().max(64).optional(),
-        side: z.enum(["L", "R"]).optional(),
-      }),
-    )
-    .max(1000)
-    .default([]),
   stationNames: z.record(z.string().max(64), z.string().max(40)).default({}),
   /** 「再現してみた」で再現した路線・駅（列車の路線名に使う） */
   replica: z

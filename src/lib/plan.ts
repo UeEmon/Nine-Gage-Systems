@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analyze, findConnections, placeAt, worldJoints, type Analysis, type Board, type Piece } from "./geometry";
+import { analyze, findConnections, placeAt, worldJoints, type Analysis, type Board, type Layout, type Piece } from "./geometry";
 import { getPart, hasPart, partIdsFor, partKey, type Maker } from "./parts";
 import { accessoryIdsFor, getAccessory, hasAccessory, placeOnPiece, type Accessory } from "./accessories";
 import { computeElevation } from "./elevation";
@@ -118,11 +118,48 @@ export type BuildResult = {
   errors: string[];
 };
 
-export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildResult {
-  const pieces: Piece[] = [];
+export type ExpansionBase = Pick<Layout, "pieces" | "accessories">;
+
+const finite = z.number().finite();
+export const TrackLayoutSchema = z.object({
+  pieces: z.array(z.object({
+    uid: z.string().max(64),
+    partId: z.string().max(64).refine(hasPart),
+    mirror: z.boolean(),
+    x: finite,
+    y: finite,
+    rot: finite,
+    z: finite.optional(),
+    ramp: z.boolean().optional(),
+    line: z.string().max(40).optional(),
+  })).min(1).max(3000),
+  accessories: z.array(z.object({
+    uid: z.string().max(64),
+    itemId: z.string().max(64).refine(hasAccessory),
+    x: finite,
+    y: finite,
+    rot: finite,
+    z: finite.optional(),
+    host: z.string().max(64).optional(),
+    side: z.enum(["L", "R"]).optional(),
+  })).max(1000).default([]),
+});
+
+function unusedUid(uid: string, used: Set<string>): string {
+  while (used.has(uid)) uid = `added-${uid}`;
+  used.add(uid);
+  return uid;
+}
+
+export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato", base?: ExpansionBase): BuildResult {
+  const pieces = [...(base?.pieces ?? [])];
+  const baseEnds = base && new Set(findConnections(base.pieces).openJoints.map(j => `${j.pieceUid}:${j.index}`));
   const index: string[][] = [];
   const errors: string[] = [];
-  const byUid = new Map<string, Piece>();
+  const byUid = new Map(pieces.map(p => [p.uid, p]));
+  const pieceUids = new Set(byUid.keys());
+  const uidAt = (segment: number, piece: number) =>
+    segment === -1 ? base?.pieces[piece]?.uid : index[segment]?.[piece];
   // 「再現してみた」の路線名。区間の line が空なら、分岐元の区間の路線を受け継ぐ
   const knownLines = plan.replica?.lines ?? [];
   const segLines: (string | undefined)[] = [];
@@ -144,7 +181,7 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
       }
       cursor = { x: st.x, y: st.y, deg: st.heading };
     } else {
-      const src = index[seg.from.segment]?.[seg.from.piece];
+      const src = uidAt(seg.from.segment, seg.from.piece);
       const srcPiece = src ? byUid.get(src) : undefined;
       if (!srcPiece) {
         errors.push(`区間${si}: 分岐元 区間${seg.from.segment}の部品${seg.from.piece} が存在しません（自分より前の区間を指定してください）`);
@@ -153,6 +190,10 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
       const j = worldJoints(srcPiece)[seg.from.joint];
       if (!j) {
         errors.push(`区間${si}: 分岐元部品(${srcPiece.partId})にジョイント${seg.from.joint}はありません`);
+        return;
+      }
+      if (seg.from.segment === -1 && !baseEnds?.delete(`${src}:${j.index}`)) {
+        errors.push(`区間${si}: 登録パターンの部品${seg.from.piece}のジョイント${j.index}は空いていません`);
         return;
       }
       cursor = j;
@@ -173,7 +214,7 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
         cursor = null;
         return;
       }
-      const placed = placeAt(key, pp.dir === "R", pp.enter, cursor, `s${si}p${pi}`);
+      const placed = placeAt(key, pp.dir === "R", pp.enter, cursor, unusedUid(`s${si}p${pi}`, pieceUids));
       const h = pp.height === undefined ? 0 : pp.height;
       const base: Piece = line ? { ...placed, line } : placed;
       const piece: Piece = h === null ? { ...base, ramp: true } : h ? { ...base, z: h } : base;
@@ -195,7 +236,8 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
   });
 
   // 線路以外のパーツは、指定した部品の中央に置く
-  const accessories: Accessory[] = [];
+  const accessories = [...(base?.accessories ?? [])];
+  const accessoryUids = new Set(accessories.map(a => a.uid));
   const planAcc = plan.accessories ?? [];
   const planSims = plan.replica?.objects ?? [];
   const elevation =
@@ -207,7 +249,7 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
         errors.push(`パーツ${i}: 未知のパーツ ${pa.item}`);
         return;
       }
-      const uid = index[pa.segment]?.[pa.piece];
+      const uid = uidAt(pa.segment, pa.piece);
       const host = uid ? byUid.get(uid) : undefined;
       if (!host) {
         errors.push(`パーツ${i}(${pa.item}): 区間${pa.segment}の部品${pa.piece} がありません`);
@@ -222,7 +264,7 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
       if (def.replaces && part.id !== def.replaces) {
         errors.push(`パーツ${i}(${pa.item}): ${def.label}は${def.replaces}の代わりに置く部品なので、${def.replaces}の上に置く`);
       }
-      accessories.push(placeOnPiece(def, host, elevation, pa.side, `acc${i}`));
+      accessories.push(placeOnPiece(def, host, elevation, pa.side, unusedUid(`acc${i}`, accessoryUids)));
     });
   }
 
@@ -242,7 +284,7 @@ export function buildFromPlan(plan: LayoutPlan, maker: Maker = "kato"): BuildRes
 }
 
 /** AIに返すフィードバック文（問題がなければ null） */
-export function describeProblems(build: BuildResult, analysis: Analysis, board: Board): string | null {
+export function describeProblems(build: Pick<BuildResult, "index" | "errors">, analysis: Analysis, board: Board): string | null {
   const loc = (uid: string) => {
     for (let s = 0; s < build.index.length; s++) {
       const p = build.index[s].indexOf(uid);
@@ -294,8 +336,8 @@ export function describeProblems(build: BuildResult, analysis: Analysis, board: 
   return lines.length ? lines.join("\n") : null;
 }
 
-export function evaluatePlan(plan: LayoutPlan, board: Board, maker: Maker = "kato") {
-  const build = buildFromPlan(plan, maker);
+export function evaluatePlan(plan: LayoutPlan, board: Board, maker: Maker = "kato", base?: ExpansionBase) {
+  const build = buildFromPlan(plan, maker, base);
   const analysis = analyze({ board, pieces: build.pieces });
   return { build, analysis, problems: describeProblems(build, analysis, board) };
 }

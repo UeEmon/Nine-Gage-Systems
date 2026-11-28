@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { worldSamples, type Board, type Piece } from "./geometry";
+import { analyze, worldSamples, type Board, type Piece } from "./geometry";
 import { sanitizeSchema } from "./llm/json";
 import { addUsage, emptyUsage, type ChatSession, type SessionOptions, type TokenUsage } from "./llm/types";
 import { MAKER_INFO, partsFor, type Maker } from "./parts";
-import { evaluatePlan, planSchemaFor, type BuildResult, type LayoutPlan } from "./plan";
+import { describeProblems, evaluatePlan, planSchemaFor, type BuildResult, type ExpansionBase, type LayoutPlan } from "./plan";
 import { usageOf } from "./bom";
 import { getPart } from "./parts";
 import { shortfall, stockKeyName, stockKeyOf, stockLabel, unitPriceOf } from "./productDb";
@@ -199,6 +199,8 @@ export type ProposeInput = {
   board: Board;
   request: string;
   maker?: Maker;
+  /** 拡張の土台。元からある部品はその位置・向きのままにする */
+  base?: ExpansionBase;
   /**
    * 所有パーツ（在庫キーごとの本数）。
    * mode="owned" ならこの本数を超えて使えない。mode="expand" なら活用を促すだけで、足りない分は買ってよい。
@@ -303,15 +305,14 @@ export type ProposeResult = {
   usage: TokenUsage;
 };
 
-function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker) {
-  const result = evaluatePlan(plan, input.unboundedBoard ? UNBOUNDED_BOARD : input.board, maker);
+function checkPlan(plan: LayoutPlan, input: ProposeInput, maker: Maker, existingProblems: Set<string>) {
+  const result = evaluatePlan(plan, input.unboundedBoard ? UNBOUNDED_BOARD : input.board, maker, input.base);
   const over = input.stock?.mode === "owned" ? overStock(result.build.pieces, input.stock.counts, result.build.accessories) : [];
   if (input.replica) over.push(...lineProblems(plan, input.replica), ...undergroundProblems(plan, result.build, result.analysis.elevation));
   const budget = overBudget(result.build.pieces, result.build.accessories, input);
   if (budget) over.push(budget);
-  if (!over.length) return result;
-  const problems = [result.problems, ...over].filter(Boolean).join("\n");
-  return { ...result, problems };
+  const problems = [...(result.problems?.split("\n") ?? []).filter(problem => !existingProblems.has(problem)), ...over].join("\n");
+  return { ...result, problems: problems || null };
 }
 
 export class ProposeError extends Error {
@@ -357,6 +358,9 @@ export async function proposeLayout(
 ): Promise<ProposeResult> {
   const { board } = input;
   const maker = input.maker ?? "kato";
+  const base = input.base;
+  const baseAnalysis = base ? analyze({ board, pieces: base.pieces }) : undefined;
+  const existingProblems = new Set(baseAnalysis ? describeProblems({ index: [], errors: [] }, baseAnalysis, board)?.split("\n") : []);
   const replica = input.replica;
   const request = replica ? replicaRequest(replica, input.request) : input.request;
   let prompt = `線路: ${MAKER_INFO[maker].label} ${MAKER_INFO[maker].system}
@@ -365,11 +369,26 @@ ${
       ? "ボードの大きさ: 制限なし（実物の配置を優先し、必要なだけ広く使ってよい。座標が負になってもかまわない）"
       : `ボードの大きさ: 幅${board.width}mm × 奥行${board.height}mm`
   }
-要望: ${request.trim() || "ボードに収まる、楽しく運転できるレイアウト"}`;
+要望: ${request.trim() || (base ? "登録した配線に増設できる線路やパーツを提案する" : "ボードに収まる、楽しく運転できるレイアウト")}`;
   if (replica) {
     prompt += `\n再現モード: ${replica.kind === "line" ? "路線" : "駅"}「${replica.name}」、再現度「${REPLICA_LEVEL_LABELS[replica.level ?? "standard"]}」。replica を必ず出力してください。`;
   }
   if (input.hint) prompt += `\n今回の案の方向: ${input.hint}`;
+  if (base && baseAnalysis) {
+    const idx = new Map(base.pieces.map((p, i) => [p.uid, i]));
+    prompt += `\n
+## 拡張の土台となる登録パターン
+既存の線路やパーツはアプリで保持します。JSONのsegments・accessoriesには、追加する部品だけを出してください。
+登録パターンの空きジョイントにつなぐ場合は from.segment=-1、from.piece=下の部品番号、from.joint=空きジョイント番号を指定します。新しく追加した区間への接続は通常どおりです。
+既存線路にホームなどを追加する場合は、そのaccessoryのsegment=-1とpiece=部品番号を指定できます。
+空きジョイントがなければ、既存線路と干渉しない所に独立した線路を配置できます。追加しない案や既存配置を複製した案は無効です。
+既存線路（番号、品番、向きL/R、原点x/y、回転、地上からの高さ。勾配は「勾配」）:
+${base.pieces.map((p, i) => `${i}: ${p.partId} ${p.mirror ? "R" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.rot.toFixed(1)} ${p.ramp ? "勾配" : p.z ?? 0}`).join("\n")}
+空きジョイント（部品番号:ジョイント番号、座標x/y、外向き角度、高さ）:
+${baseAnalysis.openJoints.map(j => `${idx.get(j.pieceUid)}:${j.index} ${j.x.toFixed(1)} ${j.y.toFixed(1)} ${j.deg.toFixed(1)} ${baseAnalysis.elevation.joints.get(j.pieceUid)?.[j.index]?.toFixed(1) ?? "0"}`).join("\n") || "なし"}
+既存パーツ（品番、中心x/y、高さ）:
+${base.accessories?.map(a => `${a.itemId} ${a.x.toFixed(1)} ${a.y.toFixed(1)} ${a.z ?? 0}`).join("\n") || "なし"}`;
+  }
   if (input.stock?.mode === "owned") {
     prompt += `\n\n## 使える部品（利用者の所有パーツ）\nこの本数を超えて使わないでください。全部使う必要はありません。端は車止めで終えてもかまいませんが、車止めも所有数の範囲で使います。\n${stockText(input.stock.counts)}`;
   } else if (input.stock?.mode === "expand") {
@@ -419,7 +438,11 @@ ${
     }
 
     const plan = parsed.data as LayoutPlan;
-    const result = checkPlan(plan, input, maker);
+    const result = checkPlan(plan, input, maker, existingProblems);
+    if (base && result.build.pieces.length === base.pieces.length && result.build.accessories.length === (base.accessories?.length ?? 0)) {
+      prompt = `土台に追加できる部品がありませんでした。追加する線路またはパーツを1つ以上指定してください。\n${result.problems ?? ""}`;
+      continue;
+    }
     const score = result.problems ? result.problems.split("\n").length : 0;
     if (!best || score < best.score) best = { plan, result, score };
     if (!result.problems) break;
@@ -435,6 +458,7 @@ ${
     );
   }
   if (!best) {
+    if (base) throw new ProposeError("登録パターンに追加できる案を作れませんでした。ボードの広さや追加したい内容を変えてお試しください。", usage);
     throw new ProposeError(
       `AIの出力をレイアウトとして読み取れませんでした（${model}）。より大きなモデルを選ぶと改善することがあります。${
         lastText ? `\n出力の先頭: ${lastText.slice(0, 200)}` : ""
