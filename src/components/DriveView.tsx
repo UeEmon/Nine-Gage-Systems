@@ -27,7 +27,7 @@ import {
 } from "@/lib/drive";
 import { bedStyle, buildScene, buildTrain } from "@/lib/driveScene";
 import type { Layout } from "@/lib/geometry";
-import { rtmConsists, rtmFormationSize, type RtmLibrary, type RtmVehicle } from "@/lib/rtm/pack";
+import { autoMiddleFor, findRtmVehicle, rtmConsists, rtmFormationSize, type RtmLibrary, type RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, type RtmKits, type VehicleKit } from "@/lib/rtm/three";
 import { RtmVehiclesDialog } from "./rtm/RtmVehicles";
 import { useRtmLibrary } from "./rtm/useRtmLibrary";
@@ -173,7 +173,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   const retiredKitsRef = useRef<VehicleKit[]>([]);
   /** 車両の型（まだ読み込み中・見つからないときは null。読み込みは始める） */
   const kitFor = (id: string): VehicleKit | null => {
-    const vehicle = rtmRef.current?.vehicles.find(x => x.id === id);
+    const vehicle = findRtmVehicle(rtmRef.current?.vehicles, id);
     const kits = kitsRef.current;
     let entry = kits.get(id);
     if (entry && entry.vehicle !== vehicle) {
@@ -201,7 +201,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
     const id = rtmVehicleId(type);
     const library = rtmRef.current;
     if (!id || !library) return undefined;
-    const lead = library.vehicles.find(x => x.id === id);
+    const lead = findRtmVehicle(library.vehicles, id);
     const formation = planSequence === undefined ? lead?.formation ?? library.formations.find(x => x.id === id)?.formation : planSequence;
     if (formation?.length) {
       const sequence = formation.map(slot => ({ kit: kitFor(slot.id), reversed: slot.reversed }));
@@ -210,7 +210,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
     }
     const front = kitFor(id);
     if (!front) return undefined;
-    const middleId = lead?.middleId;
+    const middleId = autoMiddleFor(library.vehicles, lead)?.id;
     const middle = middleId ? kitFor(middleId) ?? undefined : undefined;
     return { front, middle };
   };
@@ -219,7 +219,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
     const id = rtmVehicleId(type);
     const library = rtmRef.current;
     if (!id || !library) return undefined;
-    const lead = library.vehicles.find(x => x.id === id);
+    const lead = findRtmVehicle(library.vehicles, id);
     const formation = lead?.formation ?? library.formations.find(x => x.id === id)?.formation;
     return rtmFormationSize(lead, library.vehicles, formation);
   };

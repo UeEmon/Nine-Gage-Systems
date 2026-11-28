@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
-import { rtmConsists, rtmFormationSize } from "@/lib/rtm/pack";
+import { findRtmVehicle, rtmConsists, rtmFormationSize } from "@/lib/rtm/pack";
 import { RtmVehiclesDialog } from "../rtm/RtmVehicles";
 import { useRtmLibrary } from "../rtm/useRtmLibrary";
 import type { Elevation } from "@/lib/elevation";
@@ -434,11 +434,12 @@ function TrainEditor({
   const { library: rtmLibrary, error: rtmError } = useRtmLibrary(rtmAllowed);
   const rtmId = rtmVehicleId(train.vehicleType);
   const rtmOptions = rtmConsists(rtmAllowed ? rtmLibrary : null, rtmId);
-  const removedAuto = rtmAllowed ? rtmLibrary?.vehicles.find(v => v.id === rtmId && v.autoFormationDeleted) : undefined;
+  const savedVehicle = findRtmVehicle(rtmLibrary?.vehicles, rtmId);
+  const removedAuto = savedVehicle?.autoFormationDeleted ? savedVehicle : undefined;
   const [rtmOpen, setRtmOpen] = useState(false);
   const setVehicle = (vehicleType: VehicleType | undefined, library = rtmLibrary) => {
     const id = rtmVehicleId(vehicleType);
-    const lead = library?.vehicles.find(v => v.id === id);
+    const lead = findRtmVehicle(library?.vehicles, id);
     const formation = lead?.formation ?? library?.formations.find(entry => entry.id === id)?.formation;
     const size = id ? rtmFormationSize(lead, library?.vehicles ?? [], formation) ?? train.carSize : undefined;
     onChange({ vehicleType, formation, carSize: size, ...(formation ? { cars: formation.length } : {}) });
@@ -446,7 +447,7 @@ function TrainEditor({
   // 保存した個別編成はダイヤに保持する。自動編成は従来どおり読み込み直した寸法に合わせる。
   useEffect(() => {
     if (!rtmAllowed || train.formation || !rtmLibrary) return;
-    const lead = rtmLibrary.vehicles.find(v => v.id === rtmVehicleId(train.vehicleType));
+    const lead = findRtmVehicle(rtmLibrary.vehicles, rtmVehicleId(train.vehicleType));
     if (!lead) return;
     const size = rtmFormationSize(lead, rtmLibrary.vehicles);
     if (!sameConsistSize(size, train.carSize)) onChange({ carSize: size });

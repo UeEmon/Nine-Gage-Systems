@@ -44,10 +44,10 @@ export type RtmCarRole = "cab" | "middle";
 
 /** 読み込んだ車両。ブラウザ（IndexedDB）に保存する */
 export type RtmVehicle = {
-  /** 車両名から決まる ID（同じ車両パックを別の端末で読んでも同じになる） */
+  /** パックと車両名から決まる ID。既存の車両には車両名だけの ID もある */
   id: string;
   name: string;
-  /** 読み込んだファイルの名前 */
+  /** 車両パックのファイル名、または展開フォルダ名 */
   source: string;
   config: RtmTrainConfig;
   /** この車両で使うファイル（パックの中のパス → 中身） */
@@ -219,14 +219,51 @@ export function parseTrainConfig(json: unknown): RtmTrainConfig | null {
   };
 }
 
-/** 車両名から ID を作る（FNV-1a） */
-export function vehicleId(name: string): string {
+function idHash(value: string): string {
   let h = 0x811c9dc5;
-  for (const c of new TextEncoder().encode(name)) {
+  for (const c of new TextEncoder().encode(value)) {
     h ^= c;
     h = Math.imul(h, 0x01000193) >>> 0;
   }
-  return `v${h.toString(36)}`;
+  return h.toString(36);
+}
+
+/** パックが異なる同名車両も別々に参照できる ID。source の省略は旧形式。 */
+export function vehicleId(name: string, source?: string): string {
+  const car = idHash(name);
+  return source === undefined ? `v${car}` : `p${idHash(source).padStart(7, "0")}${car.padStart(7, "0")}`;
+}
+
+const vehicleIndexes = new WeakMap<RtmVehicle[], Map<string, RtmVehicle>>();
+
+/** 旧 ID の参照も解決する。同名車両が複数あり特定できない旧 ID は解決しない。 */
+export function findRtmVehicle(vehicles: RtmVehicle[] | undefined, id: string | null | undefined): RtmVehicle | undefined {
+  if (!vehicles || !id) return undefined;
+  let index = vehicleIndexes.get(vehicles);
+  if (!index) {
+    index = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]));
+    const aliases = new Map<string, RtmVehicle | null>();
+    for (const vehicle of vehicles) {
+      const legacy = vehicleId(vehicle.name);
+      const scoped = vehicleId(vehicle.name, vehicle.source);
+      for (const alias of [legacy, scoped]) {
+        if (!index.has(alias)) aliases.set(alias, aliases.has(alias) ? null : vehicle);
+      }
+    }
+    for (const [alias, vehicle] of aliases) if (vehicle) index.set(alias, vehicle);
+    vehicleIndexes.set(vehicles, index);
+  }
+  return index.get(id);
+}
+
+export function groupVehiclesBySource(vehicles: RtmVehicle[]) {
+  const groups = new Map<string, RtmVehicle[]>();
+  for (const vehicle of vehicles) {
+    const group = groups.get(vehicle.source);
+    if (group) group.push(vehicle);
+    else groups.set(vehicle.source, [vehicle]);
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b, "ja"));
 }
 
 /**
@@ -275,11 +312,11 @@ export function consistSizeOf(v: Pick<RtmVehicle, "config">, middle?: Pick<RtmVe
 /** この端末にない車両は、元の先頭車か読み込まれている編成内の車両で補う。 */
 export function rtmFormationSize(lead: RtmVehicle | undefined, vehicles: RtmVehicle[], formation?: RtmSlot[]): ConsistSize | undefined {
   if (formation?.length) {
-    const cars = formation.map(slot => vehicles.find(v => v.id === slot.id));
+    const cars = formation.map(slot => findRtmVehicle(vehicles, slot.id));
     const front = cars[0] ?? lead ?? cars.find(Boolean);
     if (front) return { end: carSizeOf(front), sequence: cars.map(vehicle => carSizeOf(vehicle ?? front)) };
   }
-  return lead && consistSizeOf(lead, vehicles.find(v => v.id === lead.middleId));
+  return lead && consistSizeOf(lead, autoMiddleFor(vehicles, lead));
 }
 
 export type PackResult = { vehicles: RtmVehicle[]; problems: string[] };
@@ -342,7 +379,7 @@ export function vehiclesFromEntries(entries: ZipEntry[], sourceName: string, now
     const front = resolve(config.bogies[0], "台車");
     const back = config.bogies[1] === config.bogies[0] ? front : resolve(config.bogies[1], "台車");
     vehicles.push({
-      id: vehicleId(config.name),
+      id: vehicleId(config.name, sourceName),
       name: config.name,
       source: sourceName,
       config: { ...config, body, bogies: [front, back] },
@@ -404,8 +441,9 @@ async function checkModels(r: PackResult): Promise<PackResult> {
 export async function readVehicleFiles(files: { name: string; path?: string; data: Uint8Array }[]): Promise<PackResult> {
   const vehicles: RtmVehicle[] = [];
   const problems: string[] = [];
-  const loose: ZipEntry[] = [];
+  const loose = new Map<string, ZipEntry[]>();
   for (const f of files) {
+    const path = (f.path ?? f.name).replace(/\\/g, "/");
     if (isArchive(f.name)) {
       try {
         const r = await vehiclesFromZip(f.data, f.name);
@@ -414,11 +452,16 @@ export async function readVehicleFiles(files: { name: string; path?: string; dat
       } catch (e) {
         problems.push(`${f.name}: ${e instanceof Error ? e.message : "読めませんでした"}`);
       }
-    } else if (wantedEntry(f.path ?? f.name)) loose.push({ path: (f.path ?? f.name).replace(/\\/g, "/"), data: f.data });
-    else if (/\.(rar|7z|lzh)$/i.test(f.name)) problems.push(`${f.name}: この圧縮形式は読めません。展開してフォルダを選ぶか、ZIP にしてください`);
+    } else if (wantedEntry(path)) {
+      const folder = path.includes("/") ? path.split("/")[0] : "";
+      const entries = loose.get(folder) ?? [];
+      entries.push({ path, data: f.data });
+      loose.set(folder, entries);
+    } else if (/\.(rar|7z|lzh)$/i.test(f.name)) problems.push(`${f.name}: この圧縮形式は読めません。展開してフォルダを選ぶか、ZIP にしてください`);
   }
-  if (loose.length > 0) {
-    const r = vehiclesFromEntries(loose, (loose[0].path.includes("/") ? loose[0].path.split("/")[0] : loose.find((e) => isJson(e.path))?.path) ?? loose[0].path);
+  for (const [folder, entries] of loose) {
+    const sourceName = folder || (entries.find(e => isJson(e.path)) ?? entries[0]).path;
+    const r = vehiclesFromEntries(entries, sourceName);
     vehicles.push(...r.vehicles);
     problems.push(...r.problems);
   }
@@ -521,10 +564,8 @@ function pickMiddle(cab: RtmVehicle, middles: RtmVehicle[]): RtmVehicle | undefi
  * 見分けられた車両に role を付け、先頭車には同じパックの合う中間車（middleId）を選んでおく
  */
 export function assignCarRoles(vehicles: RtmVehicle[]): RtmVehicle[] {
-  const groups = new Map<string, RtmVehicle[]>();
-  for (const v of vehicles) groups.set(v.source, [...(groups.get(v.source) ?? []), v]);
   const out = new Map<RtmVehicle, RtmVehicle>();
-  for (const group of groups.values()) {
+  for (const [, group] of groupVehiclesBySource(vehicles)) {
     const roles = guessRoles(group.filter((v) => !isFreightCar(v)));
     const middles = group.filter((v) => roles.get(v.id) === "middle");
     for (const v of group) {
@@ -554,12 +595,26 @@ export function autoFormationSlots(leadId: string, middleId: string | undefined,
 }
 
 export function rtmConsists(library: RtmLibrary | null, selectedId?: string | null): (RtmVehicle | RtmFormation)[] {
-  return library ? [...leadVehicles(library.vehicles, selectedId), ...library.formations] : [];
+  if (!library) return [];
+  const selected = findRtmVehicle(library.vehicles, selectedId);
+  const automatic = leadVehicles(library.vehicles, selected?.id ?? selectedId);
+  return [
+    ...automatic.map(vehicle => vehicle === selected && selectedId !== vehicle.id && selectedId
+      ? { ...vehicle, id: selectedId }
+      : vehicle),
+    ...library.formations,
+  ];
 }
 
-/** 先頭車の「中間車」に選べる車両（先頭車として見分けた車両は外す） */
+export function autoMiddleFor(vehicles: RtmVehicle[], lead: RtmVehicle | undefined): RtmVehicle | undefined {
+  const middle = findRtmVehicle(vehicles, lead?.middleId);
+  return middle?.source === lead?.source ? middle : undefined;
+}
+
+/** 同じパック内で先頭車の「中間車」に選べる車両。 */
 export function middleCandidates(vehicles: RtmVehicle[], lead: RtmVehicle): RtmVehicle[] {
+  const selected = autoMiddleFor(vehicles, lead);
   return vehicles
-    .filter((x) => x.id !== lead.id && (x.role !== "cab" || x.id === lead.middleId))
+    .filter(x => x.source === lead.source && x.id !== lead.id && (x.role !== "cab" || x === selected))
     .sort((a, b) => Number(b.role === "middle") - Number(a.role === "middle"));
 }
