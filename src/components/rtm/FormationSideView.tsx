@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { N_CAR, type RtmSlot } from "@/lib/drive";
 import { carSizeOf, type RtmVehicle } from "@/lib/rtm/pack";
-import { buildVehicleKit, type VehicleKit } from "@/lib/rtm/three";
+import { buildVehicleKit, vehiclePreviewScene, type VehicleKit } from "@/lib/rtm/three";
 
 const VIEW_HEIGHT = 76;
 type KitLoad = Promise<VehicleKit | null>;
@@ -93,11 +93,7 @@ export function FormationSideView({ slots, vehicles, disabled, onSwap }: {
     const draw = async () => {
       const loaded = await Promise.all(loads);
       if (!active || renderer.current !== gl) return;
-      const scene = new THREE.Scene();
-      scene.add(new THREE.HemisphereLight(0xffffff, 0xd7dbe3, 2.4));
-      const keyLight = new THREE.DirectionalLight(0xffffff, 2);
-      keyLight.position.set(-150, 100, -200);
-      scene.add(keyLight);
+      const scene = vehiclePreviewScene([-150, 100, -200]);
 
       const bounds = new THREE.Box3();
       const unavailable: number[] = [];

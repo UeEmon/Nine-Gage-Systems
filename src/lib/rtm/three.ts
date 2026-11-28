@@ -21,6 +21,16 @@ export type VehicleKit = {
   dispose(): void;
 };
 
+/** 車両パックのモデルをプレビュー用の照明で照らす */
+export function vehiclePreviewScene(lightPosition: [number, number, number]): THREE.Scene {
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xd7dbe3, 2.4));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2);
+  keyLight.position.set(...lightPosition);
+  scene.add(keyLight);
+  return scene;
+}
+
 /**
  * 台車の幅の倍率。RTM の台車は実物の線路幅（1067mm）に合わせて作られているが、Nゲージの線路は 9mm
  * （1067mm の 1/150 = 7.1mm より広い）。製品のNゲージと同じく、車体は 1/150 のまま台車の幅だけ広げて、

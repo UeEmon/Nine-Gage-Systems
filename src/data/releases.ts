@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-rtm-vehicle-front-preview",
+    date: "2026-11-28T07:46:00+09:00",
+    title: "RTMのパックを先頭車の前面画像付きで編成ごとに選べます",
+    body: "読み込んだパックを編成単位で一覧に表示します。先頭車の前面、車両パック名、連結内容を見て編成を選べます。",
+  },
+  {
     id: "2026-11-28-rtm-formation-side-view",
     date: "2026-11-28T07:36:00+09:00",
     title: "RTM編成を真横から見ながら入れ替えられます",

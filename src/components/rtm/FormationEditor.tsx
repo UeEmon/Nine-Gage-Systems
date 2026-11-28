@@ -11,8 +11,9 @@ export function FormationEditor({ lead, vehicles, onDone }: {
   vehicles: RtmVehicle[];
   onDone: () => void;
 }) {
+  const defaultMiddle = vehicles.find(vehicle => vehicle.id === lead.middleId)?.id ?? lead.id;
   const [slots, setSlots] = useState<RtmSlot[]>(() => lead.formation ?? [
-    { id: lead.id, reversed: false }, { id: lead.middleId ?? lead.id, reversed: false }, { id: lead.id, reversed: true },
+    { id: lead.id, reversed: false }, { id: defaultMiddle, reversed: false }, { id: lead.id, reversed: true },
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -58,7 +59,7 @@ export function FormationEditor({ lead, vehicles, onDone }: {
         ))}
       </ol>
       <div className="rtm-actions">
-        <button disabled={slots.length >= MAX_CONSIST_CARS} onClick={() => setSlots([...slots, { id: lead.middleId ?? lead.id, reversed: false }])}>1両追加</button>
+        <button disabled={slots.length >= MAX_CONSIST_CARS} onClick={() => setSlots([...slots, { id: defaultMiddle, reversed: false }])}>1両追加</button>
         <button disabled={slots.some(s => !vehicles.some(v => v.id === s.id))} onClick={() => void save(slots)}>編成を保存</button>
         {lead.formation && <button onClick={() => void save()}>自動編成に戻す</button>}
         <button onClick={onDone}>キャンセル</button>
