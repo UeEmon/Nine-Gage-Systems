@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-drive-camera-wheel",
+    date: "2026-11-28T12:40:00+09:00",
+    title: "ホイールで走行映像をズーム・パンできます",
+    body: "横のサムホイールで左右にパンし、Ctrlを押しながら回すと拡大・縮小できます。縦ホイールでのズーム、Shift＋ホイールでの左右パン、Alt＋ホイールでの上下パンにも対応しました。",
+  },
+  {
     id: "2026-11-28-manual-track-elevation",
     date: "2026-11-28T12:27:00+09:00",
     title: "地下や高架の線路を好きな高さと場所に置けます",

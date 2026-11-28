@@ -117,6 +117,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   const mapPositionRef = useRef<((fx: number, fy: number) => { x: number; y: number }) | null>(null);
   const driveRef = useRef<Drive | null>(null);
   const ctl = useRef({ playing: true, targetKmh: 80, kmh: 0, view: "cab" as ViewMode, yaw: 0, pitch: 0, t: 0, rate: 1, rideId: "" });
+  const framing = useRef({ zoom: 1, x: 0, y: 0 });
 
   const graph = useMemo(() => buildDriveGraph(layout.pieces), [layout.pieces]);
   // 運行計画：時刻表を求めて、列車ごとに時刻 → 位置を用意する
@@ -374,12 +375,19 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
     mapPositionRef.current = map?.toWorld ?? null;
 
     const camera = new THREE.PerspectiveCamera(62, 1, 1, 20000);
+    let viewportWidth = 1;
+    let viewportHeight = 1;
+    const updateFraming = () => {
+      const { zoom, x, y } = framing.current;
+      camera.zoom = zoom;
+      // 表示範囲をずらす。指定地点の物理的なカメラ位置や地図の印はその地点に保つ。
+      camera.setViewOffset(viewportWidth, viewportHeight, x * viewportWidth, y * viewportHeight, viewportWidth, viewportHeight);
+    };
     const resize = () => {
-      const w = mount.clientWidth;
-      const h = mount.clientHeight;
-      renderer.setSize(w, h, false);
-      camera.aspect = w / Math.max(1, h);
-      camera.updateProjectionMatrix();
+      viewportWidth = Math.max(1, mount.clientWidth);
+      viewportHeight = Math.max(1, mount.clientHeight);
+      renderer.setSize(viewportWidth, viewportHeight, false);
+      updateFraming();
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -402,11 +410,34 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
     const onDbl = () => {
       ctl.current.yaw = 0;
       ctl.current.pitch = 0;
+      framing.current = { zoom: 1, x: 0, y: 0 };
+      updateFraming();
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaX === 0 && e.deltaY === 0) return;
+      e.preventDefault();
+      const scale = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewportHeight : 1;
+      const dx = e.deltaX * scale;
+      const dy = e.deltaY * scale;
+      const frame = framing.current;
+      const horizontal = Math.abs(dx) > Math.abs(dy);
+      const zoomModifier = e.ctrlKey || e.metaKey;
+      if (!zoomModifier && e.altKey) {
+        frame.y = THREE.MathUtils.clamp(frame.y + (dy || dx) / viewportHeight, -0.85, 0.85);
+      } else if (!zoomModifier && (e.shiftKey || horizontal)) {
+        frame.x = THREE.MathUtils.clamp(frame.x + (dx || dy) / viewportWidth, -0.85, 0.85);
+      } else {
+        const delta = horizontal ? dx : dy;
+        const factor = Math.exp(THREE.MathUtils.clamp(-delta * 0.002, -1, 1));
+        frame.zoom = THREE.MathUtils.clamp(frame.zoom * factor, 0.5, 4);
+      }
+      updateFraming();
     };
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
     canvas.addEventListener("dblclick", onDbl);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
 
     const v = (p: { x: number; y: number; z: number }, up = 0) => new THREE.Vector3(p.x, p.z + up, p.y);
     let roll = 0;
@@ -597,6 +628,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("dblclick", onDbl);
+      canvas.removeEventListener("wheel", onWheel);
       if (recorderRef.current?.state === "recording") recorderRef.current.stop();
       world.dispose();
       sceneAlive = false;
@@ -911,7 +943,9 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
           </>
         ) : <span>このブラウザでは走行映像を録画できません。</span>}
         {videoMessage && <span role="alert">{videoMessage}</span>}
-        <span className="muted drive-help">ドラッグで見回し・ダブルクリックで正面</span>
+        <span className="muted drive-help" title="Ctrl＋横ホイールでズーム。Shift＋ホイールで左右、Alt＋ホイールで上下にパン。ドラッグで見回し、ダブルクリックでリセット">
+          ホイールでズーム・横ホイールでパン
+        </span>
         <button className="drive-close" onClick={onClose}>
           閉じる
         </button>
