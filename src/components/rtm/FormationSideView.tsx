@@ -131,13 +131,13 @@ export function FormationSideView({ slots, vehicles, disabled, onSwap }: {
   }, [cars, width]);
 
   const swap = (from: number, to: number) => {
-    if (from > 0 && to > 0 && from !== to) onSwap(from, to);
+    if (from >= 0 && to >= 0 && from !== to) onSwap(from, to);
     setSelected(null);
   };
 
   return (
     <div className="rtm-side-view">
-      {slots.length > 2 && <p className="hint">2両目以降はドラッグするか、入れ替える2両を順に選択します。</p>}
+      {slots.length > 1 && <p className="hint">ドラッグするか、入れ替える2両を順に選択します。</p>}
       <div className="rtm-side-scroll">
         <div className="rtm-side-strip" style={{ width }} role="group" aria-label="編成の側面">
           <canvas ref={canvas} aria-hidden="true" style={{ height: VIEW_HEIGHT, visibility: preview === "ready" ? "visible" : "hidden" }} />
@@ -151,21 +151,18 @@ export function FormationSideView({ slots, vehicles, disabled, onSwap }: {
                 <span className="rtm-side-name"><span aria-hidden="true">{slot.reversed ? "→" : "←"} </span>{i === 0 ? "先頭" : `${i + 1}両目`}・{name}</span>
               </>
             );
-            if (i === 0) {
-              return <div key={i} className="rtm-side-car" style={{ width: carWidth }} title={`${name}（先頭固定）`}>{contents}</div>;
-            }
             return (
               <button
                 key={i}
                 type="button"
                 className="rtm-side-car"
                 style={{ width: carWidth }}
-                disabled={disabled || slots.length < 3}
+                disabled={disabled || slots.length < 2}
                 aria-pressed={selectedIndex === i}
-                aria-label={`${i + 1}両目 ${name}${slot.reversed ? "（逆向き）" : ""}`}
+                aria-label={`${i === 0 ? "先頭" : `${i + 1}両目`} ${name}${slot.reversed ? "（逆向き）" : ""}`}
                 title={name}
-                draggable={!disabled && slots.length > 2}
-                onClick={() => selectedIndex > 0 ? swap(selectedIndex, i) : setSelected(slot)}
+                draggable={!disabled && slots.length > 1}
+                onClick={() => selectedIndex >= 0 ? swap(selectedIndex, i) : setSelected(slot)}
                 onDragStart={e => {
                   dragFrom.current = slot;
                   e.dataTransfer.setData("text/plain", name);

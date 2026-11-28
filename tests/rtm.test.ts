@@ -6,7 +6,7 @@ import { buildTrain } from "../src/lib/driveScene";
 import { carsFitting, normalizeOperation } from "../src/lib/operation";
 import { canUseRtm } from "../src/lib/roles";
 import { modelBounds, parseMqo, parseObj } from "../src/lib/rtm/model";
-import { assignCarRoles, consistSizeOf, rtmFormationSize, findFile, isFreightCar, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
+import { assignCarRoles, carSizeOf, consistSizeOf, rtmConsists, rtmFormationSize, findFile, isFreightCar, leadVehicles, middleCandidates, parseLenientJson, parseTrainConfig, readVehicleFiles, roleFromName, vehicleId } from "../src/lib/rtm/pack";
 import { BOGIE_GAUGE_FIT, buildVehicleKit, lightIndex, MM_PER_M } from "../src/lib/rtm/three";
 import { readZip } from "../src/lib/rtm/zip";
 
@@ -348,19 +348,25 @@ describe("RealTrainMod の車両パック", () => {
     const { vehicles: [lead] } = await readVehicleFiles([{ name: "test-pack.zip", data: samplePack() }]);
     const coach = { ...lead, id: vehicleId("coach"), config: { ...lead.config, trainDistance: 8 } };
     const vehicles = [lead, coach];
-    const formation = [lead, coach, lead, coach].map((v, i) => ({ id: v.id, reversed: i === 1 }));
-    const size = rtmFormationSize(lead, vehicles, formation);
-    const plan = normalizeOperation({ trains: [{ id: "t", vehicleType: rtmVehicleType(lead.id), formation, carSize: size, cars: 4, stops: [] }] })!;
-    expect(plan.trains[0]).toMatchObject({ cars: 4, carSize: size, formation });
-    expect(trainLength(4, size)).toBeCloseTo(2 * size.end.length + 2 * size.sequence![1].length + 3 * N_CAR.gap);
+    const formation = [coach, lead, coach, lead].map((v, i) => ({ id: v.id, reversed: i === 0 }));
+    const manual = { id: "f123", name: "試験編成", formation };
+    expect(rtmConsists({ vehicles, formations: [manual] })).toContain(manual);
+    const size = rtmFormationSize(undefined, vehicles, formation);
+    expect(size?.end).toEqual(carSizeOf(coach));
+    expect(rtmFormationSize(lead, vehicles, formation)).toEqual(size);
+    expect(rtmFormationSize(undefined, [lead], formation)?.sequence).toEqual(Array(4).fill(carSizeOf(lead)));
+    const vehicleType = rtmVehicleType(manual.id);
+    const plan = normalizeOperation({ trains: [{ id: "t", vehicleType, formation, carSize: size, cars: 4, stops: [] }] })!;
+    expect(plan.trains[0]).toMatchObject({ cars: 4, vehicleType, carSize: size, formation });
+    expect(trainLength(4, size)).toBeCloseTo(2 * carSizeOf(lead).length + 2 * carSizeOf(coach).length + 3 * N_CAR.gap);
     const kits = await Promise.all(vehicles.map(v => buildVehicleKit(v)));
     try {
-      const mesh = buildTrain(4, 0, rtmVehicleType(lead.id), { front: kits[0], sequence: formation.map(s => ({
+      const mesh = buildTrain(4, 0, vehicleType, { front: kits[1], sequence: formation.map(s => ({
         kit: s.id === lead.id ? kits[0] : kits[1], reversed: s.reversed,
       })) });
       expect(mesh.cars.map(c => c.name)).toEqual(formation.map(s => `rtm-${s.id}`));
-      // 同じ車両の2両目は逆向き、最後尾は指定どおり前向き。
-      expect(mesh.cars[1].children[0].rotation.y - mesh.cars[3].children[0].rotation.y).toBeCloseTo(Math.PI);
+      // 同じ車両を使う先頭と3両目で、先頭の逆向き指定が反映される。
+      expect(mesh.cars[0].children[0].rotation.y - mesh.cars[2].children[0].rotation.y).toBeCloseTo(Math.PI);
       mesh.dispose();
     } finally {
       kits.forEach(k => k.dispose());

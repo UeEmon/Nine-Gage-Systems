@@ -746,6 +746,8 @@ a.button.primary, .ai-status a.button.primary { background: var(--accent); color
 .rtm-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
 .rtm-actions label { display: flex; gap: 4px; align-items: center; }
 .rtm-formation { margin: 12px 0; min-width: 0; }
+.rtm-formation-preview { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; }
+.rtm-formation-preview .rtm-side-view { flex: 1; min-width: 0; }
 .rtm-formation ol { padding-left: 2em; }
 .rtm-formation li { margin: 6px 0; }
 .rtm-formation li > * { margin-right: 6px; }

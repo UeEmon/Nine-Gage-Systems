@@ -27,9 +27,9 @@ import {
 } from "@/lib/drive";
 import { bedStyle, buildScene, buildTrain } from "@/lib/driveScene";
 import type { Layout } from "@/lib/geometry";
-import { rtmFormationSize, leadVehicles, type RtmVehicle } from "@/lib/rtm/pack";
+import { rtmConsists, rtmFormationSize, type RtmLibrary, type RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, type RtmKits, type VehicleKit } from "@/lib/rtm/three";
-import { RtmVehiclesDialog, useRtmVehicles } from "./rtm/RtmVehicles";
+import { RtmVehiclesDialog, useRtmLibrary } from "./rtm/RtmVehicles";
 import { listModels } from "@/lib/models3d/store";
 import { buildPlacedModels } from "@/lib/models3d/three";
 import { placedCorners } from "@/lib/models3d/placed";
@@ -63,7 +63,6 @@ type Props = {
 
 type ViewMode = "cab" | "chase" | "fixed";
 
-const NO_RTM_VEHICLES: RtmVehicle[] = [];
 const sameKits = (a: RtmKits | undefined, b: RtmKits | undefined) => a?.front === b?.front && a?.middle === b?.middle &&
   a?.sequence?.length === b?.sequence?.length && (a?.sequence?.every((s, i) =>
     s.kit === b?.sequence?.[i].kit && s.reversed === b?.sequence?.[i].reversed) ?? true);
@@ -159,11 +158,12 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   const [vehicleType, setVehicleType] = useState<VehicleType>("commuter");
   const vehicleTypeRef = useRef(vehicleType);
   vehicleTypeRef.current = vehicleType;
-  const loadedRtmVehicles = useRtmVehicles();
+  const loadedRtmLibrary = useRtmLibrary();
   // 使えないロールでは、ブラウザに残っている車両も使わない（組み込みの車両で表示する）
-  const rtmVehicles = rtmAllowed ? loadedRtmVehicles : NO_RTM_VEHICLES;
-  const rtmRef = useRef<RtmVehicle[]>([]);
-  rtmRef.current = rtmVehicles ?? [];
+  const rtmLibrary = rtmAllowed ? loadedRtmLibrary : null;
+  const rtmOptions = rtmConsists(rtmLibrary, rtmVehicleId(vehicleType));
+  const rtmRef = useRef<RtmLibrary | null>(null);
+  rtmRef.current = rtmLibrary;
   const [rtmOpen, setRtmOpen] = useState(false);
   const [modelNote, setModelNote] = useState("");
   const rtmOpenRef = useRef(rtmOpen);
@@ -173,7 +173,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   const retiredKitsRef = useRef<VehicleKit[]>([]);
   /** 車両の型（まだ読み込み中・見つからないときは null。読み込みは始める） */
   const kitFor = (id: string): VehicleKit | null => {
-    const vehicle = rtmRef.current.find((x) => x.id === id);
+    const vehicle = rtmRef.current?.vehicles.find(x => x.id === id);
     const kits = kitsRef.current;
     let entry = kits.get(id);
     if (entry && entry.vehicle !== vehicle) {
@@ -199,11 +199,17 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   /** 映像の車両が読み込んだ RealTrainMod の車両なら、その型（使えなければ undefined） */
   const rtmKitsFor = (type: VehicleType | undefined, planSequence?: RtmSlot[] | null): RtmKits | undefined => {
     const id = rtmVehicleId(type);
-    const front = id ? kitFor(id) : null;
-    if (!id || !front) return undefined;
-    const lead = rtmRef.current.find(x => x.id === id);
-    const formation = planSequence === undefined ? lead?.formation : planSequence;
-    if (formation?.length) return { front, sequence: formation.map(slot => ({ kit: kitFor(slot.id) ?? front, reversed: slot.reversed })) };
+    const library = rtmRef.current;
+    if (!id || !library) return undefined;
+    const lead = library.vehicles.find(x => x.id === id);
+    const formation = planSequence === undefined ? lead?.formation ?? library.formations.find(x => x.id === id)?.formation : planSequence;
+    if (formation?.length) {
+      const sequence = formation.map(slot => ({ kit: kitFor(slot.id), reversed: slot.reversed }));
+      const front = sequence[0].kit ?? (lead && kitFor(lead.id)) ?? sequence.find(slot => slot.kit)?.kit;
+      return front ? { front, sequence: sequence.map(slot => ({ ...slot, kit: slot.kit ?? front })) } : undefined;
+    }
+    const front = kitFor(id);
+    if (!front) return undefined;
     const middleId = lead?.middleId;
     const middle = middleId ? kitFor(middleId) ?? undefined : undefined;
     return { front, middle };
@@ -211,9 +217,11 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   /** 読み込んだ RealTrainMod の車両の編成の長さ（組み込みの車両なら undefined） */
   const rtmSizeFor = (type: VehicleType | undefined): ConsistSize | undefined => {
     const id = rtmVehicleId(type);
-    const v = id ? rtmRef.current.find((x) => x.id === id) : undefined;
-    if (!v) return undefined;
-    return rtmFormationSize(v, rtmRef.current, v.formation);
+    const library = rtmRef.current;
+    if (!id || !library) return undefined;
+    const lead = library.vehicles.find(x => x.id === id);
+    const formation = lead?.formation ?? library.formations.find(x => x.id === id)?.formation;
+    return rtmFormationSize(lead, library.vehicles, formation);
   };
   const rtmSizeForRef = useRef(rtmSizeFor);
   rtmSizeForRef.current = rtmSizeFor;
@@ -231,8 +239,8 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   // 選んでいた車両を消したら、組み込みの車両に戻す
   useEffect(() => {
     const id = rtmVehicleId(vehicleType);
-    if (id && rtmVehicles && !rtmVehicles.some((v) => v.id === id)) setVehicleType("commuter");
-  }, [rtmVehicles, vehicleType]);
+    if (id && (!rtmAllowed || (rtmLibrary && !rtmConsists(rtmLibrary, id).some(entry => entry.id === id)))) setVehicleType("commuter");
+  }, [rtmAllowed, rtmLibrary, vehicleType]);
   const [fixedPosition, setFixedPosition] = useState(() => ({
     x: layout.board.width / 2,
     y: -200,
@@ -867,9 +875,9 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
         {!planMode && <label>映像の車両
           <select value={vehicleType} onChange={(e) => setVehicleType(e.target.value as VehicleType)}>
             {VEHICLE_TYPES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-            {rtmVehicles && rtmVehicles.length > 0 && (
-              <optgroup label="読み込んだ車両（RealTrainMod）">
-                {leadVehicles(rtmVehicles, rtmVehicleId(vehicleType)).map((v) => <option key={v.id} value={rtmVehicleType(v.id)}>{v.name}</option>)}
+            {rtmOptions.length > 0 && (
+              <optgroup label="RealTrainMod の編成">
+                {rtmOptions.map(entry => <option key={entry.id} value={rtmVehicleType(entry.id)}>{entry.name}</option>)}
               </optgroup>
             )}
           </select>
