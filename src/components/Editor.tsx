@@ -115,7 +115,9 @@ const LEVEL_FILTERS: { value: LevelFilter; label: string }[] = [
   { value: "underground", label: "地下" },
 ];
 /** 新しく置く部品の高さ。auto はつなぐ先の部品に合わせる */
-type PlaceHeight = "auto" | "ground" | "elevated" | "underground" | "ramp";
+type PlaceHeight = "auto" | "ground" | "elevated" | "underground" | "ramp" | "custom";
+const MIN_TRACK_HEIGHT = -200;
+const MAX_TRACK_HEIGHT = 300;
 
 type AiMode = "free" | "owned" | "expand" | "replica";
 const AI_MODES: { mode: AiMode; label: string; help: string }[] = [
@@ -223,6 +225,7 @@ const isPatterns = (v: unknown): v is SavedPattern[] => Array.isArray(v);
 /** user が null ならログインなし（AI提案は使えない。保存はこのブラウザとファイルだけ） */
 export function Editor({ user }: { user: SessionUser | null }) {
   const [layout, setLayout] = useState<Layout>(emptyLayout);
+  const [layoutRestored, setLayoutRestored] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
   const [mirrorNext, setMirrorNext] = useState(false);
   const [attachJoint, setAttachJoint] = useState(0);
@@ -275,6 +278,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const twinVisible = user?.role === "admin";
   const [showPiers, setShowPiers] = useState(true);
   const [placeHeight, setPlaceHeight] = useState<PlaceHeight>("auto");
+  const [customPlaceHeight, setCustomPlaceHeight] = useState("0");
+  const [pickLocation, setPickLocation] = useState(false);
+  const [pendingPart, setPendingPart] = useState<string | null>(null);
   const [applyToRun, setApplyToRun] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<
@@ -296,14 +302,16 @@ export function Editor({ user }: { user: SessionUser | null }) {
     } catch {
       /* 保存データなし */
     }
+    setLayoutRestored(true);
   }, []);
   useEffect(() => {
+    if (!layoutRestored) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
     } catch {
       /* 保存できない環境 */
     }
-  }, [layout]);
+  }, [layout, layoutRestored]);
 
   const fitView = useCallback((b: Board) => {
     const m = Math.max(b.width, b.height) * 0.08;
@@ -432,13 +440,21 @@ export function Editor({ user }: { user: SessionUser | null }) {
   };
 
   // ---- 部品の追加 ----
-  const addPart = (partId: string) => {
+  const customZ = customPlaceHeight.trim() === "" ? NaN : Number(customPlaceHeight);
+  const invalidCustomHeight = placeHeight === "custom" && !(customZ >= MIN_TRACK_HEIGHT && customZ <= MAX_TRACK_HEIGHT);
+  const canPlace = (partId: string) => !invalidCustomHeight && (placeHeight !== "ramp" || !!getPart(partId).rampEnds);
+
+  const addPart = (partId: string, at?: { x: number; y: number }) => {
+    if (!canPlace(partId)) return;
     const part = getPart(partId);
     const jIdx = Math.min(attachJoint, part.joints.length - 1);
+    const attach = !at && selection?.kind === "joint" ? selection : null;
+    const source = attach ? layout.pieces.find((p) => p.uid === attach.uid) : undefined;
     let target: { x: number; y: number; deg: number };
-    if (selection?.kind === "joint") {
-      const p = layout.pieces.find((q) => q.uid === selection.uid);
-      const j = p && worldJoints(p)[selection.index];
+    if (at) {
+      target = { ...at, deg: 0 };
+    } else if (attach) {
+      const j = source && worldJoints(source)[attach.index];
       if (!j) return;
       target = j;
     } else {
@@ -448,21 +464,33 @@ export function Editor({ user }: { user: SessionUser | null }) {
     }
     // 置く高さ: つなぐ先に合わせる（auto）か、指定した階層
     let height: Pick<Piece, "z" | "ramp"> = {};
-    const src = selection?.kind === "joint" ? layout.pieces.find((q) => q.uid === selection.uid) : undefined;
     if (placeHeight === "elevated") height = { z: standardHeight };
     else if (placeHeight === "underground") height = { z: -depth };
     else if (placeHeight === "ramp") height = { ramp: true };
-    else if (placeHeight === "auto" && src) height = isRamp(src) ? { ramp: true } : src.z ? { z: src.z } : {};
-    if (height.ramp && !part.rampEnds) height = {}; // ポイントなどは勾配にできない
-    if (part.category === "bridge" && !height.ramp && !height.z) height = { z: standardHeight };
+    else if (placeHeight === "custom") height = { z: customZ };
+    else if (placeHeight === "auto") {
+      if (source && isRamp(source) && part.rampEnds) height = { ramp: true };
+      else if (source && attach) {
+        const z = analysis.elevation.joints.get(source.uid)?.[attach.index] ?? source.z ?? 0;
+        if (z !== 0) height = { z };
+      }
+      else if (part.category === "bridge") height = { z: standardHeight };
+    }
     const piece: Piece = { ...placeAt(partId, mirrorNext, jIdx, target, newUid()), ...height };
     const next = [...layout.pieces, piece];
     setPieces(() => next);
     // 続けてつなげるよう、新しい部品の空いている出口を選ぶ
     const a = analyze({ board: layout.board, pieces: next });
+    if (hideOthers && levelFilter !== "all" && levelFilter !== pieceLevel(piece, a.elevation)) setLevelFilter("all");
     const exits = a.openJoints.filter((j) => j.pieceUid === piece.uid && j.index !== jIdx);
     const exit = exits.find((j) => j.index === (jIdx === 0 ? 1 : 0)) ?? exits[0];
     setSelection(exit ? { kind: "joint", uid: piece.uid, index: exit.index } : { kind: "piece", uid: piece.uid });
+  };
+
+  const choosePart = (partId: string) => {
+    if (!canPlace(partId)) return;
+    if (pickLocation) setPendingPart(partId);
+    else addPart(partId);
   };
 
   // ---- 選択中の部品の操作 ----
@@ -558,6 +586,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       else if (e.key === "r") rotateSelected(15);
       else if (e.key === "R") rotateSelected(-15);
       else if (e.key === "Escape") {
+        setPendingPart(null);
         setSelection(null);
         setSelectedModelUid(null);
       }
@@ -603,6 +632,16 @@ export function Editor({ user }: { user: SessionUser | null }) {
   const onBgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
     svgRef.current?.setPointerCapture(e.pointerId);
+  };
+
+  const onPlacementPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!pendingPart || e.button !== 0 || !canPlace(pendingPart)) return;
+    const { x, y } = toSvg(e);
+    if (x < 0 || x > layout.board.width || y < 0 || y > layout.board.height) return;
+    e.preventDefault();
+    e.stopPropagation();
+    addPart(pendingPart, { x: Math.round(x), y: Math.round(y) });
+    setPendingPart(null);
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -668,7 +707,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
       }
       if (!best) return ps;
       const snapped = placeAt(piece.partId, piece.mirror, best.index, best.j, piece.uid);
-      return ps.map((q) => (q.uid === piece.uid ? snapped : q));
+      return ps.map((q) => (q.uid === piece.uid ? { ...piece, ...snapped } : q));
     });
   };
 
@@ -862,9 +901,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
               {MAKER_INFO[maker].label}以外の線路が{otherMakerPieces}本あります（つなぐには変換線路が必要です）
             </p>
           )}
-          <p className="hint">
+          {!pickLocation && <p className="hint">
             {selection?.kind === "joint" ? "選択中の端（青）につなぎます" : "端（赤い丸）をクリックして選ぶと、そこにつなげます"}
-          </p>
+          </p>}
           <div className="row">
             <div className="seg">
               <button className={!mirrorNext ? "on" : ""} onClick={() => setMirrorNext(false)}>
@@ -889,15 +928,51 @@ export function Editor({ user }: { user: SessionUser | null }) {
           <div className="row">
             <label className="small">
               置く高さ
-              <select value={placeHeight} onChange={(e) => setPlaceHeight(e.target.value as PlaceHeight)}>
+              <select value={placeHeight} onChange={(e) => {
+                const value = e.target.value as PlaceHeight;
+                if (value === "custom") {
+                  const z = placeHeight === "elevated" ? standardHeight : placeHeight === "underground" ? -depth : 0;
+                  setCustomPlaceHeight(String(z));
+                }
+                setPlaceHeight(value);
+                setPendingPart(null);
+              }}>
                 <option value="auto">つなぐ先に合わせる</option>
                 <option value="ground">地上</option>
                 <option value="elevated">高架（{standardHeight}mm）</option>
                 <option value="underground">地下（-{depth}mm）</option>
                 <option value="ramp">勾配（前後の高さの間を自動で上り下り）</option>
+                <option value="custom">高さを数値で指定</option>
               </select>
             </label>
           </div>
+          {placeHeight === "custom" && (
+            <div className="row">
+              <label className="small">
+                配置する高さ（mm。地下は負の値）
+                <input
+                  type="number"
+                  min={MIN_TRACK_HEIGHT}
+                  max={MAX_TRACK_HEIGHT}
+                  step="any"
+                  value={customPlaceHeight}
+                  aria-invalid={invalidCustomHeight}
+                  onChange={(e) => setCustomPlaceHeight(e.target.value)}
+                />
+              </label>
+              {invalidCustomHeight && <span className="warn-text">{MIN_TRACK_HEIGHT}〜{MAX_TRACK_HEIGHT}mm を入力</span>}
+            </div>
+          )}
+          <label className="check">
+            <input type="checkbox" checked={pickLocation} onChange={(e) => {
+              setPickLocation(e.target.checked);
+              setPendingPart(null);
+            }} />
+            ボード上で配置位置を選ぶ
+          </label>
+          {pickLocation && (
+            <p className="hint" role="status">{pendingPart ? `${getPart(pendingPart).name}を置く位置をクリックしてください。` : "線路パーツを選び、ボード上をクリックします。"}</p>
+          )}
           <div className="chips cats">
             {(Object.keys(CATEGORY_LABELS) as PartCategory[])
               .filter((c) => partsFor(maker).some((p) => p.category === c))
@@ -930,9 +1005,12 @@ export function Editor({ user }: { user: SessionUser | null }) {
                   {shown.map((p) => (
                     <div key={p.key} className="part-wrap">
                       <button
-                        className="part"
-                        onClick={() => addPart(p.key)}
-                        title={[p.description, p.jointHelp, p.geometryNote].filter(Boolean).join("\n")}
+                        className={pendingPart === p.key ? "part on" : "part"}
+                        disabled={!canPlace(p.key)}
+                        onClick={() => choosePart(p.key)}
+                        title={placeHeight === "ramp" && !p.rampEnds
+                          ? "この部品は勾配にできません"
+                          : [p.description, p.jointHelp, p.geometryNote].filter(Boolean).join("\n")}
                       >
                         <PartIcon partId={p.key} mirror={mirrorNext} />
                         <span>{p.name}</span>
@@ -1102,11 +1180,11 @@ export function Editor({ user }: { user: SessionUser | null }) {
                     <span className="input-row">
                       <input
                         type="number"
-                        min={-200}
-                        max={300}
+                        min={MIN_TRACK_HEIGHT}
+                        max={MAX_TRACK_HEIGHT}
                         step={5}
                         value={selectedPiece.z ?? 0}
-                        onChange={(e) => setSelectedHeight({ z: Math.max(-200, Math.min(300, Number(e.target.value) || 0)) })}
+                        onChange={(e) => setSelectedHeight({ z: Math.max(MIN_TRACK_HEIGHT, Math.min(MAX_TRACK_HEIGHT, Number(e.target.value) || 0)) })}
                         aria-label="高さ"
                       />
                       <span className="unit">mm</span>
@@ -1156,8 +1234,9 @@ export function Editor({ user }: { user: SessionUser | null }) {
       <main className="canvas-wrap">
         <svg
           ref={svgRef}
-          className="canvas"
+          className={pendingPart ? "canvas placing" : "canvas"}
           viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+          onPointerDownCapture={onPlacementPointerDown}
           onPointerDown={onBgPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -1717,7 +1796,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           onClose={() => setDetailKey(null)}
           onShow={setDetailKey}
           onPlace={(k) => {
-            addPart(k);
+            choosePart(k);
             setDetailKey(null);
           }}
         />

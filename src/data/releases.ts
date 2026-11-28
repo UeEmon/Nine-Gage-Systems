@@ -19,6 +19,12 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28-manual-track-elevation",
+    date: "2026-11-28T12:27:00+09:00",
+    title: "地下や高架の線路を好きな高さと場所に置けます",
+    body: "線路パーツの「置く高さ」で地下・高架や任意の高さを指定し、ボードをクリックして配置できます。ドラッグで線路をつないでも、設定した高さや勾配が保たれます。",
+  },
+  {
     id: "2026-11-28-rtm-vehicle-front-preview",
     date: "2026-11-28T07:46:00+09:00",
     title: "RTMのパックを先頭車の前面画像付きで編成ごとに選べます",
