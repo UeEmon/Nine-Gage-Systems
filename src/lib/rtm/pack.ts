@@ -545,6 +545,14 @@ export function leadVehicles(vehicles: RtmVehicle[], selectedId?: string | null)
   return vehicles.filter(v => !v.autoFormationDeleted && (v.role !== "middle" || isFreightCar(v) || v.id === selectedId));
 }
 
+/** 固定両数の自動編成。両端に先頭車を置き、最後尾だけを逆向きにする。 */
+export function autoFormationSlots(leadId: string, middleId: string | undefined, count: number): RtmSlot[] {
+  return Array.from({ length: count }, (_, i) => {
+    const rear = i > 0 && i === count - 1;
+    return { id: i === 0 || rear ? leadId : middleId ?? leadId, reversed: rear };
+  });
+}
+
 export function rtmConsists(library: RtmLibrary | null, selectedId?: string | null): (RtmVehicle | RtmFormation)[] {
   return library ? [...leadVehicles(library.vehicles, selectedId), ...library.formations] : [];
 }

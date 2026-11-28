@@ -29,7 +29,8 @@ import { bedStyle, buildScene, buildTrain } from "@/lib/driveScene";
 import type { Layout } from "@/lib/geometry";
 import { rtmConsists, rtmFormationSize, type RtmLibrary, type RtmVehicle } from "@/lib/rtm/pack";
 import { buildVehicleKit, type RtmKits, type VehicleKit } from "@/lib/rtm/three";
-import { RtmVehiclesDialog, useRtmLibrary } from "./rtm/RtmVehicles";
+import { RtmVehiclesDialog } from "./rtm/RtmVehicles";
+import { useRtmLibrary } from "./rtm/useRtmLibrary";
 import { listModels } from "@/lib/models3d/store";
 import { buildPlacedModels } from "@/lib/models3d/three";
 import { placedCorners } from "@/lib/models3d/placed";
@@ -159,9 +160,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
   const [vehicleType, setVehicleType] = useState<VehicleType>("commuter");
   const vehicleTypeRef = useRef(vehicleType);
   vehicleTypeRef.current = vehicleType;
-  const loadedRtmLibrary = useRtmLibrary();
-  // 使えないロールでは、ブラウザに残っている車両も使わない（組み込みの車両で表示する）
-  const rtmLibrary = rtmAllowed ? loadedRtmLibrary : null;
+  const { library: rtmLibrary, error: rtmError } = useRtmLibrary(rtmAllowed);
   const rtmOptions = rtmConsists(rtmLibrary, rtmVehicleId(vehicleType));
   const rtmRef = useRef<RtmLibrary | null>(null);
   rtmRef.current = rtmLibrary;
@@ -915,7 +914,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
           </select>
         </label>}
         {rtmAllowed ? (
-          <button onClick={() => setRtmOpen(true)} title="RealTrainMod の車両パックを読み込む">RTMの車両…</button>
+          <button onClick={() => setRtmOpen(true)} title="登録したRTM編成を表示する">RTMの車両…</button>
         ) : (
           <button disabled title="RealTrainMod の車両は、プレミアムユーザー・プレミアムプラス・管理者が使えます">RTMの車両…</button>
         )}
@@ -960,6 +959,7 @@ export function DriveView({ layout, startUid, planTrainId, rtmAllowed = false, m
       </div>
       {rtmOpen && rtmAllowed && (
         <RtmVehiclesDialog
+          library={rtmLibrary} error={rtmError}
           onClose={() => setRtmOpen(false)}
           onPick={planMode ? undefined : (id) => {
             setVehicleType(rtmVehicleType(id));

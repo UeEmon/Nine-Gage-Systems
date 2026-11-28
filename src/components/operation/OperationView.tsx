@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rtmVehicleId, rtmVehicleType, sameConsistSize, trainLength, VEHICLE_TYPES, type VehicleType } from "@/lib/drive";
 import { rtmConsists, rtmFormationSize } from "@/lib/rtm/pack";
-import { RtmVehiclesDialog, useRtmLibrary } from "../rtm/RtmVehicles";
+import { RtmVehiclesDialog } from "../rtm/RtmVehicles";
+import { useRtmLibrary } from "../rtm/useRtmLibrary";
 import type { Elevation } from "@/lib/elevation";
 import type { Layout } from "@/lib/geometry";
 import {
@@ -430,7 +431,7 @@ function TrainEditor({
     [s[i], s[j]] = [s[j], s[i]];
     onChange({ stops: s });
   };
-  const rtmLibrary = useRtmLibrary();
+  const { library: rtmLibrary, error: rtmError } = useRtmLibrary(rtmAllowed);
   const rtmId = rtmVehicleId(train.vehicleType);
   const rtmOptions = rtmConsists(rtmAllowed ? rtmLibrary : null, rtmId);
   const removedAuto = rtmAllowed ? rtmLibrary?.vehicles.find(v => v.id === rtmId && v.autoFormationDeleted) : undefined;
@@ -509,7 +510,7 @@ function TrainEditor({
           </select>
         </label>
         {rtmAllowed ? (
-          <button className="mini op-rtm-button" onClick={() => setRtmOpen(true)} title="RealTrainMod の車両パックを読み込んで、この列車の映像の車両にする">
+          <button className="mini op-rtm-button" onClick={() => setRtmOpen(true)} title="登録したRTM編成をこの列車の映像に使う">
             RTMの車両…
           </button>
         ) : (
@@ -519,6 +520,7 @@ function TrainEditor({
         )}
         {rtmOpen && rtmAllowed && (
           <RtmVehiclesDialog
+            library={rtmLibrary} error={rtmError}
             onClose={() => setRtmOpen(false)}
             pickLabel="この列車に使う"
             onPick={(id, library) => {

@@ -122,6 +122,7 @@
         "/tests/drive.test.ts",
         "/src/lib/rtm/",
         "/src/components/rtm/",
+        "/src/app/rtm/",
         "/tests/rtm.test.ts"
       ]
     },

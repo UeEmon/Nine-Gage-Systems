@@ -1433,6 +1433,7 @@ export function Editor({ user }: { user: SessionUser | null }) {
           >
             運行計画
           </button>
+          {canUseRtm(user?.role) && <a className="button" href="/rtm" target="_blank" rel="noopener" title="別タブでRTM車両を登録・管理">RTM車両管理</a>}
           {/* デジタルツインは開発を止めているあいだ管理者だけに出す（全員に戻すときは条件を外す） */}
           {twinVisible && (
             <button

@@ -70,7 +70,7 @@ export const MODEL_FILES_MAX_BYTES = 60 * 1024 * 1024;
 
 // ---- RealTrainMod の設置物 ----
 
-/** 車両・レール・架線はここでは読まない（車両は「RTMの車両」、レールと架線は線路の形に沿って伸ばす物なので） */
+/** 車両・レール・架線はここでは読まない（車両は「RTM車両管理」、レールと架線は線路の形に沿って伸ばす物なので） */
 const NOT_OBJECT_KEYS = ["trainName", "railName", "wireName"];
 const NAME_KEYS = ["name", "ornamentName", "machineName", "signalName", "containerName", "npcName", "modelName"];
 const TYPE_KEYS = ["ornamentType", "machineType", "signalType", "containerType", "type"];
@@ -176,7 +176,7 @@ export function modelsFromEntries(entries: ZipEntry[], sourceName: string, now =
   if (models.length === 0 && problems.length === 0) {
     problems.push(
       trains > 0
-        ? `${sourceName}: RealTrainMod の車両パックです。車両は運転席の映像の「RTMの車両…」から読み込んでください`
+        ? `${sourceName}: RealTrainMod の車両パックです。車両はレイアウト編集の「RTM車両管理」から読み込んでください`
         : `${sourceName}: RealTrainMod の設置物（ModelOrnament・ModelMachine などの json）が見つかりませんでした`,
     );
   }
@@ -187,7 +187,7 @@ async function modelsFromZip(data: Uint8Array, sourceName: string, depth = 0): P
   const entries = await readZip(data, (p) => wantedEntry(p) || (depth < 2 && isArchive(p) && !isMacJunk(p)));
   const inner = entries.filter((e) => isArchive(e.path));
   const own = modelsFromEntries(entries.filter((e) => !isArchive(e.path)), sourceName);
-  const notFound = (p: string) => p.endsWith("見つかりませんでした") || p.includes("「RTMの車両…」");
+  const notFound = (p: string) => p.endsWith("見つかりませんでした") || p.includes("「RTM車両管理」");
   const models = [...own.models];
   const problems = own.models.length > 0 || inner.length === 0 ? [...own.problems] : own.problems.filter((p) => !notFound(p));
   for (const e of inner) {

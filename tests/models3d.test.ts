@@ -117,7 +117,7 @@ describe("3D モデルのファイルを読む", () => {
     ]);
     const r = await readModelFiles([{ name: "train.zip", data: zip }]);
     expect(r.models).toEqual([]);
-    expect(r.problems[0]).toContain("RTMの車両");
+    expect(r.problems[0]).toContain("RTM車両管理");
   });
 
   it("RTM の設置物でないファイルは読まない", async () => {

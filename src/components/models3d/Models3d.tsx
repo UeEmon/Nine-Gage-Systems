@@ -165,7 +165,7 @@ export function ModelsDialog({ onClose, onPlace }: { onClose: () => void; onPlac
         {models && models.length === 0 && !message && <p className="muted">まだ設置物を読み込んでいません。</p>}
         <p className="muted rtm-help">
           設置物は実物の 1/150 の大きさで置きます。大きさ・向き・高さは、置いたあとに変えられます。
-          RealTrainMod の車両は、運転席の映像の「RTMの車両…」から読み込んでください。レール・架線、動き（スクリプト）、暗号化されたモデル（.npm）には対応していません。
+          RealTrainMod の車両は、レイアウト編集の「RTM車両管理」から読み込んでください。レール・架線、動き（スクリプト）、暗号化されたモデル（.npm）には対応していません。
           glTF・OBJ・STL などのモデルは、右の「仮オブジェクト・3Dモデル」に置けます。
         </p>
       </div>
